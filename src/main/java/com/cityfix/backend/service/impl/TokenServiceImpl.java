@@ -46,7 +46,7 @@ public class TokenServiceImpl implements TokenService {
         return Jwts.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(user.getEmail())
-                .claim("role", user.getRole().getName())
+                .claim("role", user.getRole().name())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + ACCESS_TOKEN_MS))
                 .signWith(getSigninKey())

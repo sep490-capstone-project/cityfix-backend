@@ -52,7 +52,7 @@ class AuthControllerTest {
                 .id(UUID.randomUUID())
                 .email("nguyenvana@gmail.com")
                 .fullName("Nguyen Van A")
-                .role("CITIZEN")
+                .role("RESIDENT")
                 .status(AccountStatus.INACTIVE)
                 .createdAt(LocalDateTime.now())
                 .nextStep("VERIFY_EMAIL")

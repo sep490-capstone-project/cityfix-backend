@@ -9,9 +9,7 @@ import com.cityfix.backend.model.dto.request.UserRegisterRequest;
 import com.cityfix.backend.model.dto.request.VerifyOtpRequest;
 import com.cityfix.backend.model.dto.response.LoginResponse;
 import com.cityfix.backend.model.dto.response.UserRegisterResponse;
-import com.cityfix.backend.model.entity.Role;
 import com.cityfix.backend.model.entity.User;
-import com.cityfix.backend.repository.RoleRepository;
 import com.cityfix.backend.repository.UserRepository;
 import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.OtpService;
@@ -27,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
@@ -49,7 +46,7 @@ public class UserServiceImpl implements UserService {
             } else {
                 existingUser.setFullName(request.getFullName());
                 existingUser.setPhoneNumber(request.getPhoneNumber());
-                existingUser.setPassword(passwordEncoder.encode(request.getPassword()));
+                existingUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
                 userRepository.save(existingUser);
 
                 String otp = otpService.generateAndStore(request.getEmail());
@@ -65,15 +62,10 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.PHONE_ALREADY_EXISTS);
         }
 
-        Role role = roleRepository
-                .findByName("CITIZEN")
-                .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
-
         User user = userMapper.toUser(request);
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setRole(role);
-        // Customer starts unverified and inactive until OTP is confirmed
-        user.setActive(false);
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+        user.setRole(com.cityfix.backend.model.enums.UserRole.RESIDENT);
+        user.setStatus(com.cityfix.backend.model.enums.UserStatus.BLOCKED);
         user.setEmailVerified(false);
 
         userRepository.save(user);
@@ -102,7 +94,7 @@ public class UserServiceImpl implements UserService {
         // Delete OTP from Redis and activate user
         otpService.delete(request.getEmail());
         user.setEmailVerified(true);
-        user.setActive(true);
+        user.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
         userRepository.save(user);
     }
 
@@ -127,10 +119,10 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findByEmailAndIsDeletedFalse(request.getEmail())
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new AppException(ErrorCode.INVALID_PASSWORD);
         }
-        if (!user.isActive()) {
+        if (user.getStatus() == com.cityfix.backend.model.enums.UserStatus.BLOCKED) {
             throw new AppException(ErrorCode.ACCOUNT_BANNED);
         }
 
