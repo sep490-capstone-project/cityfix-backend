@@ -43,7 +43,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 User user = tokenService.extractUser(token);
                 String role = tokenService.extractRole(token);
 
-                if (user != null && user.isActive() && !user.isDeleted()) {
+                if (user != null && user.getStatus() == com.cityfix.backend.model.enums.UserStatus.ACTIVE && !user.isDeleted()) {
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(
                                     user,

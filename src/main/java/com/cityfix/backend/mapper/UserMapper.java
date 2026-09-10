@@ -11,10 +11,10 @@ import org.mapstruct.Named;
 @Mapper(componentModel = "spring")
 public interface UserMapper {
 
-    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "userId", ignore = true)
     @Mapping(target = "role", ignore = true)
-    @Mapping(target = "password", ignore = true)
-    @Mapping(target = "active", ignore = true)
+    @Mapping(target = "passwordHash", ignore = true)
+    @Mapping(target = "status", ignore = true)
     @Mapping(target = "emailVerified", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
@@ -23,7 +23,8 @@ public interface UserMapper {
     User toUser(UserRegisterRequest request);
 
     @Mapping(source = ".", target = "status", qualifiedByName = "toAccountStatus")
-    @Mapping(source = "role.name", target = "role")
+    @Mapping(source = "userId", target = "id")
+    @Mapping(target = "nextStep", ignore = true)
     UserRegisterResponse toCustomerRegisterResponse(User user);
 
     @Named("toAccountStatus")

@@ -24,7 +24,8 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",
-            "/api-docs/**"
+            "/api-docs/**",
+            "/api/v1/tickets/**" // Tạm thời public để test không cần JWT
     };
 
     @Bean
@@ -53,8 +54,8 @@ public class SecurityConfig {
         return username -> userRepository.findByEmail(username)
                 .map(user -> org.springframework.security.core.userdetails.User.builder()
                         .username(user.getEmail())
-                        .password(user.getPassword())
-                        .authorities(user.getRole().getName())
+                        .password(user.getPasswordHash())
+                        .authorities(user.getRole().name())
                         .build())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + username));
     }

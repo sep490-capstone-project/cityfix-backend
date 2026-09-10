@@ -71,7 +71,7 @@ class UserServiceImplTest {
                 .phoneNumber("0912345678")
                 .build();
 
-        mockRole = new Role(1, "CITIZEN");
+        mockRole = new Role(1, "RESIDENT");
 
         mockUser = new User();
         mockUser.setId(UUID.randomUUID());
@@ -89,7 +89,7 @@ class UserServiceImplTest {
     void registerCustomer_validRequest_savesUserAndSendsOtp() {
         when(userRepository.findByEmail("nguyenvana@gmail.com")).thenReturn(Optional.empty());
         when(userRepository.findByPhoneNumber("0912345678")).thenReturn(Optional.empty());
-        when(roleRepository.findByName("CITIZEN")).thenReturn(Optional.of(mockRole));
+        when(roleRepository.findByName("RESIDENT")).thenReturn(Optional.of(mockRole));
         when(userMapper.toUser(any(UserRegisterRequest.class))).thenReturn(mockUser);
         when(passwordEncoder.encode("password123")).thenReturn("encodedPassword123");
         when(userRepository.save(any(User.class))).thenReturn(mockUser);
@@ -100,7 +100,7 @@ class UserServiceImplTest {
                 .id(mockUser.getId())
                 .email("nguyenvana@gmail.com")
                 .fullName("Nguyen Van A")
-                .role("CITIZEN")
+                .role("RESIDENT")
                 .status(AccountStatus.INACTIVE)
                 .createdAt(LocalDateTime.now())
                 .nextStep("VERIFY_EMAIL")

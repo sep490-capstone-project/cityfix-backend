@@ -18,7 +18,8 @@ public class User extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+    @Column(name = "user_id")
+    private UUID userId;
 
     @Column(nullable = false)
     private String fullName;
@@ -26,8 +27,8 @@ public class User extends BaseEntity {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
-    private String password;
+    @Column(name = "password_hash", nullable = false)
+    private String passwordHash;
 
     @Column(nullable = false, unique = true)
     private String phoneNumber;
@@ -41,13 +42,14 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String address;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private boolean isActive = true;
+    private com.cityfix.backend.model.enums.UserStatus status = com.cityfix.backend.model.enums.UserStatus.ACTIVE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private com.cityfix.backend.model.enums.UserRole role = com.cityfix.backend.model.enums.UserRole.RESIDENT;
 
     @Column(nullable = false)
     private boolean emailVerified = false;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "role_id", nullable = false)
-    private Role role;
 }
