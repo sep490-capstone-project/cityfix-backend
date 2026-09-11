@@ -66,8 +66,24 @@ public enum ErrorCode {
     OTP_COOLDOWN(
             HttpStatus.TOO_MANY_REQUESTS,
             "Vui lòng chờ trước khi yêu cầu mã OTP mới"
+    ),
+
+    INVALID_FILE_FORMAT(
+            HttpStatus.BAD_REQUEST,
+            "Định dạng tệp không hợp lệ. Chỉ chấp nhận JPG, JPEG, PNG, WEBP."
+    ),
+
+    FILE_SIZE_EXCEEDED(
+            HttpStatus.BAD_REQUEST,
+            "Kích thước tệp vượt quá giới hạn tối đa (5MB)."
+    ),
+
+    IMAGE_UPLOAD_FAILED(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "Tải ảnh lên thất bại. Vui lòng thử lại sau."
     ),;
 
     private final HttpStatus status;
     private final String message;
 }
+

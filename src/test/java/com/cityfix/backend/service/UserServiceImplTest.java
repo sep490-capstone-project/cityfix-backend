@@ -8,9 +8,9 @@ import com.cityfix.backend.model.dto.request.LoginRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
 import com.cityfix.backend.model.dto.response.LoginResponse;
 import com.cityfix.backend.model.dto.response.UserRegisterResponse;
-import com.cityfix.backend.model.entity.Role;
 import com.cityfix.backend.model.entity.User;
-import com.cityfix.backend.repository.RoleRepository;
+import com.cityfix.backend.model.enums.UserRole;
+import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.UserRepository;
 import com.cityfix.backend.service.impl.UserServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,9 +38,6 @@ class UserServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
-    private RoleRepository roleRepository;
-
-    @Mock
     private UserMapper userMapper;
 
     @Mock
@@ -60,7 +57,6 @@ class UserServiceImplTest {
 
     private UserRegisterRequest registerRequest;
     private User mockUser;
-    private Role mockRole;
 
     @BeforeEach
     void setUp() {
@@ -71,16 +67,14 @@ class UserServiceImplTest {
                 .phoneNumber("0912345678")
                 .build();
 
-        mockRole = new Role(1, "RESIDENT");
-
         mockUser = new User();
-        mockUser.setId(UUID.randomUUID());
+        mockUser.setUserId(UUID.randomUUID());
         mockUser.setEmail("nguyenvana@gmail.com");
-        mockUser.setPassword("encodedPassword123");
+        mockUser.setPasswordHash("encodedPassword123");
         mockUser.setFullName("Nguyen Van A");
         mockUser.setPhoneNumber("0912345678");
-        mockUser.setRole(mockRole);
-        mockUser.setActive(true);
+        mockUser.setRole(UserRole.RESIDENT);
+        mockUser.setStatus(UserStatus.ACTIVE);
         mockUser.setEmailVerified(true);
     }
 
@@ -89,7 +83,6 @@ class UserServiceImplTest {
     void registerCustomer_validRequest_savesUserAndSendsOtp() {
         when(userRepository.findByEmail("nguyenvana@gmail.com")).thenReturn(Optional.empty());
         when(userRepository.findByPhoneNumber("0912345678")).thenReturn(Optional.empty());
-        when(roleRepository.findByName("RESIDENT")).thenReturn(Optional.of(mockRole));
         when(userMapper.toUser(any(UserRegisterRequest.class))).thenReturn(mockUser);
         when(passwordEncoder.encode("password123")).thenReturn("encodedPassword123");
         when(userRepository.save(any(User.class))).thenReturn(mockUser);
@@ -97,15 +90,15 @@ class UserServiceImplTest {
         doNothing().when(emailService).sendOtpEmail("nguyenvana@gmail.com", "123456");
 
         UserRegisterResponse expectedResponse = UserRegisterResponse.builder()
-                .id(mockUser.getId())
+                .id(mockUser.getUserId())
                 .email("nguyenvana@gmail.com")
                 .fullName("Nguyen Van A")
                 .role("RESIDENT")
                 .status(AccountStatus.INACTIVE)
                 .createdAt(LocalDateTime.now())
                 .nextStep("VERIFY_EMAIL")
-                .message("OTP sent. Please verify your email.")
                 .build();
+
 
         when(userMapper.toCustomerRegisterResponse(any(User.class))).thenReturn(expectedResponse);
 

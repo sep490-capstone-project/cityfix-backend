@@ -31,7 +31,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AiServiceImpl implements AiService {
 
-    @Value("${gemini.api.key:YOUR_GEMINI_API_KEY}")
+    @Value("${gemini.api.key:GEMINI_API_KEY}")
     private String apiKey;
 
     private final RestTemplate restTemplate = new RestTemplate();
