@@ -56,8 +56,8 @@ class AuthControllerTest {
                 .status(AccountStatus.INACTIVE)
                 .createdAt(LocalDateTime.now())
                 .nextStep("VERIFY_EMAIL")
-                .message("OTP sent. Please verify your email.")
                 .build();
+
 
         when(userService.registerUser(any(UserRegisterRequest.class))).thenReturn(expectedData);
 

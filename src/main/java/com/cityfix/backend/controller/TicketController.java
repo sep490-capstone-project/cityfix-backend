@@ -4,15 +4,19 @@ import com.cityfix.backend.model.dto.request.AiAnalyzeRequest;
 import com.cityfix.backend.model.dto.request.CreateTicketRequest;
 import com.cityfix.backend.model.dto.response.AiAnalyzeResponse;
 import com.cityfix.backend.model.dto.response.BaseResponse;
+import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.service.AiService;
 import com.cityfix.backend.service.TicketService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -56,4 +60,15 @@ public class TicketController {
         AiAnalyzeResponse response = aiService.analyzeImage(request.getImageUrl());
         return ResponseEntity.ok(BaseResponse.success("Success", response));
     }
+
+    @PostMapping(value = "/upload-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Tải ảnh báo cáo sự cố lên Cloudinary", description = "Upload file ảnh từ mobile app và nhận về URL công khai và publicId trên Cloudinary.")
+    public ResponseEntity<BaseResponse<ImageUploadResponse>> uploadImage(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "folder", required = false, defaultValue = "cityfix/reports") String folder) {
+        
+        ImageUploadResponse response = ticketService.uploadImage(file, folder);
+        return ResponseEntity.ok(BaseResponse.success("Tải ảnh lên thành công.", response));
+    }
 }
+
