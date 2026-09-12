@@ -38,6 +38,11 @@ public enum ErrorCode {
             "Không tìm thấy tài khoản"
     ),
 
+    CATEGORY_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy danh mục"
+    ),
+
     ACCOUNT_ALREADY_VERIFIED(
             HttpStatus.CONFLICT,
             "Tài khoản đã được xác minh"

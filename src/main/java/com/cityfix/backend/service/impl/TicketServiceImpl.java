@@ -3,9 +3,13 @@ package com.cityfix.backend.service.impl;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.ImageMapper;
+import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.model.dto.request.CreateTicketRequest;
+import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
+
 import com.cityfix.backend.model.entity.Category;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.User;
@@ -49,6 +53,8 @@ public class TicketServiceImpl implements TicketService {
     private final AiAnalysisRepository aiAnalysisRepository;
     private final Cloudinary cloudinary;
     private final ImageMapper imageMapper;
+    private final TicketMapper ticketMapper;
+
 
     private static final List<String> ALLOWED_MIME_TYPES = List.of(
             "image/jpeg",
@@ -56,7 +62,8 @@ public class TicketServiceImpl implements TicketService {
             "image/png",
             "image/webp"
     );
-    private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    private static final long MAX_FILE_SIZE = 5 * 1024 * 1024;
+    private static final double DUPLICATE_SEARCH_RADIUS_METERS = 50.0;
 
     // WGS84 SRID is 4326
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
@@ -69,12 +76,13 @@ public class TicketServiceImpl implements TicketService {
         Category category = null;
         if (request.getCategoryId() != null) {
             category = categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new RuntimeException("Category not found"));
+                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
         }
 
         Point location = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
 
         Ticket ticket = Ticket.builder()
+                .title(request.getTitle())
                 .description(request.getDescription())
                 .category(category)
                 .severity(request.getSeverity())
@@ -114,7 +122,11 @@ public class TicketServiceImpl implements TicketService {
             aiAnalysisRepository.save(analysis);
         }
 
-        return mapToResponse(ticket);
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+        if (request.getImageUrl() != null && !request.getImageUrl().isEmpty()) {
+            response.setImageUrl(request.getImageUrl());
+        }
+        return response;
     }
 
     @Override
@@ -136,30 +148,6 @@ public class TicketServiceImpl implements TicketService {
                 .build();
         
         ticketVoteRepository.save(vote);
-    }
-
-    private TicketResponse mapToResponse(Ticket ticket) {
-        Double lat = null;
-        Double lon = null;
-        if (ticket.getLocation() != null) {
-            lat = ticket.getLocation().getY();
-            lon = ticket.getLocation().getX();
-        }
-
-        return TicketResponse.builder()
-                .id(ticket.getTicketId())
-                .description(ticket.getDescription())
-                .categoryId(ticket.getCategory() != null ? ticket.getCategory().getCategoryId() : null)
-                .severity(ticket.getSeverity())
-                .dangerLevel(ticket.getDangerLevel())
-                .locationMethod(ticket.getLocationMethod())
-                .address(ticket.getAddress())
-                .status(ticket.getStatus())
-                .latitude(lat)
-                .longitude(lon)
-                .createdBy(ticket.getUser().getUserId())
-                .createdAt(ticket.getCreatedAt())
-                .build();
     }
 
     @Override
@@ -193,5 +181,16 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.IMAGE_UPLOAD_FAILED);
         }
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID categoryId) {
+        if (latitude == null || longitude == null || categoryId == null) {
+            throw new AppException(ErrorCode.VALIDATION_ERROR);
+        }
+        List<DuplicateTicketProjection> projections = ticketRepository.findDuplicateTickets(latitude, longitude, categoryId);
+        return ticketMapper.toDuplicateTicketResponseList(projections);
+    }
 }
+
 
