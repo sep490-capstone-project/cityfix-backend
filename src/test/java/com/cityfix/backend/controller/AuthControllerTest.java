@@ -91,7 +91,7 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
-        assertThat(response.getBody().getMessage()).isEqualTo("Login successful");
+        assertThat(response.getBody().getMessage()).isEqualTo("Đăng nhập thành công");
         
         LoginResponse data = (LoginResponse) response.getBody().getData();
         assertThat(data).isNotNull();
@@ -132,7 +132,7 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
-        assertThat(response.getBody().getMessage()).isEqualTo("Logged out successfully");
+        assertThat(response.getBody().getMessage()).isEqualTo("Đăng xuất thành công");
 
         verify(userService, times(1)).logout("valid-bearer-token");
     }
@@ -152,7 +152,7 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
-        assertThat(response.getBody().getMessage()).isEqualTo("Email verified successfully.");
+        assertThat(response.getBody().getMessage()).isEqualTo("Email đã được xác thực");
 
         verify(userService, times(1)).verifyEmail(request);
     }
@@ -171,7 +171,7 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
-        assertThat(response.getBody().getMessage()).isEqualTo("A new OTP has been sent to your email.");
+        assertThat(response.getBody().getMessage()).isEqualTo("Mã OPT mới đã được gửi tới email của bạn");
 
         verify(userService, times(1)).resendOtp(request);
     }

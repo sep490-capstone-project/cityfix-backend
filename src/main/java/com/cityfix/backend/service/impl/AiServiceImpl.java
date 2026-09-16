@@ -63,7 +63,7 @@ public class AiServiceImpl implements AiService {
                 .collect(Collectors.joining(", "));
 
             // 3. Prepare Gemini API Request
-            String geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-image:generateContent?key=" + apiKey;
+            String geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=" + apiKey;
 
             String prompt = "Analyze this image of an infrastructure issue. Return ONLY a valid JSON object with no markdown formatting. The JSON must contain exactly 5 fields: 'categoryId' (choose the closest matching UUID from this list: " + categoriesStr + "), 'severity' (choose from LOW, MEDIUM, HIGH, CRITICAL), 'dangerLevel' (choose from SAFE, CAUTION, DANGEROUS, CRITICAL), 'confidenceScore' (a decimal between 0 and 100), and 'description' (a brief explanation of the issue).";
 

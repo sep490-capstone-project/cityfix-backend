@@ -12,6 +12,9 @@ import com.cityfix.backend.service.TicketService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.io.WKBReader;
+import org.locationtech.jts.io.WKTReader;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -74,13 +77,61 @@ public class TicketController {
     @GetMapping("/check-duplicates")
     @Operation(summary = "Kiểm tra vé trùng lặp theo bán kính không gian (PostGIS ST_DWithin)", description = "Tìm các vé đang mở trong bán kính R mét (mặc định 50m) cùng categoryId.")
     public ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> checkDuplicates(
-            @RequestParam("latitude") Double latitude,
-            @RequestParam("longitude") Double longitude,
+            @RequestParam(value = "location", required = false) String location,
+            @RequestParam(value = "latitude", required = false) Double latitude,
+            @RequestParam(value = "longitude", required = false) Double longitude,
             @RequestParam("categoryId") UUID categoryId) {
         
-        List<DuplicateTicketResponse> duplicates = ticketService.findDuplicateTickets(latitude, longitude, categoryId);
+        LocationCoords coords = parseLocation(location, latitude, longitude);
+
+        List<DuplicateTicketResponse> duplicates = ticketService.findDuplicateTickets(coords.latitude(), coords.longitude(), categoryId);
         return ResponseEntity.ok(BaseResponse.success("Kiểm tra vé trùng lặp thành công.", duplicates));
     }
+
+    private LocationCoords parseLocation(String locationStr, Double fallbackLat, Double fallbackLng) {
+        if (locationStr != null && !locationStr.isBlank()) {
+            String trimmed = locationStr.trim();
+            // 1. Try PostGIS HexEWKB format (e.g. 0101000020E61000000D71AC8BDBAC5A40598638D6C58D2540)
+            if (trimmed.matches("^[0-9a-fA-F]+$")) {
+                try {
+                    byte[] bytes = WKBReader.hexToBytes(trimmed);
+                    Geometry geom = new WKBReader().read(bytes);
+                    if (geom != null && geom.getCoordinate() != null) {
+                        return new LocationCoords(geom.getCoordinate().y, geom.getCoordinate().x);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            // 2. Try WKT format (e.g. POINT(106.700806 10.776889))
+            if (trimmed.toUpperCase().startsWith("POINT")) {
+                try {
+                    Geometry geom = new WKTReader().read(trimmed);
+                    if (geom != null && geom.getCoordinate() != null) {
+                        return new LocationCoords(geom.getCoordinate().y, geom.getCoordinate().x);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            // 3. Try comma-separated format (e.g. "10.776889,106.700806")
+            if (trimmed.contains(",")) {
+                String[] parts = trimmed.split(",");
+                if (parts.length == 2) {
+                    try {
+                        double lat = Double.parseDouble(parts[0].trim());
+                        double lng = Double.parseDouble(parts[1].trim());
+                        return new LocationCoords(lat, lng);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+
+        return new LocationCoords(fallbackLat, fallbackLng);
+    }
+
+    private record LocationCoords(Double latitude, Double longitude) {}
 }
 
 
