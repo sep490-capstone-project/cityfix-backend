@@ -233,7 +233,7 @@ class TicketControllerTest {
                 .thenReturn(List.of(mockDuplicateResponse));
 
         ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> response =
-                ticketController.checkDuplicates(latitude, longitude, categoryId);
+                ticketController.checkDuplicates(null, latitude, longitude, categoryId);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -243,5 +243,65 @@ class TicketControllerTest {
         assertThat(response.getBody().getData().get(0).getTicketId()).isEqualTo(mockDuplicateResponse.getTicketId());
 
         verify(ticketService, times(1)).findDuplicateTickets(latitude, longitude, categoryId);
+    }
+
+    @Test
+    @DisplayName("checkDuplicates_validLocationString_returns200WithDuplicateList")
+    void checkDuplicates_validLocationString_returns200WithDuplicateList() {
+        String locationStr = "10.762622,106.660172";
+        Double latitude = 10.762622;
+        Double longitude = 106.660172;
+
+        DuplicateTicketResponse mockDuplicateResponse = DuplicateTicketResponse.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Hố sâu trên đường Lý Thường Kiệt")
+                .address("268 Lý Thường Kiệt, Q10")
+                .status("INITIATED")
+                .categoryName("Hạ tầng giao thông")
+                .latitude(10.762700)
+                .longitude(106.660250)
+                .distanceMeters(18.5)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        when(ticketService.findDuplicateTickets(latitude, longitude, categoryId))
+                .thenReturn(List.of(mockDuplicateResponse));
+
+        ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> response =
+                ticketController.checkDuplicates(locationStr, null, null, categoryId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Kiểm tra vé trùng lặp thành công.");
+        assertThat(response.getBody().getData()).hasSize(1);
+
+        verify(ticketService, times(1)).findDuplicateTickets(latitude, longitude, categoryId);
+    }
+
+    @Test
+    @DisplayName("checkDuplicates_hexEwkbLocationString_returns200WithDuplicateList")
+    void checkDuplicates_hexEwkbLocationString_returns200WithDuplicateList() {
+        // HexEWKB for Point(106.700806, 10.776889) SRID=4326
+        String hexEwkb = "0101000020E61000000D71AC8BDBAC5A40598638D6C58D2540";
+
+        DuplicateTicketResponse mockDuplicateResponse = DuplicateTicketResponse.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sự cố giao thông")
+                .status("INITIATED")
+                .build();
+
+        when(ticketService.findDuplicateTickets(any(Double.class), any(Double.class), eq(categoryId)))
+                .thenReturn(List.of(mockDuplicateResponse));
+
+        ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> response =
+                ticketController.checkDuplicates(hexEwkb, null, null, categoryId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData()).hasSize(1);
+
+        verify(ticketService, times(1)).findDuplicateTickets(any(Double.class), any(Double.class), eq(categoryId));
     }
 }
