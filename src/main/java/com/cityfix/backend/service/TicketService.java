@@ -12,7 +12,7 @@ import java.util.UUID;
 public interface TicketService {
     TicketResponse createTicket(CreateTicketRequest request, String currentUsername);
     void upvoteTicket(UUID ticketId, String currentUsername);
-    ImageUploadResponse uploadImage(MultipartFile file, String folder);
+    List<ImageUploadResponse> uploadImage(List<MultipartFile> files, String folder);
     List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID categoryId);
 }
 

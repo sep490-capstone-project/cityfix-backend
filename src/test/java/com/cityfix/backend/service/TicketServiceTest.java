@@ -28,6 +28,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -198,14 +199,14 @@ class TicketServiceTest {
     }
 
     // ==========================================
-    // 2. Upload Image Service Tests
+    // 2. Upload Image & Video Service Tests
     // ==========================================
 
     @Test
-    @DisplayName("uploadImage_validFile_success")
-    void uploadImage_validFile_success() throws IOException {
-        MockMultipartFile validFile = new MockMultipartFile(
-                "file",
+    @DisplayName("uploadImage_singleValidImage_success")
+    void uploadImage_singleValidImage_success() throws IOException {
+        MockMultipartFile validImage = new MockMultipartFile(
+                "files",
                 "report_image.jpg",
                 "image/jpeg",
                 "fake image content".getBytes()
@@ -236,27 +237,95 @@ class TicketServiceTest {
         when(uploader.upload(any(byte[].class), any(Map.class))).thenReturn(mockCloudinaryResponse);
         when(imageMapper.toImageUploadResponse(mockCloudinaryResponse)).thenReturn(expectedResponse);
 
-        ImageUploadResponse actualResponse = ticketService.uploadImage(validFile, "cityfix/reports");
+        List<ImageUploadResponse> actualResponses = ticketService.uploadImage(List.of(validImage), "cityfix/reports");
 
-        assertThat(actualResponse).isNotNull();
-        assertThat(actualResponse.getPublicId()).isEqualTo("cityfix/reports/img_123");
-        assertThat(actualResponse.getSecureUrl()).contains("cityfix/reports/img_123.jpg");
+        assertThat(actualResponses).isNotNull().hasSize(1);
+        assertThat(actualResponses.get(0).getPublicId()).isEqualTo("cityfix/reports/img_123");
+        assertThat(actualResponses.get(0).getSecureUrl()).contains("cityfix/reports/img_123.jpg");
 
-        verify(uploader, times(1)).upload(any(byte[].class), any(Map.class));
+        verify(uploader, times(1)).upload(any(byte[].class), argThat(map -> "auto".equals(map.get("resource_type"))));
         verify(imageMapper, times(1)).toImageUploadResponse(mockCloudinaryResponse);
+    }
+
+    @Test
+    @DisplayName("uploadImage_multipleFilesImageAndVideo_success")
+    void uploadImage_multipleFilesImageAndVideo_success() throws IOException {
+        MockMultipartFile imageFile = new MockMultipartFile(
+                "files",
+                "photo.png",
+                "image/png",
+                "image content".getBytes()
+        );
+        MockMultipartFile videoFile = new MockMultipartFile(
+                "files",
+                "clip.mp4",
+                "video/mp4",
+                "video content".getBytes()
+        );
+
+        when(cloudinary.uploader()).thenReturn(uploader);
+
+        Map<String, Object> imgCloudinaryResponse = Map.of(
+                "public_id", "cityfix/reports/img_456",
+                "secure_url", "https://res.cloudinary.com/cityfix/image/upload/v1/cityfix/reports/img_456.png",
+                "format", "png"
+        );
+        Map<String, Object> videoCloudinaryResponse = Map.of(
+                "public_id", "cityfix/reports/vid_789",
+                "secure_url", "https://res.cloudinary.com/cityfix/video/upload/v1/cityfix/reports/vid_789.mp4",
+                "format", "mp4"
+        );
+
+        ImageUploadResponse imgMapped = ImageUploadResponse.builder().publicId("cityfix/reports/img_456").format("png").build();
+        ImageUploadResponse videoMapped = ImageUploadResponse.builder().publicId("cityfix/reports/vid_789").format("mp4").build();
+
+        when(uploader.upload(any(byte[].class), any(Map.class))).thenAnswer(invocation -> {
+            byte[] bytes = invocation.getArgument(0);
+            if (new String(bytes).contains("image")) {
+                return imgCloudinaryResponse;
+            } else {
+                return videoCloudinaryResponse;
+            }
+        });
+
+        when(imageMapper.toImageUploadResponse(imgCloudinaryResponse)).thenReturn(imgMapped);
+        when(imageMapper.toImageUploadResponse(videoCloudinaryResponse)).thenReturn(videoMapped);
+
+        List<ImageUploadResponse> results = ticketService.uploadImage(List.of(imageFile, videoFile), "cityfix/reports");
+
+        assertThat(results).hasSize(2);
+        assertThat(results).extracting(ImageUploadResponse::getPublicId)
+                .containsExactlyInAnyOrder("cityfix/reports/img_456", "cityfix/reports/vid_789");
+
+        verify(uploader, times(2)).upload(any(byte[].class), argThat(map -> "auto".equals(map.get("resource_type"))));
+    }
+
+    @Test
+    @DisplayName("uploadImage_fileCountExceeded_throwsAppException")
+    void uploadImage_fileCountExceeded_throwsAppException() {
+        List<MultipartFile> eightFiles = java.util.stream.IntStream.range(0, 8)
+                .mapToObj(i -> (MultipartFile) new MockMultipartFile("files", "img" + i + ".png", "image/png", "data".getBytes()))
+                .toList();
+
+        assertThatThrownBy(() -> ticketService.uploadImage(eightFiles, "cityfix/reports"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FILE_COUNT_EXCEEDED);
+
+        verifyNoInteractions(cloudinary);
     }
 
     @Test
     @DisplayName("uploadImage_invalidFormat_throwsAppException")
     void uploadImage_invalidFormat_throwsAppException() {
         MockMultipartFile invalidFile = new MockMultipartFile(
-                "file",
+                "files",
                 "document.pdf",
                 "application/pdf",
                 "pdf content".getBytes()
         );
 
-        assertThatThrownBy(() -> ticketService.uploadImage(invalidFile, "cityfix/reports"))
+        assertThatThrownBy(() -> ticketService.uploadImage(List.of(invalidFile), "cityfix/reports"))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_FILE_FORMAT);
@@ -265,17 +334,36 @@ class TicketServiceTest {
     }
 
     @Test
-    @DisplayName("uploadImage_exceedsMaxSize_throwsAppException")
-    void uploadImage_exceedsMaxSize_throwsAppException() {
-        byte[] largeContent = new byte[6 * 1024 * 1024]; // 6MB
-        MockMultipartFile largeFile = new MockMultipartFile(
-                "file",
+    @DisplayName("uploadImage_imageExceedsMaxSize_throwsAppException")
+    void uploadImage_imageExceedsMaxSize_throwsAppException() {
+        byte[] largeImageContent = new byte[11 * 1024 * 1024]; // 11MB (> 10MB limit)
+        MockMultipartFile largeImage = new MockMultipartFile(
+                "files",
                 "huge_photo.png",
                 "image/png",
-                largeContent
+                largeImageContent
         );
 
-        assertThatThrownBy(() -> ticketService.uploadImage(largeFile, "cityfix/reports"))
+        assertThatThrownBy(() -> ticketService.uploadImage(List.of(largeImage), "cityfix/reports"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FILE_SIZE_EXCEEDED);
+
+        verifyNoInteractions(cloudinary);
+    }
+
+    @Test
+    @DisplayName("uploadImage_videoExceedsMaxSize_throwsAppException")
+    void uploadImage_videoExceedsMaxSize_throwsAppException() {
+        byte[] largeVideoContent = new byte[51 * 1024 * 1024]; // 51MB (> 50MB limit)
+        MockMultipartFile largeVideo = new MockMultipartFile(
+                "files",
+                "huge_clip.mp4",
+                "video/mp4",
+                largeVideoContent
+        );
+
+        assertThatThrownBy(() -> ticketService.uploadImage(List.of(largeVideo), "cityfix/reports"))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FILE_SIZE_EXCEEDED);
@@ -287,7 +375,7 @@ class TicketServiceTest {
     @DisplayName("uploadImage_cloudinaryIOException_throwsAppException")
     void uploadImage_cloudinaryIOException_throwsAppException() throws IOException {
         MockMultipartFile validFile = new MockMultipartFile(
-                "file",
+                "files",
                 "report_image.jpg",
                 "image/jpeg",
                 "fake image content".getBytes()
@@ -296,7 +384,7 @@ class TicketServiceTest {
         when(cloudinary.uploader()).thenReturn(uploader);
         when(uploader.upload(any(byte[].class), any(Map.class))).thenThrow(new IOException("Network error"));
 
-        assertThatThrownBy(() -> ticketService.uploadImage(validFile, "cityfix/reports"))
+        assertThatThrownBy(() -> ticketService.uploadImage(List.of(validFile), "cityfix/reports"))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.IMAGE_UPLOAD_FAILED);

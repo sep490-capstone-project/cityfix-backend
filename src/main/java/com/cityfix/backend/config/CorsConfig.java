@@ -15,16 +15,17 @@ public class CorsConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "http://localhost:4173",
-                "http://127.0.0.1:4173",
-                "http://localhost:3000",
-                "http://127.0.0.1:3000"
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "https://*.vercel.app",
+                "https://*.netlify.app",
+                "https://*.onrender.com"
         ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setExposedHeaders(List.of("Authorization"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

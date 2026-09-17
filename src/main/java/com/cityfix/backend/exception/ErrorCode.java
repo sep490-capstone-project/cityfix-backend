@@ -75,17 +75,22 @@ public enum ErrorCode {
 
     INVALID_FILE_FORMAT(
             HttpStatus.BAD_REQUEST,
-            "Định dạng tệp không hợp lệ. Chỉ chấp nhận JPG, JPEG, PNG, WEBP."
+            "Định dạng tệp không hợp lệ. Chấp nhận các định dạng ảnh (JPG, PNG, WEBP, ...) và video (MP4, MOV, WEBM, ...)."
     ),
 
     FILE_SIZE_EXCEEDED(
             HttpStatus.BAD_REQUEST,
-            "Kích thước tệp vượt quá giới hạn tối đa (5MB)."
+            "Kích thước tệp vượt quá giới hạn cho phép (Ảnh <= 10MB, Video <= 50MB)."
+    ),
+
+    FILE_COUNT_EXCEEDED(
+            HttpStatus.BAD_REQUEST,
+            "Số lượng tệp vượt quá giới hạn tối đa cho phép (tối đa 7 tệp)."
     ),
 
     IMAGE_UPLOAD_FAILED(
             HttpStatus.INTERNAL_SERVER_ERROR,
-            "Tải ảnh lên thất bại. Vui lòng thử lại sau."
+            "Tải tệp lên thất bại. Vui lòng thử lại sau."
     ),;
 
     private final HttpStatus status;

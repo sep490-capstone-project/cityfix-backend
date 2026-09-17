@@ -65,13 +65,13 @@ public class TicketController {
     }
 
     @PostMapping(value = "/upload-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Tải ảnh báo cáo sự cố lên Cloudinary", description = "Upload file ảnh từ mobile app và nhận về URL công khai và publicId trên Cloudinary.")
-    public ResponseEntity<BaseResponse<ImageUploadResponse>> uploadImage(
-            @RequestParam("file") MultipartFile file,
+    @Operation(summary = "Tải tệp (ảnh/video) báo cáo sự cố lên Cloudinary", description = "Upload danh sách tệp ảnh/video từ mobile app và nhận về danh sách URL công khai và publicId trên Cloudinary.")
+    public ResponseEntity<BaseResponse<List<ImageUploadResponse>>> uploadImage(
+            @RequestParam("files") List<MultipartFile> files,
             @RequestParam(value = "folder", required = false, defaultValue = "cityfix/reports") String folder) {
         
-        ImageUploadResponse response = ticketService.uploadImage(file, folder);
-        return ResponseEntity.ok(BaseResponse.success("Tải ảnh lên thành công.", response));
+        List<ImageUploadResponse> response = ticketService.uploadImage(files, folder);
+        return ResponseEntity.ok(BaseResponse.success("Tải tệp lên thành công.", response));
     }
 
     @GetMapping("/check-duplicates")
