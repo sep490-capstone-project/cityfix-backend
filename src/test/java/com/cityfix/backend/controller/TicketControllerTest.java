@@ -170,14 +170,14 @@ class TicketControllerTest {
     }
 
     // ==========================================
-    // 2. Upload Image Tests
+    // 2. Upload Image & Video Controller Tests
     // ==========================================
 
     @Test
-    @DisplayName("uploadImage_validMultipartFile_returns200WithData")
-    void uploadImage_validMultipartFile_returns200WithData() {
+    @DisplayName("uploadImage_validMultipartFiles_returns200WithDataList")
+    void uploadImage_validMultipartFiles_returns200WithDataList() {
         MockMultipartFile file = new MockMultipartFile(
-                "file",
+                "files",
                 "test.jpg",
                 "image/jpeg",
                 "content".getBytes()
@@ -193,18 +193,19 @@ class TicketControllerTest {
                 .createdAt("2026-09-11T12:00:00Z")
                 .build();
 
-        when(ticketService.uploadImage(any(), eq("cityfix/reports"))).thenReturn(mockImageResponse);
+        when(ticketService.uploadImage(eq(List.of(file)), eq("cityfix/reports")))
+                .thenReturn(List.of(mockImageResponse));
 
-        ResponseEntity<BaseResponse<ImageUploadResponse>> responseEntity =
-                ticketController.uploadImage(file, "cityfix/reports");
+        ResponseEntity<BaseResponse<List<ImageUploadResponse>>> responseEntity =
+                ticketController.uploadImage(List.of(file), "cityfix/reports");
 
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(responseEntity.getBody()).isNotNull();
         assertThat(responseEntity.getBody().isSuccess()).isTrue();
-        assertThat(responseEntity.getBody().getMessage()).isEqualTo("Tải ảnh lên thành công.");
-        assertThat(responseEntity.getBody().getData()).isEqualTo(mockImageResponse);
+        assertThat(responseEntity.getBody().getMessage()).isEqualTo("Tải tệp lên thành công.");
+        assertThat(responseEntity.getBody().getData()).containsExactly(mockImageResponse);
 
-        verify(ticketService, times(1)).uploadImage(file, "cityfix/reports");
+        verify(ticketService, times(1)).uploadImage(List.of(file), "cityfix/reports");
     }
 
     // ==========================================
