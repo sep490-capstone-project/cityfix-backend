@@ -28,9 +28,6 @@ public class Ticket extends BaseEntity {
     @JoinColumn(name = "category_id")
     private Category category;
 
-    @Column(nullable = false)
-    private String title;
-
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
 

@@ -101,7 +101,6 @@ public class TicketServiceImpl implements TicketService {
         Point location = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
 
         Ticket ticket = Ticket.builder()
-                .title(request.getTitle())
                 .description(request.getDescription())
                 .category(category)
                 .severity(request.getSeverity())

@@ -10,7 +10,6 @@ import java.util.UUID;
 @Builder
 public class TicketResponse {
     private UUID id;
-    private String title;
     private String description;
     private String imageUrl;
     private java.util.UUID categoryId;
