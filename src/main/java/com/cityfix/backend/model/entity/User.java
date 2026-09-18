@@ -9,7 +9,7 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users")
+@Table(name = "user_account")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -20,6 +20,17 @@ public class User extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "user_id")
     private UUID userId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "role_id", nullable = false)
+    private Role role;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
+    @Column(name = "is_dispatcher")
+    private Boolean isDispatcher;
 
     @Column(nullable = false)
     private String fullName;
@@ -45,10 +56,6 @@ public class User extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private com.cityfix.backend.model.enums.UserStatus status = com.cityfix.backend.model.enums.UserStatus.ACTIVE;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private com.cityfix.backend.model.enums.UserRole role = com.cityfix.backend.model.enums.UserRole.RESIDENT;
 
     @Column(nullable = false)
     private boolean emailVerified = false;

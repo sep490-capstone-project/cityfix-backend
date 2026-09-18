@@ -13,6 +13,8 @@ public interface UserMapper {
 
     @Mapping(target = "userId", ignore = true)
     @Mapping(target = "role", ignore = true)
+    @Mapping(target = "department", ignore = true)
+    @Mapping(target = "isDispatcher", ignore = true)
     @Mapping(target = "passwordHash", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "emailVerified", ignore = true)
@@ -24,6 +26,7 @@ public interface UserMapper {
 
     @Mapping(source = ".", target = "status", qualifiedByName = "toAccountStatus")
     @Mapping(source = "userId", target = "id")
+    @Mapping(source = "role.roleName", target = "role")
     @Mapping(target = "nextStep", ignore = true)
     UserRegisterResponse toCustomerRegisterResponse(User user);
 

@@ -7,7 +7,7 @@ import org.locationtech.jts.geom.Point;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tickets")
+@Table(name = "ticket")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -27,6 +27,14 @@ public class Ticket extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private Category category;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assignee_id")
+    private User assignee;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
@@ -51,4 +59,10 @@ public class Ticket extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private com.cityfix.backend.model.enums.TicketStatus status = com.cityfix.backend.model.enums.TicketStatus.INITIATED;
+
+    @Column(name = "is_life_threatening")
+    private Boolean isLifeThreatening;
+
+    @Column(name = "needs_manual_review")
+    private Boolean needsManualReview;
 }
