@@ -57,7 +57,7 @@ public class SecurityConfig {
                 .map(user -> org.springframework.security.core.userdetails.User.builder()
                         .username(user.getEmail())
                         .password(user.getPasswordHash())
-                        .authorities(user.getRole().name())
+                        .authorities(user.getRole().getRoleName())
                         .build())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + username));
     }

@@ -108,6 +108,8 @@ public class TicketServiceImpl implements TicketService {
                 .locationMethod(request.getLocationMethod())
                 .address(request.getAddress())
                 .status(TicketStatus.INITIATED)
+                .isLifeThreatening(false)
+                .needsManualReview(false)
                 .location(location)
                 .user(user)
                 .build();
