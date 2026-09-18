@@ -8,9 +8,6 @@ import lombok.Data;
 @Data
 public class CreateTicketRequest {
     
-    @NotBlank(message = "Title is required")
-    private String title;
-
     @NotBlank(message = "Description is required")
     private String description;
 
@@ -29,7 +26,6 @@ public class CreateTicketRequest {
     @NotNull(message = "Location method is required")
     private com.cityfix.backend.model.enums.LocationMethod locationMethod;
     
-    @NotBlank(message = "Address is required")
     private String address;
 
     @NotNull(message = "Latitude is required")
