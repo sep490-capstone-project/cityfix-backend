@@ -14,6 +14,7 @@ public interface DepartmentMapper {
     Department toEntity(CreateDepartmentRequest request);
 
     @Mapping(target = "officerCount", expression = "java(department.getOfficers() != null ? department.getOfficers().size() : 0)")
+    @Mapping(target = "isActive", expression = "java(!department.isDeleted())")
     DepartmentResponse toResponse(Department department);
 
     List<DepartmentResponse> toResponseList(List<Department> departments);

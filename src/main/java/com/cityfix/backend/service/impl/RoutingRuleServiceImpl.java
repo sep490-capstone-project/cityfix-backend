@@ -21,6 +21,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -43,7 +44,7 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
         Category category = categoryRepository.findById(request.categoryId())
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
 
-        boolean exists = routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWard(
+        boolean exists = routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
                 request.categoryId(), request.province(), request.ward());
         if (exists) {
             throw new AppException(ErrorCode.ROUTING_RULE_CONFLICT);
@@ -79,7 +80,7 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
         String targetProvince = request.province() != null ? request.province() : routingRule.getProvince();
         String targetWard = request.ward() != null ? request.ward() : routingRule.getWard();
 
-        boolean conflict = routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndRuleIdNot(
+        boolean conflict = routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndRuleIdNotAndIsDeletedFalse(
                 targetCategoryId, targetProvince, targetWard, id);
         if (conflict) {
             throw new AppException(ErrorCode.ROUTING_RULE_CONFLICT);
@@ -107,6 +108,8 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
     public Page<RoutingRuleResponse> searchRoutingRules(UUID categoryId, String province, String ward, UUID departmentId, Pageable pageable) {
         Specification<RoutingRule> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+
+            predicates.add(cb.equal(root.get("isDeleted"), false));
 
             if (categoryId != null) {
                 predicates.add(cb.equal(root.get("category").get("categoryId"), categoryId));
@@ -144,6 +147,8 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
         RoutingRule routingRule = routingRuleRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROUTING_RULE_NOT_FOUND));
 
-        routingRuleRepository.delete(routingRule);
+        routingRule.setDeleted(true);
+        routingRule.setDeletedAt(LocalDateTime.now());
+        routingRuleRepository.save(routingRule);
     }
 }

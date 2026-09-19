@@ -14,9 +14,9 @@ import java.util.UUID;
 @Repository
 public interface RoutingRuleRepository extends JpaRepository<RoutingRule, UUID>, JpaSpecificationExecutor<RoutingRule> {
 
-    boolean existsByCategoryCategoryIdAndProvinceAndWard(UUID categoryId, String province, String ward);
+    boolean existsByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(UUID categoryId, String province, String ward);
 
-    boolean existsByCategoryCategoryIdAndProvinceAndWardAndRuleIdNot(UUID categoryId, String province, String ward, UUID ruleId);
+    boolean existsByCategoryCategoryIdAndProvinceAndWardAndRuleIdNotAndIsDeletedFalse(UUID categoryId, String province, String ward, UUID ruleId);
 
     Optional<RoutingRule> findByCategoryCategoryIdAndProvinceAndWard(UUID categoryId, String province, String ward);
 

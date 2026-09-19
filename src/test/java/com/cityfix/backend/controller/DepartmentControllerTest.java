@@ -81,7 +81,8 @@ class DepartmentControllerTest {
                 DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567",
-                0
+                0,
+                true
         );
     }
 

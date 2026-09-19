@@ -68,7 +68,8 @@ class DepartmentServiceTest {
                 DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567",
-                0
+                0,
+                true
         );
 
         createRequest = new CreateDepartmentRequest(
@@ -176,12 +177,30 @@ class DepartmentServiceTest {
     }
 
     @Test
-    @DisplayName("deleteDepartment_validId_unlinksOfficersAndDelete")
-    void deleteDepartment_validId_unlinksOfficersAndDelete() {
+    @DisplayName("getAllDepartments_activeOnlyTrue_callsFindByIsDeletedFalse")
+    void getAllDepartments_activeOnlyTrue_callsFindByIsDeletedFalse() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Department> page = new PageImpl<>(List.of(mockDepartment));
+
+        when(departmentRepository.findByIsDeletedFalse(pageable)).thenReturn(page);
+        when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
+
+        Page<DepartmentResponse> result = departmentService.getAllDepartments(pageable, true);
+
+        assertThat(result).hasSize(1);
+        verify(departmentRepository, times(1)).findByIsDeletedFalse(pageable);
+        verify(departmentRepository, never()).findAll(pageable);
+    }
+
+    @Test
+    @DisplayName("deleteDepartment_validId_unlinksOfficersAndSoftDeletes")
+    void deleteDepartment_validId_unlinksOfficersAndSoftDeletes() {
         when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
 
         departmentService.deleteDepartment(departmentId);
 
-        verify(departmentRepository, times(1)).delete(mockDepartment);
+        verify(departmentRepository, times(1)).save(mockDepartment);
+        assertThat(mockDepartment.isDeleted()).isTrue();
+        assertThat(mockDepartment.getDeletedAt()).isNotNull();
     }
 }

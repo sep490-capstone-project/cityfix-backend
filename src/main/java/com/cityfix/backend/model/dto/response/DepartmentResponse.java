@@ -10,5 +10,6 @@ public record DepartmentResponse(
     DepartmentLevel level,
     String contactEmail,
     String phoneNumber,
-    int officerCount
+    int officerCount,
+    Boolean isActive
 ) {}

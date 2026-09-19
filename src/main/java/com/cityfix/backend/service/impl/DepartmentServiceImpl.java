@@ -15,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
@@ -50,6 +51,17 @@ public class DepartmentServiceImpl implements DepartmentService {
         }
 
         departmentMapper.updateEntityFromRequest(request, department);
+
+        if (request.isActive() != null) {
+            if (Boolean.FALSE.equals(request.isActive())) {
+                department.setDeleted(true);
+                department.setDeletedAt(LocalDateTime.now());
+            } else {
+                department.setDeleted(false);
+                department.setDeletedAt(null);
+            }
+        }
+
         Department updatedDepartment = departmentRepository.save(department);
 
         return departmentMapper.toResponse(updatedDepartment);
@@ -67,7 +79,12 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional(readOnly = true)
     public Page<DepartmentResponse> getAllDepartments(Pageable pageable, Boolean activeOnly) {
-        Page<Department> page = departmentRepository.findAll(pageable);
+        Page<Department> page;
+        if (Boolean.TRUE.equals(activeOnly)) {
+            page = departmentRepository.findByIsDeletedFalse(pageable);
+        } else {
+            page = departmentRepository.findAll(pageable);
+        }
         return page.map(departmentMapper::toResponse);
     }
 
@@ -81,6 +98,8 @@ public class DepartmentServiceImpl implements DepartmentService {
             department.getOfficers().forEach(user -> user.setDepartment(null));
         }
 
-        departmentRepository.delete(department);
+        department.setDeleted(true);
+        department.setDeletedAt(LocalDateTime.now());
+        departmentRepository.save(department);
     }
 }

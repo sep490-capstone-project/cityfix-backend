@@ -123,7 +123,7 @@ class RoutingRuleServiceTest {
     void createRoutingRule_validData_returnsRoutingRuleResponse() {
         when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
-        when(routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWard(
+        when(routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
                 categoryId, createRequest.province(), createRequest.ward())).thenReturn(false);
         when(routingRuleMapper.toEntity(createRequest)).thenReturn(mockRule);
         when(routingRuleRepository.save(any(RoutingRule.class))).thenReturn(mockRule);
@@ -143,7 +143,7 @@ class RoutingRuleServiceTest {
     void createRoutingRule_duplicateRule_throwsRoutingRuleConflictException() {
         when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
-        when(routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWard(
+        when(routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
                 categoryId, createRequest.province(), createRequest.ward())).thenReturn(true);
 
         assertThatThrownBy(() -> routingRuleService.createRoutingRule(createRequest))
@@ -193,12 +193,14 @@ class RoutingRuleServiceTest {
     }
 
     @Test
-    @DisplayName("deleteRoutingRule_validId_deletesEntity")
-    void deleteRoutingRule_validId_deletesEntity() {
+    @DisplayName("deleteRoutingRule_validId_softDeletesEntity")
+    void deleteRoutingRule_validId_softDeletesEntity() {
         when(routingRuleRepository.findById(ruleId)).thenReturn(Optional.of(mockRule));
 
         routingRuleService.deleteRoutingRule(ruleId);
 
-        verify(routingRuleRepository, times(1)).delete(mockRule);
+        verify(routingRuleRepository, times(1)).save(mockRule);
+        assertThat(mockRule.isDeleted()).isTrue();
+        assertThat(mockRule.getDeletedAt()).isNotNull();
     }
 }

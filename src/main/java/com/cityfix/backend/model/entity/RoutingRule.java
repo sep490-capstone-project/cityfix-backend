@@ -12,7 +12,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RoutingRule {
+public class RoutingRule extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
