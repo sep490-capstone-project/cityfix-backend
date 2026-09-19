@@ -102,7 +102,6 @@ class TicketServiceTest {
                 .build();
 
         createRequest = new CreateTicketRequest();
-        createRequest.setTitle("Hố sâu nguy hiểm");
         createRequest.setDescription("Mặt đường bị sụt hố sâu lớn");
         createRequest.setImageUrl("https://cloudinary.com/image.jpg");
         createRequest.setCategoryId(categoryId);
@@ -115,7 +114,6 @@ class TicketServiceTest {
 
         mockTicket = Ticket.builder()
                 .ticketId(UUID.randomUUID())
-                .title(createRequest.getTitle())
                 .description(createRequest.getDescription())
                 .category(mockCategory)
                 .severity(createRequest.getSeverity())
@@ -128,7 +126,6 @@ class TicketServiceTest {
 
         mockResponse = TicketResponse.builder()
                 .id(mockTicket.getTicketId())
-                .title(mockTicket.getTitle())
                 .description(mockTicket.getDescription())
                 .imageUrl(createRequest.getImageUrl())
                 .categoryId(categoryId)
@@ -159,7 +156,7 @@ class TicketServiceTest {
         TicketResponse result = ticketService.createTicket(createRequest, email);
 
         assertThat(result).isNotNull();
-        assertThat(result.getTitle()).isEqualTo("Hố sâu nguy hiểm");
+        assertThat(result.getDescription()).isEqualTo("Mặt đường bị sụt hố sâu lớn");
         assertThat(result.getCreatedBy()).isEqualTo(mockUser.getUserId());
         assertThat(result.getImageUrl()).isEqualTo(createRequest.getImageUrl());
         assertThat(result.getLocationMethod()).isEqualTo(LocationMethod.AUTO_GPS);

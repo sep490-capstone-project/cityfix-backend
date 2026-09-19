@@ -51,4 +51,12 @@ public class Ticket extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private com.cityfix.backend.model.enums.TicketStatus status = com.cityfix.backend.model.enums.TicketStatus.INITIATED;
+
+    @Builder.Default
+    @Column(name = "is_life_threatening", nullable = false)
+    private boolean isLifeThreatening = false;
+
+    @Builder.Default
+    @Column(name = "needs_manual_review", nullable = false)
+    private boolean needsManualReview = false;
 }

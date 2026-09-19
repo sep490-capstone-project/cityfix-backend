@@ -52,4 +52,8 @@ public class User extends BaseEntity {
 
     @Column(nullable = false)
     private boolean emailVerified = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
 }

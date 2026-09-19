@@ -72,7 +72,6 @@ class TicketControllerTest {
         categoryId = UUID.randomUUID();
 
         validCreateRequest = new CreateTicketRequest();
-        validCreateRequest.setTitle("Mặt đường bị hỏng");
         validCreateRequest.setDescription("Mặt đường xuất hiện ổ gà lớn");
         validCreateRequest.setImageUrl("https://cloudinary.com/test.jpg");
         validCreateRequest.setCategoryId(categoryId);
@@ -85,7 +84,6 @@ class TicketControllerTest {
 
         mockTicketResponse = TicketResponse.builder()
                 .id(UUID.randomUUID())
-                .title(validCreateRequest.getTitle())
                 .description(validCreateRequest.getDescription())
                 .imageUrl(validCreateRequest.getImageUrl())
                 .categoryId(categoryId)
@@ -119,7 +117,7 @@ class TicketControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getMessage()).isEqualTo("Success");
-        assertThat(response.getBody().getData().getTitle()).isEqualTo("Mặt đường bị hỏng");
+        assertThat(response.getBody().getData().getDescription()).isEqualTo("Mặt đường xuất hiện ổ gà lớn");
         assertThat(response.getBody().getData().getLatitude()).isEqualTo(10.776889);
 
         verify(ticketService, times(1)).createTicket(validCreateRequest, email);
@@ -148,14 +146,14 @@ class TicketControllerTest {
     }
 
     @Test
-    @DisplayName("validation_missingTitle_producesConstraintViolation")
-    void validation_missingTitle_producesConstraintViolation() {
-        validCreateRequest.setTitle("");
+    @DisplayName("validation_missingDescription_producesConstraintViolation")
+    void validation_missingDescription_producesConstraintViolation() {
+        validCreateRequest.setDescription("");
 
         Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(validCreateRequest);
 
         assertThat(violations).isNotEmpty();
-        assertThat(violations).anyMatch(v -> v.getMessage().contains("Title is required"));
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Description is required"));
     }
 
     @Test
