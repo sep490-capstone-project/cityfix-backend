@@ -22,7 +22,6 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,7 +60,6 @@ class DepartmentServiceTest {
                 .level(DepartmentLevel.WARD)
                 .contactEmail("longtruong@cityfix.vn")
                 .phoneNumber("0901234567")
-                .isActive(true)
                 .build();
 
         mockResponse = new DepartmentResponse(
@@ -70,9 +68,6 @@ class DepartmentServiceTest {
                 DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567",
-                true,
-                LocalDateTime.now(),
-                LocalDateTime.now(),
                 0
         );
 
@@ -166,28 +161,27 @@ class DepartmentServiceTest {
     }
 
     @Test
-    @DisplayName("getAllDepartments_activeOnlyTrue_returnsFilteredPage")
-    void getAllDepartments_activeOnlyTrue_returnsFilteredPage() {
+    @DisplayName("getAllDepartments_returnsPage")
+    void getAllDepartments_returnsPage() {
         Pageable pageable = PageRequest.of(0, 10);
         Page<Department> page = new PageImpl<>(List.of(mockDepartment));
 
-        when(departmentRepository.findByIsActive(true, pageable)).thenReturn(page);
+        when(departmentRepository.findAll(pageable)).thenReturn(page);
         when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
 
-        Page<DepartmentResponse> result = departmentService.getAllDepartments(pageable, true);
+        Page<DepartmentResponse> result = departmentService.getAllDepartments(pageable, false);
 
         assertThat(result).hasSize(1);
-        verify(departmentRepository, times(1)).findByIsActive(true, pageable);
+        verify(departmentRepository, times(1)).findAll(pageable);
     }
 
     @Test
-    @DisplayName("deleteDepartment_validId_setsIsActiveFalse")
-    void deleteDepartment_validId_setsIsActiveFalse() {
+    @DisplayName("deleteDepartment_validId_unlinksOfficersAndDelete")
+    void deleteDepartment_validId_unlinksOfficersAndDelete() {
         when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
 
         departmentService.deleteDepartment(departmentId);
 
-        assertThat(mockDepartment.isActive()).isFalse();
-        verify(departmentRepository, times(1)).save(mockDepartment);
+        verify(departmentRepository, times(1)).delete(mockDepartment);
     }
 }

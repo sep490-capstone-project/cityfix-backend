@@ -1,8 +1,6 @@
 package com.cityfix.backend.repository;
 
 import com.cityfix.backend.model.entity.Department;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -14,6 +12,4 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
     boolean existsByName(String name);
 
     boolean existsByNameAndDepartmentIdNot(String name, UUID departmentId);
-
-    Page<Department> findByIsActive(boolean isActive, Pageable pageable);
 }

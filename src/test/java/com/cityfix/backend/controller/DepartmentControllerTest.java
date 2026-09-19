@@ -25,7 +25,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -82,9 +81,6 @@ class DepartmentControllerTest {
                 DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567",
-                true,
-                LocalDateTime.now(),
-                LocalDateTime.now(),
                 0
         );
     }

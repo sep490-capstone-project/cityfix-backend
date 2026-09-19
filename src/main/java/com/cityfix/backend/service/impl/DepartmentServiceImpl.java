@@ -67,12 +67,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional(readOnly = true)
     public Page<DepartmentResponse> getAllDepartments(Pageable pageable, Boolean activeOnly) {
-        Page<Department> page;
-        if (Boolean.TRUE.equals(activeOnly)) {
-            page = departmentRepository.findByIsActive(true, pageable);
-        } else {
-            page = departmentRepository.findAll(pageable);
-        }
+        Page<Department> page = departmentRepository.findAll(pageable);
         return page.map(departmentMapper::toResponse);
     }
 
@@ -82,7 +77,10 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department department = departmentRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
-        department.setActive(false);
-        departmentRepository.save(department);
+        if (department.getOfficers() != null && !department.getOfficers().isEmpty()) {
+            department.getOfficers().forEach(user -> user.setDepartment(null));
+        }
+
+        departmentRepository.delete(department);
     }
 }

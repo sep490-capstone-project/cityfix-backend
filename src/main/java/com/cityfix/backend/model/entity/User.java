@@ -1,19 +1,18 @@
 package com.cityfix.backend.model.entity;
 
+import com.cityfix.backend.model.enums.UserStatus;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.util.UUID;
 
 @Entity
-@Table(name = "users")
+@Table(name = "user_account")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class User extends BaseEntity {
 
     @Id
@@ -21,39 +20,44 @@ public class User extends BaseEntity {
     @Column(name = "user_id")
     private UUID userId;
 
-    @Column(nullable = false)
-    private String fullName;
-
-    @Column(nullable = false, unique = true)
-    private String email;
-
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
-
-    @Column(nullable = false, unique = true)
-    private String phoneNumber;
-
-    @Column(nullable = false)
-    private String province;
-
-    @Column(nullable = false)
-    private String ward;
-
-    @Column(nullable = false)
-    private String address;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private com.cityfix.backend.model.enums.UserStatus status = com.cityfix.backend.model.enums.UserStatus.ACTIVE;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private com.cityfix.backend.model.enums.UserRole role = com.cityfix.backend.model.enums.UserRole.RESIDENT;
-
-    @Column(nullable = false)
-    private boolean emailVerified = false;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "role_id", nullable = false)
+    private Role role;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "department_id")
     private Department department;
+
+    @Column(name = "is_dispatcher")
+    private Boolean isDispatcher;
+
+    @Column(name = "full_name", nullable = false, length = 100)
+    private String fullName;
+
+    @Column(nullable = false, unique = true, length = 150)
+    private String email;
+
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
+
+    @Column(name = "phone_number", nullable = false, unique = true, length = 20)
+    private String phoneNumber;
+
+    @Column(nullable = false, length = 100)
+    private String province;
+
+    @Column(nullable = false, length = 100)
+    private String ward;
+
+    @Column(nullable = false, length = 100)
+    private String address;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private UserStatus status = UserStatus.ACTIVE;
+
+    @Builder.Default
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
 }

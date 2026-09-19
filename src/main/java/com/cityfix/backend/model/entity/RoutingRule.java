@@ -6,13 +6,13 @@ import lombok.*;
 import java.util.UUID;
 
 @Entity
-@Table(name = "routing_rules")
+@Table(name = "routing_rule")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class RoutingRule extends BaseEntity {
+public class RoutingRule {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -24,12 +24,12 @@ public class RoutingRule extends BaseEntity {
     private Department department;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id", nullable = false)
+    @JoinColumn(name = "category_id")
     private Category category;
 
-    @Column(nullable = false)
+    @Column(length = 255)
     private String province;
 
-    @Column(nullable = false)
+    @Column(length = 255)
     private String ward;
 }
