@@ -22,7 +22,11 @@ CREATE TABLE "department" (
     name VARCHAR(255) NOT NULL,
     level VARCHAR(50) NOT NULL,
     contact_email VARCHAR(150),
-    phone_number VARCHAR(20)
+    phone_number VARCHAR(20),
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "category" (
@@ -45,6 +49,9 @@ CREATE TABLE "user_account" (
     address VARCHAR(100) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
     is_dispatcher BOOLEAN DEFAULT FALSE,
+    email_verified BOOLEAN DEFAULT FALSE,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    deleted_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_user_role FOREIGN KEY (role_id) REFERENCES "role"(role_id),
@@ -57,6 +64,10 @@ CREATE TABLE "routing_rule" (
     category_id UUID,
     province VARCHAR(255),
     ward VARCHAR(255),
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_rule_department FOREIGN KEY (department_id) REFERENCES "department"(department_id),
     CONSTRAINT fk_rule_category FOREIGN KEY (category_id) REFERENCES "category"(category_id)
 );

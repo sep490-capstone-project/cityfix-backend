@@ -156,6 +156,7 @@ class TicketServiceTest {
         TicketResponse result = ticketService.createTicket(createRequest, email);
 
         assertThat(result).isNotNull();
+        assertThat(result.getDescription()).isEqualTo("Mặt đường bị sụt hố sâu lớn");
         assertThat(result.getCreatedBy()).isEqualTo(mockUser.getUserId());
         assertThat(result.getImageUrl()).isEqualTo(createRequest.getImageUrl());
         assertThat(result.getLocationMethod()).isEqualTo(LocationMethod.AUTO_GPS);

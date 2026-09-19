@@ -4,6 +4,7 @@ import com.cityfix.backend.model.enums.DepartmentLevel;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -13,7 +14,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Department {
+public class Department extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -24,7 +25,7 @@ public class Department {
     private String name;
 
     @Enumerated(EnumType.STRING)
-    @Column(length = 50)
+    @Column(nullable = false, length = 50)
     private DepartmentLevel level;
 
     @Column(name = "contact_email", length = 150)
@@ -32,4 +33,7 @@ public class Department {
 
     @Column(name = "phone_number", length = 20)
     private String phoneNumber;
+
+    @OneToMany(mappedBy = "department")
+    private List<User> officers;
 }

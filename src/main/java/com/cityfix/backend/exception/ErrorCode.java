@@ -91,6 +91,26 @@ public enum ErrorCode {
     IMAGE_UPLOAD_FAILED(
             HttpStatus.INTERNAL_SERVER_ERROR,
             "Tải tệp lên thất bại. Vui lòng thử lại sau."
+    ),
+
+    DEPARTMENT_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy cơ quan phụ trách"
+    ),
+
+    DEPARTMENT_NAME_EXISTS(
+            HttpStatus.CONFLICT,
+            "Tên cơ quan phụ trách đã tồn tại"
+    ),
+
+    ROUTING_RULE_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy quy tắc định tuyến"
+    ),
+
+    ROUTING_RULE_CONFLICT(
+            HttpStatus.CONFLICT,
+            "Quy tắc định tuyến cho khu vực và loại sự cố này đã tồn tại"
     ),;
 
     private final HttpStatus status;
