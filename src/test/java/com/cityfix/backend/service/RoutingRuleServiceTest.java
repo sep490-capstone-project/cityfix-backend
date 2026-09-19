@@ -170,7 +170,7 @@ class RoutingRuleServiceTest {
     @Test
     @DisplayName("getRoutingRuleById_validId_returnsRoutingRuleResponse")
     void getRoutingRuleById_validId_returnsRoutingRuleResponse() {
-        when(routingRuleRepository.findById(ruleId)).thenReturn(Optional.of(mockRule));
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.of(mockRule));
         when(routingRuleMapper.toResponse(mockRule)).thenReturn(mockResponse);
 
         RoutingRuleResponse result = routingRuleService.getRoutingRuleById(ruleId);
@@ -183,19 +183,19 @@ class RoutingRuleServiceTest {
     @DisplayName("getRoutingRulesByDepartment_validDepartmentId_returnsList")
     void getRoutingRulesByDepartment_validDepartmentId_returnsList() {
         when(departmentRepository.existsById(departmentId)).thenReturn(true);
-        when(routingRuleRepository.findByDepartmentDepartmentId(departmentId)).thenReturn(List.of(mockRule));
+        when(routingRuleRepository.findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(List.of(mockRule));
         when(routingRuleMapper.toResponseList(List.of(mockRule))).thenReturn(List.of(mockResponse));
 
         List<RoutingRuleResponse> result = routingRuleService.getRoutingRulesByDepartment(departmentId);
 
         assertThat(result).hasSize(1);
-        verify(routingRuleRepository, times(1)).findByDepartmentDepartmentId(departmentId);
+        verify(routingRuleRepository, times(1)).findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);
     }
 
     @Test
     @DisplayName("deleteRoutingRule_validId_softDeletesEntity")
     void deleteRoutingRule_validId_softDeletesEntity() {
-        when(routingRuleRepository.findById(ruleId)).thenReturn(Optional.of(mockRule));
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.of(mockRule));
 
         routingRuleService.deleteRoutingRule(ruleId);
 

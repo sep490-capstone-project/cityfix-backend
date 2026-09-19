@@ -61,12 +61,12 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
     @Override
     @Transactional
     public RoutingRuleResponse updateRoutingRule(UUID id, UpdateRoutingRuleRequest request) {
-        RoutingRule routingRule = routingRuleRepository.findById(id)
+        RoutingRule routingRule = routingRuleRepository.findByRuleIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROUTING_RULE_NOT_FOUND));
 
         Department department = routingRule.getDepartment();
         if (request.departmentId() != null && !request.departmentId().equals(department.getDepartmentId())) {
-            department = departmentRepository.findById(request.departmentId())
+            department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(request.departmentId())
                     .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
         }
 
@@ -97,7 +97,7 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
     @Override
     @Transactional(readOnly = true)
     public RoutingRuleResponse getRoutingRuleById(UUID id) {
-        RoutingRule routingRule = routingRuleRepository.findById(id)
+        RoutingRule routingRule = routingRuleRepository.findByRuleIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROUTING_RULE_NOT_FOUND));
 
         return routingRuleMapper.toResponse(routingRule);
@@ -137,14 +137,14 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
         if (!departmentRepository.existsById(departmentId)) {
             throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
         }
-        List<RoutingRule> rules = routingRuleRepository.findByDepartmentDepartmentId(departmentId);
+        List<RoutingRule> rules = routingRuleRepository.findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);
         return routingRuleMapper.toResponseList(rules);
     }
 
     @Override
     @Transactional
     public void deleteRoutingRule(UUID id) {
-        RoutingRule routingRule = routingRuleRepository.findById(id)
+        RoutingRule routingRule = routingRuleRepository.findByRuleIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ROUTING_RULE_NOT_FOUND));
 
         routingRule.setDeleted(true);

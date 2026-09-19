@@ -91,7 +91,7 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("createDepartment_validData_returnsDepartmentResponse")
     void createDepartment_validData_returnsDepartmentResponse() {
-        when(departmentRepository.existsByName(createRequest.name())).thenReturn(false);
+        when(departmentRepository.existsByNameAndIsDeletedFalse(createRequest.name())).thenReturn(false);
         when(departmentMapper.toEntity(createRequest)).thenReturn(mockDepartment);
         when(departmentRepository.save(any(Department.class))).thenReturn(mockDepartment);
         when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
@@ -102,14 +102,14 @@ class DepartmentServiceTest {
         assertThat(result.name()).isEqualTo(createRequest.name());
         assertThat(result.level()).isEqualTo(DepartmentLevel.WARD);
 
-        verify(departmentRepository, times(1)).existsByName(createRequest.name());
+        verify(departmentRepository, times(1)).existsByNameAndIsDeletedFalse(createRequest.name());
         verify(departmentRepository, times(1)).save(any(Department.class));
     }
 
     @Test
     @DisplayName("createDepartment_duplicateName_throwsDepartmentNameExistsException")
     void createDepartment_duplicateName_throwsDepartmentNameExistsException() {
-        when(departmentRepository.existsByName(createRequest.name())).thenReturn(true);
+        when(departmentRepository.existsByNameAndIsDeletedFalse(createRequest.name())).thenReturn(true);
 
         assertThatThrownBy(() -> departmentService.createDepartment(createRequest))
                 .isInstanceOf(AppException.class)
@@ -122,8 +122,8 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("updateDepartment_validData_returnsUpdatedDepartmentResponse")
     void updateDepartment_validData_returnsUpdatedDepartmentResponse() {
-        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
-        when(departmentRepository.existsByNameAndDepartmentIdNot(updateRequest.name(), departmentId)).thenReturn(false);
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(updateRequest.name(), departmentId)).thenReturn(false);
         when(departmentRepository.save(mockDepartment)).thenReturn(mockDepartment);
         when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
 
@@ -137,7 +137,7 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("updateDepartment_departmentNotFound_throwsDepartmentNotFoundException")
     void updateDepartment_departmentNotFound_throwsDepartmentNotFoundException() {
-        when(departmentRepository.findById(departmentId)).thenReturn(Optional.empty());
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> departmentService.updateDepartment(departmentId, updateRequest))
                 .isInstanceOf(AppException.class)
@@ -150,7 +150,7 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("getDepartmentById_validId_returnsDepartmentResponse")
     void getDepartmentById_validId_returnsDepartmentResponse() {
-        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
         when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
 
         DepartmentResponse result = departmentService.getDepartmentById(departmentId);
@@ -158,7 +158,7 @@ class DepartmentServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.departmentId()).isEqualTo(departmentId);
 
-        verify(departmentRepository, times(1)).findById(departmentId);
+        verify(departmentRepository, times(1)).findByDepartmentIdAndIsDeletedFalse(departmentId);
     }
 
     @Test
@@ -195,7 +195,7 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("deleteDepartment_validId_unlinksOfficersAndSoftDeletes")
     void deleteDepartment_validId_unlinksOfficersAndSoftDeletes() {
-        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
 
         departmentService.deleteDepartment(departmentId);
 

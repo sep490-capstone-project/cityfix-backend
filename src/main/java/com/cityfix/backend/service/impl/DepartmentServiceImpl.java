@@ -28,7 +28,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional
     public DepartmentResponse createDepartment(CreateDepartmentRequest request) {
-        if (departmentRepository.existsByName(request.name())) {
+        if (departmentRepository.existsByNameAndIsDeletedFalse(request.name())) {
             throw new AppException(ErrorCode.DEPARTMENT_NAME_EXISTS);
         }
 
@@ -41,11 +41,11 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional
     public DepartmentResponse updateDepartment(UUID id, UpdateDepartmentRequest request) {
-        Department department = departmentRepository.findById(id)
+        Department department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
         if (request.name() != null && !request.name().equals(department.getName())) {
-            if (departmentRepository.existsByNameAndDepartmentIdNot(request.name(), id)) {
+            if (departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(request.name(), id)) {
                 throw new AppException(ErrorCode.DEPARTMENT_NAME_EXISTS);
             }
         }
@@ -70,7 +70,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional(readOnly = true)
     public DepartmentResponse getDepartmentById(UUID id) {
-        Department department = departmentRepository.findById(id)
+        Department department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
         return departmentMapper.toResponse(department);
@@ -91,7 +91,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional
     public void deleteDepartment(UUID id) {
-        Department department = departmentRepository.findById(id)
+        Department department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
         if (department.getOfficers() != null && !department.getOfficers().isEmpty()) {
