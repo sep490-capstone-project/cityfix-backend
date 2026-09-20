@@ -41,6 +41,9 @@ class UserServiceImplTest {
     private UserMapper userMapper;
 
     @Mock
+    private com.cityfix.backend.repository.RoleRepository roleRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -73,7 +76,7 @@ class UserServiceImplTest {
         mockUser.setPasswordHash("encodedPassword123");
         mockUser.setFullName("Nguyen Van A");
         mockUser.setPhoneNumber("0912345678");
-        mockUser.setRole(UserRole.RESIDENT);
+        mockUser.setRole(new com.cityfix.backend.model.entity.Role(java.util.UUID.randomUUID(), "RESIDENT"));
         mockUser.setStatus(UserStatus.ACTIVE);
         mockUser.setEmailVerified(true);
     }
@@ -85,6 +88,7 @@ class UserServiceImplTest {
         when(userRepository.findByPhoneNumber("0912345678")).thenReturn(Optional.empty());
         when(userMapper.toUser(any(UserRegisterRequest.class))).thenReturn(mockUser);
         when(passwordEncoder.encode("password123")).thenReturn("encodedPassword123");
+        when(roleRepository.findByRoleName("RESIDENT")).thenReturn(Optional.of(mockUser.getRole()));
         when(userRepository.save(any(User.class))).thenReturn(mockUser);
         when(otpService.generateAndStore("nguyenvana@gmail.com")).thenReturn("123456");
         doNothing().when(emailService).sendOtpEmail("nguyenvana@gmail.com", "123456");

@@ -75,17 +75,42 @@ public enum ErrorCode {
 
     INVALID_FILE_FORMAT(
             HttpStatus.BAD_REQUEST,
-            "Định dạng tệp không hợp lệ. Chỉ chấp nhận JPG, JPEG, PNG, WEBP."
+            "Định dạng tệp không hợp lệ. Chấp nhận các định dạng ảnh (JPG, PNG, WEBP, ...) và video (MP4, MOV, WEBM, ...)."
     ),
 
     FILE_SIZE_EXCEEDED(
             HttpStatus.BAD_REQUEST,
-            "Kích thước tệp vượt quá giới hạn tối đa (5MB)."
+            "Kích thước tệp vượt quá giới hạn cho phép (Ảnh <= 10MB, Video <= 50MB)."
+    ),
+
+    FILE_COUNT_EXCEEDED(
+            HttpStatus.BAD_REQUEST,
+            "Số lượng tệp vượt quá giới hạn tối đa cho phép (tối đa 7 tệp)."
     ),
 
     IMAGE_UPLOAD_FAILED(
             HttpStatus.INTERNAL_SERVER_ERROR,
-            "Tải ảnh lên thất bại. Vui lòng thử lại sau."
+            "Tải tệp lên thất bại. Vui lòng thử lại sau."
+    ),
+
+    DEPARTMENT_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy cơ quan phụ trách"
+    ),
+
+    DEPARTMENT_NAME_EXISTS(
+            HttpStatus.CONFLICT,
+            "Tên cơ quan phụ trách đã tồn tại"
+    ),
+
+    ROUTING_RULE_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy quy tắc định tuyến"
+    ),
+
+    ROUTING_RULE_CONFLICT(
+            HttpStatus.CONFLICT,
+            "Quy tắc định tuyến cho khu vực và loại sự cố này đã tồn tại"
     ),;
 
     private final HttpStatus status;

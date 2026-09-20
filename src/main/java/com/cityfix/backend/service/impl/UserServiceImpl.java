@@ -10,7 +10,9 @@ import com.cityfix.backend.model.dto.request.VerifyOtpRequest;
 import com.cityfix.backend.model.dto.response.LoginResponse;
 import com.cityfix.backend.model.dto.response.UserRegisterResponse;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.entity.Role;
 import com.cityfix.backend.repository.UserRepository;
+import com.cityfix.backend.repository.RoleRepository;
 import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.OtpService;
 import com.cityfix.backend.service.TokenService;
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
@@ -64,9 +67,12 @@ public class UserServiceImpl implements UserService {
 
         User user = userMapper.toUser(request);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setRole(com.cityfix.backend.model.enums.UserRole.RESIDENT);
+        Role residentRole = roleRepository.findByRoleName("RESIDENT")
+                .orElseThrow(() -> new RuntimeException("Default role not found"));
+        user.setRole(residentRole);
         user.setStatus(com.cityfix.backend.model.enums.UserStatus.BLOCKED);
         user.setEmailVerified(false);
+        user.setIsDispatcher(false);
 
         userRepository.save(user);
 

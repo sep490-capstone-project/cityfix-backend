@@ -72,7 +72,6 @@ class TicketControllerTest {
         categoryId = UUID.randomUUID();
 
         validCreateRequest = new CreateTicketRequest();
-        validCreateRequest.setTitle("Mặt đường bị hỏng");
         validCreateRequest.setDescription("Mặt đường xuất hiện ổ gà lớn");
         validCreateRequest.setImageUrl("https://cloudinary.com/test.jpg");
         validCreateRequest.setCategoryId(categoryId);
@@ -85,7 +84,6 @@ class TicketControllerTest {
 
         mockTicketResponse = TicketResponse.builder()
                 .id(UUID.randomUUID())
-                .title(validCreateRequest.getTitle())
                 .description(validCreateRequest.getDescription())
                 .imageUrl(validCreateRequest.getImageUrl())
                 .categoryId(categoryId)
@@ -119,7 +117,7 @@ class TicketControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getMessage()).isEqualTo("Success");
-        assertThat(response.getBody().getData().getTitle()).isEqualTo("Mặt đường bị hỏng");
+        assertThat(response.getBody().getData().getDescription()).isEqualTo("Mặt đường xuất hiện ổ gà lớn");
         assertThat(response.getBody().getData().getLatitude()).isEqualTo(10.776889);
 
         verify(ticketService, times(1)).createTicket(validCreateRequest, email);
@@ -148,14 +146,14 @@ class TicketControllerTest {
     }
 
     @Test
-    @DisplayName("validation_missingTitle_producesConstraintViolation")
-    void validation_missingTitle_producesConstraintViolation() {
-        validCreateRequest.setTitle("");
+    @DisplayName("validation_missingDescription_producesConstraintViolation")
+    void validation_missingDescription_producesConstraintViolation() {
+        validCreateRequest.setDescription("");
 
         Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(validCreateRequest);
 
         assertThat(violations).isNotEmpty();
-        assertThat(violations).anyMatch(v -> v.getMessage().contains("Title is required"));
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Description is required"));
     }
 
     @Test
@@ -170,14 +168,14 @@ class TicketControllerTest {
     }
 
     // ==========================================
-    // 2. Upload Image Tests
+    // 2. Upload Image & Video Controller Tests
     // ==========================================
 
     @Test
-    @DisplayName("uploadImage_validMultipartFile_returns200WithData")
-    void uploadImage_validMultipartFile_returns200WithData() {
+    @DisplayName("uploadImage_validMultipartFiles_returns200WithDataList")
+    void uploadImage_validMultipartFiles_returns200WithDataList() {
         MockMultipartFile file = new MockMultipartFile(
-                "file",
+                "files",
                 "test.jpg",
                 "image/jpeg",
                 "content".getBytes()
@@ -193,18 +191,19 @@ class TicketControllerTest {
                 .createdAt("2026-09-11T12:00:00Z")
                 .build();
 
-        when(ticketService.uploadImage(any(), eq("cityfix/reports"))).thenReturn(mockImageResponse);
+        when(ticketService.uploadImage(eq(List.of(file)), eq("cityfix/reports")))
+                .thenReturn(List.of(mockImageResponse));
 
-        ResponseEntity<BaseResponse<ImageUploadResponse>> responseEntity =
-                ticketController.uploadImage(file, "cityfix/reports");
+        ResponseEntity<BaseResponse<List<ImageUploadResponse>>> responseEntity =
+                ticketController.uploadImage(List.of(file), "cityfix/reports");
 
         assertThat(responseEntity.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(responseEntity.getBody()).isNotNull();
         assertThat(responseEntity.getBody().isSuccess()).isTrue();
-        assertThat(responseEntity.getBody().getMessage()).isEqualTo("Tải ảnh lên thành công.");
-        assertThat(responseEntity.getBody().getData()).isEqualTo(mockImageResponse);
+        assertThat(responseEntity.getBody().getMessage()).isEqualTo("Tải tệp lên thành công.");
+        assertThat(responseEntity.getBody().getData()).containsExactly(mockImageResponse);
 
-        verify(ticketService, times(1)).uploadImage(file, "cityfix/reports");
+        verify(ticketService, times(1)).uploadImage(List.of(file), "cityfix/reports");
     }
 
     // ==========================================

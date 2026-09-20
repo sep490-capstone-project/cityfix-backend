@@ -56,13 +56,32 @@ public class TicketServiceImpl implements TicketService {
     private final TicketMapper ticketMapper;
 
 
-    private static final List<String> ALLOWED_MIME_TYPES = List.of(
+    private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
             "image/jpeg",
             "image/jpg",
             "image/png",
-            "image/webp"
+            "image/webp",
+            "image/gif",
+            "image/heic",
+            "image/heif"
     );
-    private static final long MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+    private static final List<String> ALLOWED_VIDEO_MIME_TYPES = List.of(
+            "video/mp4",
+            "video/quicktime",
+            "video/webm",
+            "video/x-msvideo",
+            "video/3gpp"
+    );
+
+    private static final long MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+    private static final long MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
+    private static final int MAX_FILE_COUNT = 7;
+
+    private static final java.util.concurrent.Executor uploadExecutor = java.util.concurrent.Executors.newFixedThreadPool(
+            Math.min(Runtime.getRuntime().availableProcessors() * 2, 8)
+    );
+
     private static final double DUPLICATE_SEARCH_RADIUS_METERS = 50.0;
 
     // WGS84 SRID is 4326
@@ -82,7 +101,6 @@ public class TicketServiceImpl implements TicketService {
         Point location = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
 
         Ticket ticket = Ticket.builder()
-                .title(request.getTitle())
                 .description(request.getDescription())
                 .category(category)
                 .severity(request.getSeverity())
@@ -90,6 +108,8 @@ public class TicketServiceImpl implements TicketService {
                 .locationMethod(request.getLocationMethod())
                 .address(request.getAddress())
                 .status(TicketStatus.INITIATED)
+                .isLifeThreatening(false)
+                .needsManualReview(false)
                 .location(location)
                 .user(user)
                 .build();
@@ -151,33 +171,78 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
-    public ImageUploadResponse uploadImage(MultipartFile file, String folder) {
-        if (file == null || file.isEmpty()) {
+    public List<ImageUploadResponse> uploadImage(List<MultipartFile> files, String folder) {
+        if (files == null || files.isEmpty()) {
             throw new AppException(ErrorCode.INVALID_FILE_FORMAT);
         }
 
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new AppException(ErrorCode.FILE_SIZE_EXCEEDED);
+        if (files.size() > MAX_FILE_COUNT) {
+            throw new AppException(ErrorCode.FILE_COUNT_EXCEEDED);
         }
 
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_MIME_TYPES.contains(contentType.toLowerCase())) {
-            throw new AppException(ErrorCode.INVALID_FILE_FORMAT);
+        for (MultipartFile file : files) {
+            validateFile(file);
         }
 
         String targetFolder = (folder != null && !folder.isBlank()) ? folder : "cityfix/reports";
 
+        List<java.util.concurrent.CompletableFuture<ImageUploadResponse>> futures = files.stream()
+                .map(file -> java.util.concurrent.CompletableFuture.supplyAsync(() -> uploadSingleFile(file, targetFolder), uploadExecutor))
+                .toList();
+
+        try {
+            java.util.concurrent.CompletableFuture<Void> allOf = java.util.concurrent.CompletableFuture.allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0]));
+            allOf.join();
+            return futures.stream().map(java.util.concurrent.CompletableFuture::join).toList();
+        } catch (java.util.concurrent.CompletionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof AppException appException) {
+                throw appException;
+            }
+            log.error("Lỗi khi upload tệp lên Cloudinary: {}", e.getMessage(), e);
+            throw new AppException(ErrorCode.IMAGE_UPLOAD_FAILED);
+        }
+    }
+
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_FILE_FORMAT);
+        }
+
+        String contentType = file.getContentType();
+        if (contentType == null) {
+            throw new AppException(ErrorCode.INVALID_FILE_FORMAT);
+        }
+
+        String lowerContentType = contentType.toLowerCase();
+        boolean isImage = ALLOWED_IMAGE_MIME_TYPES.contains(lowerContentType);
+        boolean isVideo = ALLOWED_VIDEO_MIME_TYPES.contains(lowerContentType);
+
+        if (!isImage && !isVideo) {
+            throw new AppException(ErrorCode.INVALID_FILE_FORMAT);
+        }
+
+        if (isImage && file.getSize() > MAX_IMAGE_SIZE) {
+            throw new AppException(ErrorCode.FILE_SIZE_EXCEEDED);
+        }
+
+        if (isVideo && file.getSize() > MAX_VIDEO_SIZE) {
+            throw new AppException(ErrorCode.FILE_SIZE_EXCEEDED);
+        }
+    }
+
+    private ImageUploadResponse uploadSingleFile(MultipartFile file, String targetFolder) {
         try {
             Map<String, Object> uploadParams = Map.of(
                     "folder", targetFolder,
-                    "resource_type", "image",
+                    "resource_type", "auto",
                     "unique_filename", true
             );
             @SuppressWarnings("unchecked")
             Map<String, Object> uploadResult = cloudinary.uploader().upload(file.getBytes(), uploadParams);
             return imageMapper.toImageUploadResponse(uploadResult);
         } catch (IOException e) {
-            log.error("Lỗi khi upload lên Cloudinary: {}", e.getMessage(), e);
+            log.error("Lỗi khi upload tệp lên Cloudinary: {}", e.getMessage(), e);
             throw new AppException(ErrorCode.IMAGE_UPLOAD_FAILED);
         }
     }
