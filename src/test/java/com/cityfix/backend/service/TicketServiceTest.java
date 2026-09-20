@@ -62,9 +62,6 @@ class TicketServiceTest {
     private ReportImageRepository reportImageRepository;
 
     @Mock
-    private AiAnalysisRepository aiAnalysisRepository;
-
-    @Mock
     private TicketMapper ticketMapper;
 
     @Mock
