@@ -4,6 +4,11 @@ import com.cityfix.backend.model.dto.request.UpdateProfileRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.UserProfileResponse;
 import com.cityfix.backend.service.UserService;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +18,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -26,8 +33,16 @@ class ProfileControllerTest {
     @InjectMocks
     private ProfileController profileController;
 
+    private static Validator validator;
+
     private UserProfileResponse mockProfileResponse;
     private UpdateProfileRequest mockUpdateRequest;
+
+    @BeforeAll
+    static void initValidator() {
+        ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+        validator = factory.getValidator();
+    }
 
     @BeforeEach
     void setUp() {
@@ -86,5 +101,38 @@ class ProfileControllerTest {
         assertThat(response.getBody().getData().getFullName()).isEqualTo("Nguyen Van B");
 
         verify(userService, times(1)).updateMyProfile(mockUpdateRequest);
+    }
+
+    @Test
+    @DisplayName("validation_blankPhoneNumber_producesConstraintViolation")
+    void validation_blankPhoneNumber_producesConstraintViolation() {
+        mockUpdateRequest.setPhoneNumber("");
+
+        Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(mockUpdateRequest);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Phone number cannot be blank"));
+    }
+
+    @Test
+    @DisplayName("validation_invalidPhoneNumberPattern_producesConstraintViolation")
+    void validation_invalidPhoneNumberPattern_producesConstraintViolation() {
+        mockUpdateRequest.setPhoneNumber("123");
+
+        Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(mockUpdateRequest);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Phone number is invalid"));
+    }
+
+    @Test
+    @DisplayName("validation_blankFullName_producesConstraintViolation")
+    void validation_blankFullName_producesConstraintViolation() {
+        mockUpdateRequest.setFullName("");
+
+        Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(mockUpdateRequest);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Tên không được để trống"));
     }
 }
