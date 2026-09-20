@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -65,18 +66,20 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
                 .orElseThrow(() -> new AppException(ErrorCode.ROUTING_RULE_NOT_FOUND));
 
         Department department = routingRule.getDepartment();
-        if (request.departmentId() != null && !request.departmentId().equals(department.getDepartmentId())) {
+        UUID currentDepartmentId = department != null ? department.getDepartmentId() : null;
+        if (request.departmentId() != null && !Objects.equals(request.departmentId(), currentDepartmentId)) {
             department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(request.departmentId())
                     .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
         }
 
         Category category = routingRule.getCategory();
-        if (request.categoryId() != null && !request.categoryId().equals(category.getCategoryId())) {
+        UUID currentCategoryId = category != null ? category.getCategoryId() : null;
+        if (request.categoryId() != null && !Objects.equals(request.categoryId(), currentCategoryId)) {
             category = categoryRepository.findById(request.categoryId())
                     .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
         }
 
-        UUID targetCategoryId = category.getCategoryId();
+        UUID targetCategoryId = category != null ? category.getCategoryId() : null;
         String targetProvince = request.province() != null ? request.province() : routingRule.getProvince();
         String targetWard = request.ward() != null ? request.ward() : routingRule.getWard();
 
