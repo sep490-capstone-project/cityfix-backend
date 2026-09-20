@@ -23,8 +23,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                ST_X(t.location) AS longitude,
                ST_Distance(t.location::geography, ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography) AS distanceMeters,
                t.created_at AS createdAt
-        FROM tickets t
-        LEFT JOIN categories c ON t.category_id = c.category_id
+        FROM ticket t
+        LEFT JOIN category c ON t.category_id = c.category_id
         WHERE t.category_id = :categoryId
           AND t.status IN ('INITIATED', 'ASSIGNED', 'IN_PROGRESS')
           AND ST_DWithin(
