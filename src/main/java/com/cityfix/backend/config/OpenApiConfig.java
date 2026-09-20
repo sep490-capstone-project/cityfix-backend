@@ -48,6 +48,9 @@ public class OpenApiConfig {
     private List<Server> buildServers() {
         return List.of(
                 new Server()
+                        .url("/")
+                        .description("Current Server URL"),
+                new Server()
                         .url("http://localhost:" + serverPort)
                         .description("Local Development Server")
         );
