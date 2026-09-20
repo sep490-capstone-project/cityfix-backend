@@ -201,4 +201,69 @@ class UserServiceImplTest {
 
         verify(tokenService, times(1)).blacklistToken(token);
     }
+
+    @Test
+    @DisplayName("getMyProfile_authenticatedUser_returnsProfileResponse")
+    void getMyProfile_authenticatedUser_returnsProfileResponse() {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        com.cityfix.backend.model.dto.response.UserProfileResponse profileResponse =
+                com.cityfix.backend.model.dto.response.UserProfileResponse.builder()
+                        .fullName("Nguyen Van A")
+                        .phoneNumber("0912345678")
+                        .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
+        when(userMapper.toUserProfileResponse(mockUser)).thenReturn(profileResponse);
+
+        com.cityfix.backend.model.dto.response.UserProfileResponse result = userService.getMyProfile();
+
+        assertThat(result).isNotNull();
+        assertThat(result.getFullName()).isEqualTo("Nguyen Van A");
+        assertThat(result.getPhoneNumber()).isEqualTo("0912345678");
+
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("updateMyProfile_validRequest_updatesAndReturnsProfile")
+    void updateMyProfile_validRequest_updatesAndReturnsProfile() {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
+                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
+                        .fullName("Nguyen Van B")
+                        .phoneNumber("0987654321")
+                        .address("123 Le Loi")
+                        .province("TP.HCM")
+                        .ward("Phuong 1")
+                        .build();
+
+        com.cityfix.backend.model.dto.response.UserProfileResponse updatedResponse =
+                com.cityfix.backend.model.dto.response.UserProfileResponse.builder()
+                        .fullName("Nguyen Van B")
+                        .phoneNumber("0987654321")
+                        .address("123 Le Loi")
+                        .province("TP.HCM")
+                        .ward("Phuong 1")
+                        .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByPhoneNumber("0987654321")).thenReturn(Optional.empty());
+        when(userMapper.toUserProfileResponse(mockUser)).thenReturn(updatedResponse);
+
+        com.cityfix.backend.model.dto.response.UserProfileResponse result = userService.updateMyProfile(updateRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getFullName()).isEqualTo("Nguyen Van B");
+
+        verify(userMapper, times(1)).updateUserFromRequest(updateRequest, mockUser);
+        verify(userRepository, times(1)).save(mockUser);
+
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
 }
