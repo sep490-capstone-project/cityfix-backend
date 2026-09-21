@@ -1,5 +1,7 @@
 package com.cityfix.backend.service.impl;
 
+import com.cityfix.backend.exception.AppException;
+import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.model.dto.request.CategoryRequest;
 import com.cityfix.backend.model.dto.response.CategoryResponse;
 import com.cityfix.backend.model.entity.Category;
@@ -21,8 +23,7 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public List<CategoryResponse> getAllCategories() {
-        return categoryRepository.findAll().stream()
-                .filter(category -> !category.isDeleted())
+        return categoryRepository.findAllByIsDeletedFalse().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -41,12 +42,8 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public CategoryResponse updateCategory(UUID id, CategoryRequest request) {
-        Category category = categoryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Category not found"));
-        
-        if (category.isDeleted()) {
-            throw new RuntimeException("Category is deleted");
-        }
+        Category category = categoryRepository.findByIdAndIsDeletedFalse(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
 
         category.setName(request.getName());
         category.setDescription(request.getDescription());
@@ -59,8 +56,8 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public void deleteCategory(UUID id) {
-        Category category = categoryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Category not found"));
+        Category category = categoryRepository.findByIdAndIsDeletedFalse(id)
+                .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
         
         category.setDeleted(true);
         category.setDeletedAt(LocalDateTime.now());
