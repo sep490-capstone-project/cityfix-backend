@@ -102,7 +102,13 @@ public class AiServiceImpl implements AiService {
                 // Clean up possible markdown code blocks
                 textResponse = textResponse.replace("```json", "").replace("```", "").trim();
 
-                return objectMapper.readValue(textResponse, AiAnalyzeResponse.class);
+                AiAnalyzeResponse aiResponse = objectMapper.readValue(textResponse, AiAnalyzeResponse.class);
+                
+                if (aiResponse.getCategoryId() != null) {
+                    categoryRepository.findById(aiResponse.getCategoryId())
+                            .ifPresent(category -> aiResponse.setCategoryName(category.getName()));
+                }
+                return aiResponse;
             } else {
                 throw new RuntimeException("AI API failed with status: " + response.getStatusCode());
             }
@@ -110,8 +116,7 @@ public class AiServiceImpl implements AiService {
         } catch (org.springframework.web.client.HttpClientErrorException e) {
             log.error("Gemini API Error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
             log.warn("Falling back to mock AI response due to API limitations.");
-            // Return a default mock response matching the requested JSON schema
-            return new AiAnalyzeResponse(null, com.cityfix.backend.model.enums.SeverityLevel.MEDIUM, com.cityfix.backend.model.enums.DangerLevel.CAUTION, new java.math.BigDecimal("85.5"), "Mock description due to API limit.");
+            return new AiAnalyzeResponse(null, null, com.cityfix.backend.model.enums.SeverityLevel.MEDIUM, com.cityfix.backend.model.enums.DangerLevel.CAUTION, new java.math.BigDecimal("85.5"), "Mock description due to API limit.");
         } catch (Exception e) {
             log.error("Failed to analyze image with AI: {}", e.getMessage(), e);
             throw new RuntimeException("AI Error: " + e.getMessage());

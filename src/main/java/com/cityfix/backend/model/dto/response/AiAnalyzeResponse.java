@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AiAnalyzeResponse {
     private java.util.UUID categoryId;
+    private String categoryName;
     private com.cityfix.backend.model.enums.SeverityLevel severity;
     private com.cityfix.backend.model.enums.DangerLevel dangerLevel;
     private java.math.BigDecimal confidenceScore;
