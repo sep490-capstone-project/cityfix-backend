@@ -102,7 +102,13 @@ public class AiServiceImpl implements AiService {
                 // Clean up possible markdown code blocks
                 textResponse = textResponse.replace("```json", "").replace("```", "").trim();
 
-                return objectMapper.readValue(textResponse, AiAnalyzeResponse.class);
+                AiAnalyzeResponse aiResponse = objectMapper.readValue(textResponse, AiAnalyzeResponse.class);
+                
+                if (aiResponse.getCategoryId() != null) {
+                    categoryRepository.findById(aiResponse.getCategoryId())
+                            .ifPresent(category -> aiResponse.setCategoryName(category.getName()));
+                }
+                return aiResponse;
             } else {
                 throw new RuntimeException("AI API failed with status: " + response.getStatusCode());
             }
@@ -111,7 +117,7 @@ public class AiServiceImpl implements AiService {
             log.error("Gemini API Error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
             log.warn("Falling back to mock AI response due to API limitations or server errors.");
             // Return a default mock response matching the requested JSON schema
-            return new AiAnalyzeResponse(null, null, null, null, "Hệ thống AI hiện đang quá tải, vui lòng thử lại sau.", false);
+            return new AiAnalyzeResponse(null, null, null, null, null, "Hệ thống AI hiện đang quá tải, vui lòng thử lại sau.", false);
         } catch (Exception e) {
             log.error("Failed to analyze media with AI: {}", e.getMessage(), e);
             throw new RuntimeException("AI Error: " + e.getMessage());
