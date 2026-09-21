@@ -12,7 +12,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Category {
+public class Category extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -23,6 +23,9 @@ public class Category {
     private String name;
 
     private String description;
+
+    @Column(name = "sla")
+    private Integer sla;
 
     @Builder.Default
     @Column(name = "is_active", nullable = false)
