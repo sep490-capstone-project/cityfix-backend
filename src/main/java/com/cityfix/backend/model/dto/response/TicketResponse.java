@@ -13,6 +13,7 @@ public class TicketResponse {
     private String description;
     private String imageUrl;
     private java.util.UUID categoryId;
+    private String categoryName;
     private com.cityfix.backend.model.enums.SeverityLevel severity;
     private com.cityfix.backend.model.enums.DangerLevel dangerLevel;
     private com.cityfix.backend.model.enums.LocationMethod locationMethod;

@@ -19,6 +19,7 @@ public interface TicketMapper {
     @Mapping(target = "id", source = "ticketId")
     @Mapping(target = "createdBy", source = "user.userId")
     @Mapping(target = "categoryId", source = "category.categoryId")
+    @Mapping(target = "categoryName", source = "category.name")
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
     @Mapping(target = "imageUrl", ignore = true)
