@@ -57,10 +57,10 @@ public class TicketController {
 
     @PostMapping("/analyze")
     // @PreAuthorize("hasAuthority('RESIDENT')") // Tạm tắt JWT
-    public ResponseEntity<BaseResponse<AiAnalyzeResponse>> analyzeImage(
+    public ResponseEntity<BaseResponse<AiAnalyzeResponse>> analyzeMedia(
             @Valid @RequestBody AiAnalyzeRequest request) {
         
-        AiAnalyzeResponse response = aiService.analyzeImage(request.getImageUrl());
+        AiAnalyzeResponse response = aiService.analyzeMedia(request.getMediaUrl());
         return ResponseEntity.ok(BaseResponse.success("Success", response));
     }
 

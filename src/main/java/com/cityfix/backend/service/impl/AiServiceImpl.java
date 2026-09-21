@@ -39,22 +39,22 @@ public class AiServiceImpl implements AiService {
     private final CategoryRepository categoryRepository;
 
     @Override
-    public AiAnalyzeResponse analyzeImage(String imageUrl) {
+    public AiAnalyzeResponse analyzeMedia(String mediaUrl) {
         try {
-            // 1. Download image and encode to Base64
-            URL url = new URL(imageUrl);
+            // 1. Download media and encode to Base64
+            URL url = new URL(mediaUrl);
             java.net.HttpURLConnection connection = (java.net.HttpURLConnection) url.openConnection();
             connection.setRequestProperty("User-Agent", "Mozilla/5.0");
             InputStream is = connection.getInputStream();
-            byte[] imageBytes = is.readAllBytes();
-            String base64Image = Base64.getEncoder().encodeToString(imageBytes).replaceAll("\\s+", "");
+            byte[] mediaBytes = is.readAllBytes();
+            String base64Media = Base64.getEncoder().encodeToString(mediaBytes).replaceAll("\\s+", "");
             
             // Get correct mime type
             String mimeType = connection.getContentType();
-            if (mimeType == null || !mimeType.startsWith("image/")) {
-                mimeType = "image/jpeg"; // fallback
+            if (mimeType == null) {
+                mimeType = "application/octet-stream"; // fallback
             }
-            log.info("Downloaded image: {} bytes, mimeType: {}", imageBytes.length, mimeType);
+            log.info("Downloaded media: {} bytes, mimeType: {}", mediaBytes.length, mimeType);
 
             // 2. Fetch categories
             List<Category> categories = categoryRepository.findAll();
@@ -63,22 +63,22 @@ public class AiServiceImpl implements AiService {
                 .collect(Collectors.joining(", "));
 
             // 3. Prepare Gemini API Request
-            String geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=" + apiKey;
+            String geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + apiKey;
 
-            String prompt = "Analyze this image of an infrastructure issue. Return ONLY a valid JSON object with no markdown formatting. The JSON must contain exactly 5 fields: 'categoryId' (choose the closest matching UUID from this list: " + categoriesStr + "), 'severity' (choose from LOW, MEDIUM, HIGH, CRITICAL), 'dangerLevel' (choose from SAFE, CAUTION, DANGEROUS, CRITICAL), 'confidenceScore' (a decimal between 0 and 100), and 'description' (a brief explanation of the issue).";
+            String prompt = "Phân tích hình ảnh hoặc video này để xác định xem nó có phải là một sự cố cơ sở hạ tầng (ví dụ: đường hỏng, rò rỉ nước, v.v.) hay không. Nếu KHÔNG phải là sự cố cơ sở hạ tầng (hình ảnh/video không liên quan), hãy trả về 'isValidIssue' là false, 'description' là lời giải thích lý do từ chối bằng TIẾNG VIỆT, và các trường khác để null. Nếu ĐÚNG là sự cố cơ sở hạ tầng, trả về 'isValidIssue' là true và cung cấp các thông tin sau. Chỉ trả về một đối tượng JSON hợp lệ không có định dạng markdown, chứa chính xác 6 trường: 'isValidIssue' (true/false), 'categoryId' (chọn UUID phù hợp nhất từ danh sách này: " + categoriesStr + "), 'severity' (chọn từ LOW, MEDIUM, HIGH, CRITICAL), 'dangerLevel' (chọn từ SAFE, CAUTION, DANGEROUS, CRITICAL), 'confidenceScore' (số thập phân từ 0 đến 100), và 'description' (mô tả ngắn gọn về sự cố bằng TIẾNG VIỆT).";
 
             Map<String, Object> textPart = new HashMap<>();
             textPart.put("text", prompt);
 
             Map<String, Object> inlineData = new HashMap<>();
             inlineData.put("mimeType", mimeType);
-            inlineData.put("data", base64Image);
+            inlineData.put("data", base64Media);
 
-            Map<String, Object> imagePart = new HashMap<>();
-            imagePart.put("inlineData", inlineData);
+            Map<String, Object> mediaPart = new HashMap<>();
+            mediaPart.put("inlineData", inlineData);
 
             Map<String, Object> content = new HashMap<>();
-            content.put("parts", List.of(imagePart, textPart)); // Image first, then text
+            content.put("parts", List.of(mediaPart, textPart)); // Media first, then text
 
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("contents", List.of(content));
@@ -107,13 +107,13 @@ public class AiServiceImpl implements AiService {
                 throw new RuntimeException("AI API failed with status: " + response.getStatusCode());
             }
 
-        } catch (org.springframework.web.client.HttpClientErrorException e) {
+        } catch (org.springframework.web.client.HttpStatusCodeException e) {
             log.error("Gemini API Error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
-            log.warn("Falling back to mock AI response due to API limitations.");
+            log.warn("Falling back to mock AI response due to API limitations or server errors.");
             // Return a default mock response matching the requested JSON schema
-            return new AiAnalyzeResponse(null, com.cityfix.backend.model.enums.SeverityLevel.MEDIUM, com.cityfix.backend.model.enums.DangerLevel.CAUTION, new java.math.BigDecimal("85.5"), "Mock description due to API limit.");
+            return new AiAnalyzeResponse(null, null, null, null, "Hệ thống AI hiện đang quá tải, vui lòng thử lại sau.", false);
         } catch (Exception e) {
-            log.error("Failed to analyze image with AI: {}", e.getMessage(), e);
+            log.error("Failed to analyze media with AI: {}", e.getMessage(), e);
             throw new RuntimeException("AI Error: " + e.getMessage());
         }
     }

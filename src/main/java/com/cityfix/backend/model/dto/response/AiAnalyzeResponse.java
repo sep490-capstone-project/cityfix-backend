@@ -15,4 +15,5 @@ public class AiAnalyzeResponse {
     private com.cityfix.backend.model.enums.DangerLevel dangerLevel;
     private java.math.BigDecimal confidenceScore;
     private String description;
+    private Boolean isValidIssue;
 }
