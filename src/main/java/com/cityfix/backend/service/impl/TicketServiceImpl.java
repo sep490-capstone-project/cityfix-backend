@@ -15,12 +15,10 @@ import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.entity.ReportImage;
 import com.cityfix.backend.model.entity.TicketVote;
-import com.cityfix.backend.model.entity.AiAnalysis;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.CategoryRepository;
 import com.cityfix.backend.repository.ReportImageRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
-import com.cityfix.backend.repository.AiAnalysisRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.UserRepository;
 import com.cityfix.backend.service.TicketService;
@@ -50,7 +48,6 @@ public class TicketServiceImpl implements TicketService {
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
     private final ReportImageRepository reportImageRepository;
-    private final AiAnalysisRepository aiAnalysisRepository;
     private final Cloudinary cloudinary;
     private final ImageMapper imageMapper;
     private final TicketMapper ticketMapper;
@@ -124,23 +121,7 @@ public class TicketServiceImpl implements TicketService {
             reportImageRepository.save(image);
         }
 
-        if (request.getAiConfidenceScore() != null) {
-            Category aiCategory = null;
-            if (request.getAiCategoryId() != null) {
-                aiCategory = categoryRepository.findById(request.getAiCategoryId()).orElse(null);
-            }
 
-            AiAnalysis analysis = AiAnalysis.builder()
-                    .ticket(ticket)
-                    .category(aiCategory)
-                    .severity(request.getAiSeverity())
-                    .dangerLevel(request.getAiDangerLevel())
-                    .description(request.getAiDescription())
-                    .confidenceScore(request.getAiConfidenceScore())
-                    .isAcceptedByHuman(request.getIsAiAccepted() != null ? request.getIsAiAccepted() : false)
-                    .build();
-            aiAnalysisRepository.save(analysis);
-        }
 
         TicketResponse response = ticketMapper.toTicketResponse(ticket);
         if (request.getImageUrl() != null && !request.getImageUrl().isEmpty()) {

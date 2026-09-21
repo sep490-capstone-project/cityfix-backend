@@ -13,4 +13,6 @@ public interface UserService {
     void logout(String accessToken);
     void verifyEmail(VerifyOtpRequest request);
     void resendOtp(ResendOtpRequest request);
+    com.cityfix.backend.model.dto.response.UserProfileResponse getMyProfile();
+    com.cityfix.backend.model.dto.response.UserProfileResponse updateMyProfile(com.cityfix.backend.model.dto.request.UpdateProfileRequest request);
 }

@@ -28,6 +28,11 @@ public interface UserMapper {
     @Mapping(target = "nextStep", ignore = true)
     UserRegisterResponse toCustomerRegisterResponse(User user);
 
+    com.cityfix.backend.model.dto.response.UserProfileResponse toUserProfileResponse(User user);
+
+    @org.mapstruct.BeanMapping(nullValuePropertyMappingStrategy = org.mapstruct.NullValuePropertyMappingStrategy.IGNORE)
+    void updateUserFromRequest(com.cityfix.backend.model.dto.request.UpdateProfileRequest request, @org.mapstruct.MappingTarget User user);
+
     @Named("toAccountStatus")
     default AccountStatus toAccountStatus(User user) {
         if (user == null) return AccountStatus.INACTIVE;

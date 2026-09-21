@@ -144,4 +144,51 @@ public class UserServiceImpl implements UserService {
     public void logout(String accessToken) {
         tokenService.blacklistToken(accessToken);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public com.cityfix.backend.model.dto.response.UserProfileResponse getMyProfile() {
+        String email = getCurrentUserEmail();
+        User user = userRepository.findByEmailAndIsDeletedFalse(email)
+                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+        return userMapper.toUserProfileResponse(user);
+    }
+
+    @Override
+    @Transactional
+    public com.cityfix.backend.model.dto.response.UserProfileResponse updateMyProfile(com.cityfix.backend.model.dto.request.UpdateProfileRequest request) {
+        String email = getCurrentUserEmail();
+        User user = userRepository.findByEmailAndIsDeletedFalse(email)
+                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+
+        if (request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank() 
+                && !request.getPhoneNumber().equals(user.getPhoneNumber())) {
+            userRepository.findByPhoneNumber(request.getPhoneNumber()).ifPresent(existingUser -> {
+                if (!existingUser.getUserId().equals(user.getUserId())) {
+                    throw new AppException(ErrorCode.PHONE_ALREADY_EXISTS);
+                }
+            });
+        }
+
+        userMapper.updateUserFromRequest(request, user);
+        userRepository.save(user);
+        return userMapper.toUserProfileResponse(user);
+    }
+
+    private String getCurrentUserEmail() {
+        org.springframework.security.core.Authentication authentication =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new AppException(ErrorCode.ACCOUNT_NOT_FOUND);
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof User user) {
+            return user.getEmail();
+        } else if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
+            return userDetails.getUsername();
+        } else if (principal instanceof String str) {
+            return str;
+        }
+        return authentication.getName();
+    }
 }
