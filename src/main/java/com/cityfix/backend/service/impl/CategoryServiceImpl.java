@@ -30,12 +30,8 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public CategoryResponse createCategory(CategoryRequest request) {
-        categoryRepository.findByName(request.getName()).ifPresent(existing -> {
-            if (existing.isDeleted()) {
-                throw new AppException(ErrorCode.VALIDATION_ERROR, "Tên danh mục đã tồn tại nhưng đã bị xóa");
-            } else {
-                throw new AppException(ErrorCode.VALIDATION_ERROR, "Tên danh mục đã tồn tại");
-            }
+        categoryRepository.findByNameAndIsDeletedFalse(request.getName()).ifPresent(existing -> {
+            throw new AppException(ErrorCode.VALIDATION_ERROR, "Tên danh mục đã tồn tại");
         });
 
         Category category = Category.builder()
@@ -53,13 +49,9 @@ public class CategoryServiceImpl implements CategoryService {
         Category category = categoryRepository.findByCategoryIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
 
-        categoryRepository.findByName(request.getName()).ifPresent(existing -> {
+        categoryRepository.findByNameAndIsDeletedFalse(request.getName()).ifPresent(existing -> {
             if (!existing.getCategoryId().equals(id)) {
-                if (existing.isDeleted()) {
-                    throw new AppException(ErrorCode.VALIDATION_ERROR, "Tên danh mục đã tồn tại nhưng đã bị xóa");
-                } else {
-                    throw new AppException(ErrorCode.VALIDATION_ERROR, "Tên danh mục đã tồn tại");
-                }
+                throw new AppException(ErrorCode.VALIDATION_ERROR, "Tên danh mục đã tồn tại");
             }
         });
 
