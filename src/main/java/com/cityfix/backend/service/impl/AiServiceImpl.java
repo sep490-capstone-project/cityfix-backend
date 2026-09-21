@@ -111,7 +111,7 @@ public class AiServiceImpl implements AiService {
             log.error("Gemini API Error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
             log.warn("Falling back to mock AI response due to API limitations or server errors.");
             // Return a default mock response matching the requested JSON schema
-            return new AiAnalyzeResponse(null, com.cityfix.backend.model.enums.SeverityLevel.MEDIUM, com.cityfix.backend.model.enums.DangerLevel.CAUTION, new java.math.BigDecimal("85.5"), "Hệ thống AI hiện đang quá tải, vui lòng thử lại sau.", true);
+            return new AiAnalyzeResponse(null, null, null, null, "Hệ thống AI hiện đang quá tải, vui lòng thử lại sau.", false);
         } catch (Exception e) {
             log.error("Failed to analyze media with AI: {}", e.getMessage(), e);
             throw new RuntimeException("AI Error: " + e.getMessage());
