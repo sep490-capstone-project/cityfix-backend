@@ -24,7 +24,7 @@ public class AdminCategoryController {
     private final CategoryService categoryService;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Lấy danh sách danh mục", description = "Lấy toàn bộ danh sách danh mục sự cố (không bao gồm đã bị xóa)")
     public ResponseEntity<BaseResponse<List<CategoryResponse>>> getAllCategories() {
         List<CategoryResponse> response = categoryService.getAllCategories();
@@ -32,7 +32,7 @@ public class AdminCategoryController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Tạo mới danh mục", description = "Thêm danh mục mới, bao gồm cấu hình thời gian xử lý tiêu chuẩn (SLA - giờ)")
     public ResponseEntity<BaseResponse<CategoryResponse>> createCategory(
             @Valid @RequestBody CategoryRequest request) {
@@ -41,7 +41,7 @@ public class AdminCategoryController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Cập nhật danh mục", description = "Chỉnh sửa thông tin danh mục và cấu hình SLA")
     public ResponseEntity<BaseResponse<CategoryResponse>> updateCategory(
             @PathVariable UUID id,
@@ -51,7 +51,7 @@ public class AdminCategoryController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Xóa danh mục", description = "Xóa mềm danh mục (cập nhật deletedAt)")
     public ResponseEntity<BaseResponse<Void>> deleteCategory(@PathVariable UUID id) {
         categoryService.deleteCategory(id);

@@ -97,7 +97,7 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     public AdminUserResponse updateUser(UUID id, AdminUserRequest request) {
-        User user = userRepository.findByIdAndIsDeletedFalse(id)
+        User user = userRepository.findByUserIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
 
         if ("ADMIN".equalsIgnoreCase(user.getRole().getRoleName())) {
@@ -137,7 +137,11 @@ public class AdminUserServiceImpl implements AdminUserService {
                     .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
         }
 
-        user.setEmail(request.getEmail());
+        if (!user.getEmail().equals(request.getEmail())) {
+            user.setEmail(request.getEmail());
+            user.setEmailVerified(false);
+        }
+
         user.setFullName(request.getFullName());
         user.setPhoneNumber(request.getPhoneNumber());
         user.setProvince(request.getProvince());
@@ -150,7 +154,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             user.setStatus(request.getStatus());
         }
 
-        if (request.getPassword() != null && !request.getPassword().isEmpty()) {
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         }
 
@@ -166,7 +170,7 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     public void deleteUser(UUID id) {
-        User user = userRepository.findByIdAndIsDeletedFalse(id)
+        User user = userRepository.findByUserIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
 
         if ("ADMIN".equalsIgnoreCase(user.getRole().getRoleName())) {

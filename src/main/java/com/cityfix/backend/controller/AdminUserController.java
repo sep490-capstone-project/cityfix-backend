@@ -24,7 +24,7 @@ public class AdminUserController {
     private final AdminUserService adminUserService;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Lấy danh sách người dùng", description = "Lấy toàn bộ danh sách người dùng (không bao gồm đã bị xóa)")
     public ResponseEntity<BaseResponse<List<AdminUserResponse>>> getAllUsers() {
         List<AdminUserResponse> response = adminUserService.getAllUsers();
@@ -32,7 +32,7 @@ public class AdminUserController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Tạo mới người dùng", description = "Thêm người dùng mới, gán Role")
     public ResponseEntity<BaseResponse<AdminUserResponse>> createUser(
             @Valid @RequestBody AdminUserRequest request) {
@@ -41,7 +41,7 @@ public class AdminUserController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Cập nhật người dùng", description = "Chỉnh sửa thông tin, Role, trạng thái tài khoản. Cờ isDispatcher chỉ cập nhật được cho role STAFF")
     public ResponseEntity<BaseResponse<AdminUserResponse>> updateUser(
             @PathVariable UUID id,
@@ -51,7 +51,7 @@ public class AdminUserController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Xóa người dùng", description = "Xóa mềm người dùng (cập nhật deletedAt)")
     public ResponseEntity<BaseResponse<Void>> deleteUser(@PathVariable UUID id) {
         adminUserService.deleteUser(id);

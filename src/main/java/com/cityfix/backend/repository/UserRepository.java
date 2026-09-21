@@ -13,7 +13,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     User findUserByEmailAndIsDeletedFalse(String email);
     Optional<User> findByEmail(String email);
     Optional<User> findByEmailAndIsDeletedFalse(String email);
-    Optional<User> findByIdAndIsDeletedFalse(UUID id);
+    Optional<User> findByUserIdAndIsDeletedFalse(UUID id);
     List<User> findAllByIsDeletedFalse();
     Optional<User> findByPhoneNumber(String phoneNumber);
 }

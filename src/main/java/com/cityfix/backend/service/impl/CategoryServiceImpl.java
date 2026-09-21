@@ -50,7 +50,7 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public CategoryResponse updateCategory(UUID id, CategoryRequest request) {
-        Category category = categoryRepository.findByIdAndIsDeletedFalse(id)
+        Category category = categoryRepository.findByCategoryIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
 
         categoryRepository.findByName(request.getName()).ifPresent(existing -> {
@@ -74,7 +74,7 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public void deleteCategory(UUID id) {
-        Category category = categoryRepository.findByIdAndIsDeletedFalse(id)
+        Category category = categoryRepository.findByCategoryIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
         
         category.setDeleted(true);
