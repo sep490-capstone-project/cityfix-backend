@@ -22,7 +22,7 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity
                 .status(code.getStatus())
-                .body(BaseResponse.error(code.name(), code.getMessage()));
+                .body(BaseResponse.error(code.name(), ex.getMessage() != null ? ex.getMessage() : code.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

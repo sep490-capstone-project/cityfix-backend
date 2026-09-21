@@ -46,23 +46,29 @@ public class AdminUserServiceImpl implements AdminUserService {
             throw new AppException(ErrorCode.VALIDATION_ERROR, "Cannot create user with ADMIN role through this API");
         }
 
-        userRepository.findByEmailAndIsDeletedFalse(request.getEmail()).ifPresent(existing -> {
-            throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
+        userRepository.findByEmail(request.getEmail()).ifPresent(existing -> {
+            if (existing.isDeleted()) {
+                throw new AppException(ErrorCode.ACCOUNT_REACTIVATION_REQUIRED);
+            } else {
+                throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
+            }
         });
 
         userRepository.findByPhoneNumber(request.getPhoneNumber()).ifPresent(existing -> {
-            if (!existing.isDeleted()) {
+            if (existing.isDeleted()) {
+                throw new AppException(ErrorCode.ACCOUNT_REACTIVATION_REQUIRED);
+            } else {
                 throw new AppException(ErrorCode.PHONE_ALREADY_EXISTS);
             }
         });
 
         Department department = null;
         if (request.getDepartmentId() != null) {
-            department = departmentRepository.findById(request.getDepartmentId())
+            department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(request.getDepartmentId())
                     .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
         }
 
-        if (request.getPassword() == null || request.getPassword().isEmpty()) {
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new AppException(ErrorCode.VALIDATION_ERROR, "Password is required for creating a new user");
         }
 
@@ -105,21 +111,29 @@ public class AdminUserServiceImpl implements AdminUserService {
             throw new AppException(ErrorCode.VALIDATION_ERROR, "Cannot change role to ADMIN");
         }
         
-        userRepository.findByEmailAndIsDeletedFalse(request.getEmail()).ifPresent(existing -> {
+        userRepository.findByEmail(request.getEmail()).ifPresent(existing -> {
             if (!existing.getUserId().equals(id)) {
-                throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
+                if (existing.isDeleted()) {
+                    throw new AppException(ErrorCode.ACCOUNT_REACTIVATION_REQUIRED);
+                } else {
+                    throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
+                }
             }
         });
 
         userRepository.findByPhoneNumber(request.getPhoneNumber()).ifPresent(existing -> {
-            if (!existing.isDeleted() && !existing.getUserId().equals(id)) {
-                throw new AppException(ErrorCode.PHONE_ALREADY_EXISTS);
+            if (!existing.getUserId().equals(id)) {
+                if (existing.isDeleted()) {
+                    throw new AppException(ErrorCode.ACCOUNT_REACTIVATION_REQUIRED);
+                } else {
+                    throw new AppException(ErrorCode.PHONE_ALREADY_EXISTS);
+                }
             }
         });
 
         Department department = null;
         if (request.getDepartmentId() != null) {
-            department = departmentRepository.findById(request.getDepartmentId())
+            department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(request.getDepartmentId())
                     .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
         }
 
