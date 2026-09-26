@@ -434,4 +434,68 @@ class TicketServiceTest {
 
         verify(ticketRepository, never()).findDuplicateTickets(any(), any(), any());
     }
+
+    // ==========================================
+    // 4. Admin Ticket Management Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("getPendingReviewTickets_returnsPageOfTickets")
+    void getPendingReviewTickets_returnsPageOfTickets() {
+        org.springframework.data.domain.Page<Ticket> page = new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
+        when(ticketRepository.findByStatus(eq(TicketStatus.PENDING_REVIEW), any())).thenReturn(page);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getPendingReviewTickets(org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).hasSize(1);
+        verify(ticketRepository, times(1)).findByStatus(eq(TicketStatus.PENDING_REVIEW), any());
+    }
+
+    @Test
+    @DisplayName("reviewTicket_validData_returnsUpdatedTicket")
+    void reviewTicket_validData_returnsUpdatedTicket() {
+        mockTicket.setStatus(TicketStatus.PENDING_REVIEW);
+        
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
+        request.setDepartmentIds(List.of(UUID.randomUUID()));
+        request.setIsLifeThreatening(true);
+        request.setReviewNote("Khẩn cấp");
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        // mock departmentRepository
+        com.cityfix.backend.model.entity.Department mockDept = new com.cityfix.backend.model.entity.Department();
+        com.cityfix.backend.repository.DepartmentRepository deptRepo = mock(com.cityfix.backend.repository.DepartmentRepository.class);
+        when(deptRepo.findById(any())).thenReturn(Optional.of(mockDept));
+        
+        // Use reflection to inject departmentRepository
+        org.springframework.test.util.ReflectionTestUtils.setField(ticketService, "departmentRepository", deptRepo);
+
+        TicketResponse result = ticketService.reviewTicket(mockTicket.getTicketId(), request);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository, times(1)).save(mockTicket);
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(mockTicket.getNeedsManualReview()).isFalse();
+        assertThat(mockTicket.getReviewNote()).isEqualTo("Khẩn cấp");
+        assertThat(mockTicket.getAssignments()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_notPendingReview_throwsException")
+    void reviewTicket_notPendingReview_throwsException() {
+        mockTicket.setStatus(TicketStatus.OPEN); // Not PENDING_REVIEW
+        
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.reviewTicket(mockTicket.getTicketId(), request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TICKET_NOT_PENDING_REVIEW);
+    }
 }

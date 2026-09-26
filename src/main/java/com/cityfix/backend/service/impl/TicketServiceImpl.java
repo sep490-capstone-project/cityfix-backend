@@ -48,9 +48,13 @@ public class TicketServiceImpl implements TicketService {
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
     private final ReportImageRepository reportImageRepository;
+    private final com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
+    private final com.cityfix.backend.repository.DepartmentRepository departmentRepository;
+    private final com.cityfix.backend.repository.TicketAssignmentRepository ticketAssignmentRepository;
     private final Cloudinary cloudinary;
     private final ImageMapper imageMapper;
     private final TicketMapper ticketMapper;
+    private final com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
 
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
@@ -97,6 +101,10 @@ public class TicketServiceImpl implements TicketService {
 
         Point location = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
 
+        boolean isDangerous = (request.getDangerLevel() == com.cityfix.backend.model.enums.DangerLevel.DANGEROUS || request.getDangerLevel() == com.cityfix.backend.model.enums.DangerLevel.CRITICAL);
+        boolean isAiUncertain = (request.getConfidenceScore() != null && request.getConfidenceScore() < 70.0);
+        boolean needsReview = isDangerous || isAiUncertain;
+
         Ticket ticket = Ticket.builder()
                 .description(request.getDescription())
                 .category(category)
@@ -104,9 +112,9 @@ public class TicketServiceImpl implements TicketService {
                 .dangerLevel(request.getDangerLevel())
                 .locationMethod(request.getLocationMethod())
                 .address(request.getAddress())
-                .status(TicketStatus.INITIATED)
+                .status(needsReview ? TicketStatus.PENDING_REVIEW : TicketStatus.INITIATED)
                 .isLifeThreatening(false)
-                .needsManualReview(false)
+                .needsManualReview(needsReview)
                 .location(location)
                 .user(user)
                 .build();
@@ -236,6 +244,85 @@ public class TicketServiceImpl implements TicketService {
         }
         List<DuplicateTicketProjection> projections = ticketRepository.findDuplicateTickets(latitude, longitude, categoryId);
         return ticketMapper.toDuplicateTicketResponseList(projections);
+    }
+    
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<TicketResponse> getPendingReviewTickets(org.springframework.data.domain.Pageable pageable) {
+        org.springframework.data.domain.Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.PENDING_REVIEW, pageable);
+        return tickets.map(ticketMapper::toTicketResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.cityfix.backend.model.dto.response.DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+        
+        UUID searchCategoryId = categoryId != null ? categoryId : (ticket.getCategory() != null ? ticket.getCategory().getCategoryId() : null);
+        if (searchCategoryId == null) {
+            return java.util.Collections.emptyList();
+        }
+        
+        List<com.cityfix.backend.model.entity.RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(searchCategoryId);
+        String address = ticket.getAddress() != null ? ticket.getAddress().toLowerCase() : "";
+        
+        List<com.cityfix.backend.model.entity.Department> suggestedDepts = rules.stream()
+                .filter(rule -> {
+                    boolean provinceMatch = rule.getProvince() == null || rule.getProvince().isBlank() || address.contains(rule.getProvince().toLowerCase());
+                    boolean wardMatch = rule.getWard() == null || rule.getWard().isBlank() || address.contains(rule.getWard().toLowerCase());
+                    return provinceMatch && wardMatch;
+                })
+                .map(com.cityfix.backend.model.entity.RoutingRule::getDepartment)
+                .distinct()
+                .toList();
+                
+        return departmentMapper.toResponseList(suggestedDepts);
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse reviewTicket(UUID ticketId, com.cityfix.backend.model.dto.request.ReviewTicketRequest request) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+                
+        if (ticket.getStatus() != TicketStatus.PENDING_REVIEW) {
+            throw new AppException(ErrorCode.TICKET_NOT_PENDING_REVIEW);
+        }
+                
+        if (request.getCategoryId() != null) {
+            Category category = categoryRepository.findById(request.getCategoryId())
+                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
+            ticket.setCategory(category);
+        }
+        
+        if (request.getIsLifeThreatening() != null) {
+            ticket.setIsLifeThreatening(request.getIsLifeThreatening());
+        }
+        
+        if (request.getReviewNote() != null) {
+            ticket.setReviewNote(request.getReviewNote());
+        }
+        
+        ticket.setStatus(TicketStatus.OPEN);
+        ticket.setNeedsManualReview(false);
+        
+        if (request.getDepartmentIds() != null && !request.getDepartmentIds().isEmpty()) {
+            for (UUID deptId : request.getDepartmentIds()) {
+                com.cityfix.backend.model.entity.Department department = departmentRepository.findById(deptId)
+                        .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
+                
+                com.cityfix.backend.model.entity.TicketAssignment assignment = com.cityfix.backend.model.entity.TicketAssignment.builder()
+                        .ticket(ticket)
+                        .department(department)
+                        .status(TicketStatus.OPEN)
+                        .build();
+                ticket.getAssignments().add(assignment);
+            }
+        }
+        
+        ticket = ticketRepository.save(ticket);
+        return ticketMapper.toTicketResponse(ticket);
     }
 }
 
