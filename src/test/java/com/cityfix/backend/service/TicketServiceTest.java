@@ -73,6 +73,18 @@ class TicketServiceTest {
     @Mock
     private Uploader uploader;
 
+    @Mock
+    private com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
+
+    @Mock
+    private com.cityfix.backend.repository.DepartmentRepository departmentRepository;
+
+    @Mock
+    private com.cityfix.backend.repository.TicketAssignmentRepository ticketAssignmentRepository;
+
+    @Mock
+    private com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
+
     @InjectMocks
     private TicketServiceImpl ticketService;
 
@@ -468,11 +480,7 @@ class TicketServiceTest {
 
         // mock departmentRepository
         com.cityfix.backend.model.entity.Department mockDept = new com.cityfix.backend.model.entity.Department();
-        com.cityfix.backend.repository.DepartmentRepository deptRepo = mock(com.cityfix.backend.repository.DepartmentRepository.class);
-        when(deptRepo.findById(any())).thenReturn(Optional.of(mockDept));
-        
-        // Use reflection to inject departmentRepository
-        org.springframework.test.util.ReflectionTestUtils.setField(ticketService, "departmentRepository", deptRepo);
+        when(departmentRepository.findById(any())).thenReturn(Optional.of(mockDept));
 
         TicketResponse result = ticketService.reviewTicket(mockTicket.getTicketId(), request);
 
