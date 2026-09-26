@@ -16,7 +16,7 @@ public class CategoryResponse {
     private String name;
     private String description;
     private Integer sla;
-    private boolean isActive;
+    private boolean active;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
