@@ -38,7 +38,6 @@ public class CategoryServiceImpl implements CategoryService {
                 .name(request.getName())
                 .description(request.getDescription())
                 .sla(request.getSla())
-                .isActive(request.isActive())
                 .build();
         Category savedCategory = categoryRepository.save(category);
         return mapToResponse(savedCategory);
@@ -58,7 +57,6 @@ public class CategoryServiceImpl implements CategoryService {
         category.setName(request.getName());
         category.setDescription(request.getDescription());
         category.setSla(request.getSla());
-        category.setActive(request.isActive());
         
         Category updatedCategory = categoryRepository.save(category);
         return mapToResponse(updatedCategory);
@@ -80,7 +78,7 @@ public class CategoryServiceImpl implements CategoryService {
                 .name(category.getName())
                 .description(category.getDescription())
                 .sla(category.getSla())
-                .isActive(category.isActive())
+                .active(category.isActive())
                 .createdAt(category.getCreatedAt())
                 .updatedAt(category.getUpdatedAt())
                 .build();

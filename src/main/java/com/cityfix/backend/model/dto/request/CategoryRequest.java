@@ -19,6 +19,4 @@ public class CategoryRequest {
     @NotNull(message = "SLA is required")
     @Min(value = 1, message = "SLA must be at least 1 hour")
     private Integer sla;
-    @Builder.Default
-    private boolean isActive = true;
 }
