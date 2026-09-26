@@ -44,7 +44,6 @@ class CategoryServiceImplTest {
                 .name("Hạ tầng")
                 .description("Vấn đề hạ tầng")
                 .sla(24)
-                .isActive(true)
                 .build();
 
         category = Category.builder()

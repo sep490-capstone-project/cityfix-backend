@@ -43,7 +43,6 @@ class AdminCategoryControllerTest {
                 .name("Hạ tầng")
                 .description("Vấn đề hạ tầng")
                 .sla(24)
-                .isActive(true)
                 .build();
 
         mockResponse = CategoryResponse.builder()
