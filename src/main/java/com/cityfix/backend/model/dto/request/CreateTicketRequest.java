@@ -36,4 +36,6 @@ public class CreateTicketRequest {
     @Range(min = -180, max = 180, message = "Kinh độ không hợp lệ (-180 đến 180)")
     private Double longitude;
 
+    private Double confidenceScore;
+
 }

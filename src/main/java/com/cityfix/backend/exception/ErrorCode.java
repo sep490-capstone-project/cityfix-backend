@@ -111,7 +111,17 @@ public enum ErrorCode {
     ROUTING_RULE_CONFLICT(
             HttpStatus.CONFLICT,
             "Quy tắc định tuyến cho khu vực và loại sự cố này đã tồn tại"
-    ),;
+    ),
+
+    TICKET_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy vé"
+    ),
+
+    TICKET_NOT_PENDING_REVIEW(
+            HttpStatus.BAD_REQUEST,
+            "Vé không ở trạng thái chờ duyệt"
+    );
 
     private final HttpStatus status;
     private final String message;
