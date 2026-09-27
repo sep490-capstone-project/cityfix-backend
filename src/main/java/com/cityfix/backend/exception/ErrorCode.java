@@ -126,6 +126,26 @@ public enum ErrorCode {
     TICKET_NOT_PENDING_REVIEW(
             HttpStatus.BAD_REQUEST,
             "Vé không ở trạng thái chờ duyệt"
+    ),
+
+    USER_NOT_IN_DEPARTMENT(
+            HttpStatus.FORBIDDEN,
+            "Người dùng không thuộc cơ quan / phòng ban nào"
+    ),
+
+    TICKET_INVALID_STATUS(
+            HttpStatus.BAD_REQUEST,
+            "Vé ở trạng thái không thể thực hiện thao tác này"
+    ),
+
+    FORBIDDEN(
+            HttpStatus.FORBIDDEN,
+            "Không có quyền thực hiện thao tác này"
+    ),
+
+    INVALID_REQUEST(
+            HttpStatus.BAD_REQUEST,
+            "Yêu cầu không hợp lệ"
     );
 
     private final HttpStatus status;
