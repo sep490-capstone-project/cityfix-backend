@@ -83,6 +83,9 @@ class TicketServiceTest {
     private com.cityfix.backend.repository.TicketAssignmentRepository ticketAssignmentRepository;
 
     @Mock
+    private com.cityfix.backend.repository.TicketHistoryRepository ticketHistoryRepository;
+
+    @Mock
     private com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
 
     @Mock
@@ -519,5 +522,95 @@ class TicketServiceTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.TICKET_NOT_PENDING_REVIEW);
+    }
+
+    // ==========================================
+    // 5. Re-route & Staff Ticket List Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("rerouteTicket_validRequest_success")
+    void rerouteTicket_validRequest_success() {
+        UUID targetDeptId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(targetDeptId)
+                        .reason("Không thuộc thẩm quyền xử lý")
+                        .build();
+
+        mockTicket.setStatus(TicketStatus.OPEN);
+
+        com.cityfix.backend.model.entity.Department targetDept = new com.cityfix.backend.model.entity.Department();
+        targetDept.setDepartmentId(targetDeptId);
+        targetDept.setName("Phòng B");
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(departmentRepository.findById(targetDeptId)).thenReturn(Optional.of(targetDept));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketResponse response = ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest);
+
+        assertThat(response).isNotNull();
+        verify(ticketAssignmentRepository, times(1)).save(any());
+        verify(ticketHistoryRepository, times(1)).save(any());
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.ASSIGNED);
+    }
+
+    @Test
+    @DisplayName("rerouteTicket_resolvedTicket_throwsTICKET_INVALID_STATUS")
+    void rerouteTicket_resolvedTicket_throwsTICKET_INVALID_STATUS() {
+        mockTicket.setStatus(TicketStatus.RESOLVED);
+
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(UUID.randomUUID())
+                        .reason("Chuyển nhầm")
+                        .build();
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TICKET_INVALID_STATUS);
+    }
+
+    @Test
+    @DisplayName("getAssignedTicketsForStaff_validStaff_success")
+    void getAssignedTicketsForStaff_validStaff_success() {
+        com.cityfix.backend.model.entity.Department dept = new com.cityfix.backend.model.entity.Department();
+        dept.setDepartmentId(UUID.randomUUID());
+        dept.setName("Phòng Giao thông");
+        mockUser.setDepartment(dept);
+
+        com.cityfix.backend.model.entity.TicketAssignment assignment =
+                com.cityfix.backend.model.entity.TicketAssignment.builder()
+                        .ticket(mockTicket)
+                        .department(dept)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
+                        .build();
+
+        org.springframework.data.domain.Page<com.cityfix.backend.model.entity.TicketAssignment> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(assignment));
+
+        when(ticketAssignmentRepository.findByDepartmentDepartmentIdAndStatusIn(any(), any(), any())).thenReturn(page);
+        when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(mockResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getAssignedTicketsForStaff(null, org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("getAssignedTicketsForStaff_userWithoutDepartment_throwsUSER_NOT_IN_DEPARTMENT")
+    void getAssignedTicketsForStaff_userWithoutDepartment_throwsUSER_NOT_IN_DEPARTMENT() {
+        mockUser.setDepartment(null);
+
+        assertThatThrownBy(() -> ticketService.getAssignedTicketsForStaff(null, org.springframework.data.domain.PageRequest.of(0, 10)))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
     }
 }

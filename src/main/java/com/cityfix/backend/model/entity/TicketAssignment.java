@@ -1,6 +1,6 @@
 package com.cityfix.backend.model.entity;
 
-import com.cityfix.backend.model.enums.TicketStatus;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -36,7 +36,7 @@ public class TicketAssignment {
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "assignment_status", nullable = false, length = 20)
-    private TicketStatus status = TicketStatus.OPEN;
+    private AssignmentStatus status = AssignmentStatus.OPEN;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

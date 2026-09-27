@@ -1,6 +1,6 @@
 package com.cityfix.backend.model.dto.response;
 
-import com.cityfix.backend.model.enums.TicketStatus;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import lombok.Builder;
 import lombok.Data;
 
@@ -15,7 +15,7 @@ public class TicketAssignmentResponse {
     private String departmentName;
     private UUID assigneeId;
     private String assigneeName;
-    private TicketStatus status;
+    private AssignmentStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

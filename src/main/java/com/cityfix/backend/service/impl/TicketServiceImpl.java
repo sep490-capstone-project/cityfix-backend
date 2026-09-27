@@ -5,16 +5,18 @@ import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.ImageMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.model.dto.request.CreateTicketRequest;
+import com.cityfix.backend.model.dto.request.RerouteTicketRequest;
+import com.cityfix.backend.model.dto.request.ReviewTicketRequest;
+import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.entity.*;
+import com.cityfix.backend.model.enums.ActionType;
+import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.model.enums.DangerLevel;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
 
-import com.cityfix.backend.model.entity.Category;
-import com.cityfix.backend.model.entity.Ticket;
-import com.cityfix.backend.model.entity.User;
-import com.cityfix.backend.model.entity.ReportImage;
-import com.cityfix.backend.model.entity.TicketVote;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.CategoryRepository;
 import com.cityfix.backend.repository.ReportImageRepository;
@@ -51,6 +53,7 @@ public class TicketServiceImpl implements TicketService {
     private final com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
     private final com.cityfix.backend.repository.DepartmentRepository departmentRepository;
     private final com.cityfix.backend.repository.TicketAssignmentRepository ticketAssignmentRepository;
+    private final com.cityfix.backend.repository.TicketHistoryRepository ticketHistoryRepository;
     private final Cloudinary cloudinary;
     private final ImageMapper imageMapper;
     private final TicketMapper ticketMapper;
@@ -122,9 +125,40 @@ public class TicketServiceImpl implements TicketService {
 
         Point location = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
 
-        boolean isDangerous = (request.getDangerLevel() == com.cityfix.backend.model.enums.DangerLevel.DANGEROUS || request.getDangerLevel() == com.cityfix.backend.model.enums.DangerLevel.CRITICAL);
+        boolean isDangerous = (request.getDangerLevel() == DangerLevel.DANGEROUS || request.getDangerLevel() == DangerLevel.CRITICAL);
         boolean isAiUncertain = (request.getConfidenceScore() != null && request.getConfidenceScore() < 70.0);
         boolean needsReview = isDangerous || isAiUncertain;
+
+        // Auto-Routing Engine lookup
+        Department assignedDepartment = null;
+        if (category != null) {
+            String userProvince = user.getProvince();
+            String userWard = user.getWard();
+
+            java.util.Optional<RoutingRule> ruleOpt =
+                    routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
+                            category.getCategoryId(), userProvince, userWard);
+
+            if (ruleOpt.isEmpty() && userProvince != null) {
+                ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
+                        category.getCategoryId(), userProvince, null);
+            }
+
+            if (ruleOpt.isEmpty()) {
+                List<RoutingRule> rules =
+                        routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(category.getCategoryId());
+                if (!rules.isEmpty()) {
+                    ruleOpt = java.util.Optional.of(rules.get(0));
+                }
+            }
+
+            if (ruleOpt.isPresent()) {
+                assignedDepartment = ruleOpt.get().getDepartment();
+            }
+        }
+
+        boolean finalNeedsReview = needsReview || (assignedDepartment == null);
+        TicketStatus initialStatus = finalNeedsReview ? TicketStatus.PENDING_REVIEW : TicketStatus.ASSIGNED;
 
         Ticket ticket = Ticket.builder()
                 .description(request.getDescription())
@@ -133,14 +167,40 @@ public class TicketServiceImpl implements TicketService {
                 .dangerLevel(request.getDangerLevel())
                 .locationMethod(request.getLocationMethod())
                 .address(request.getAddress())
-                .status(needsReview ? TicketStatus.PENDING_REVIEW : TicketStatus.INITIATED)
+                .status(initialStatus)
                 .isLifeThreatening(false)
-                .needsManualReview(needsReview)
+                .needsManualReview(finalNeedsReview)
                 .location(location)
                 .user(user)
                 .build();
 
         ticket = ticketRepository.save(ticket);
+
+        if (assignedDepartment != null) {
+            TicketAssignment assignment =
+                    TicketAssignment.builder()
+                            .ticket(ticket)
+                            .department(assignedDepartment)
+                            .status(AssignmentStatus.ASSIGNED)
+                            .build();
+            ticketAssignmentRepository.save(assignment);
+            ticket.getAssignments().add(assignment);
+        }
+
+        // Audit Log
+        String historyNote = (assignedDepartment != null)
+                ? "Tự động định tuyến thành công tới đơn vị: " + assignedDepartment.getName()
+                : "Chuyển sang duyệt thủ công do chưa có quy tắc định tuyến phù hợp";
+
+        TicketHistory history =
+                TicketHistory.builder()
+                        .ticket(ticket)
+                        .actor(user)
+                        .actionType(ActionType.ROUTED)
+                        .currentStatus(initialStatus)
+                        .actionNote(historyNote)
+                        .build();
+        ticketHistoryRepository.save(history);
 
         if (request.getImageUrl() != null && !request.getImageUrl().isEmpty()) {
             ReportImage image = ReportImage.builder()
@@ -149,8 +209,6 @@ public class TicketServiceImpl implements TicketService {
                     .build();
             reportImageRepository.save(image);
         }
-
-
 
         TicketResponse response = ticketMapper.toTicketResponse(ticket);
         if (request.getImageUrl() != null && !request.getImageUrl().isEmpty()) {
@@ -275,7 +333,7 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<com.cityfix.backend.model.dto.response.DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
+    public List<DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
         
@@ -284,16 +342,16 @@ public class TicketServiceImpl implements TicketService {
             return java.util.Collections.emptyList();
         }
         
-        List<com.cityfix.backend.model.entity.RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(searchCategoryId);
+        List<RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(searchCategoryId);
         String address = ticket.getAddress() != null ? ticket.getAddress().toLowerCase() : "";
         
-        List<com.cityfix.backend.model.entity.Department> suggestedDepts = rules.stream()
+        List<Department> suggestedDepts = rules.stream()
                 .filter(rule -> {
                     boolean provinceMatch = rule.getProvince() == null || rule.getProvince().isBlank() || address.contains(rule.getProvince().toLowerCase());
                     boolean wardMatch = rule.getWard() == null || rule.getWard().isBlank() || address.contains(rule.getWard().toLowerCase());
                     return provinceMatch && wardMatch;
                 })
-                .map(com.cityfix.backend.model.entity.RoutingRule::getDepartment)
+                .map(RoutingRule::getDepartment)
                 .distinct()
                 .toList();
                 
@@ -302,7 +360,7 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional
-    public TicketResponse reviewTicket(UUID ticketId, com.cityfix.backend.model.dto.request.ReviewTicketRequest request) {
+    public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
                 
@@ -329,13 +387,13 @@ public class TicketServiceImpl implements TicketService {
         
         if (request.getDepartmentIds() != null && !request.getDepartmentIds().isEmpty()) {
             for (UUID deptId : request.getDepartmentIds()) {
-                com.cityfix.backend.model.entity.Department department = departmentRepository.findById(deptId)
+                Department department = departmentRepository.findById(deptId)
                         .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
                 
-                com.cityfix.backend.model.entity.TicketAssignment assignment = com.cityfix.backend.model.entity.TicketAssignment.builder()
+                TicketAssignment assignment = TicketAssignment.builder()
                         .ticket(ticket)
                         .department(department)
-                        .status(TicketStatus.OPEN)
+                        .status(AssignmentStatus.OPEN)
                         .build();
                 ticket.getAssignments().add(assignment);
             }
@@ -343,6 +401,90 @@ public class TicketServiceImpl implements TicketService {
         
         ticket = ticketRepository.save(ticket);
         return ticketMapper.toTicketResponse(ticket);
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse rerouteTicket(UUID ticketId, RerouteTicketRequest request) {
+        User currentUser = getCurrentUser();
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if (ticket.getStatus() == TicketStatus.RESOLVED || ticket.getStatus() == TicketStatus.COMPLETED) {
+            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
+        }
+
+        if (currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName())) {
+            if (currentUser.getDepartment() == null) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+            }
+        }
+
+        Department targetDepartment = departmentRepository.findById(request.getTargetDepartmentId())
+                .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
+
+        // Mark old active assignments as TRANSFERRED
+        List<TicketAssignment> activeAssignments =
+                ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
+                        ticketId,
+                        List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
+                );
+
+        for (TicketAssignment oldAssignment : activeAssignments) {
+            oldAssignment.setStatus(AssignmentStatus.TRANSFERRED);
+            ticketAssignmentRepository.save(oldAssignment);
+        }
+
+        // Create new assignment for target department
+        TicketAssignment newAssignment =
+                TicketAssignment.builder()
+                        .ticket(ticket)
+                        .department(targetDepartment)
+                        .status(AssignmentStatus.ASSIGNED)
+                        .build();
+        ticketAssignmentRepository.save(newAssignment);
+
+        TicketStatus prevStatus = ticket.getStatus();
+        ticket.setStatus(TicketStatus.ASSIGNED);
+        ticket.setNeedsManualReview(false);
+        ticket = ticketRepository.save(ticket);
+
+        // Audit Log
+        TicketHistory history =
+                TicketHistory.builder()
+                        .ticket(ticket)
+                        .actor(currentUser)
+                        .actionType(ActionType.REROUTED)
+                        .previousStatus(prevStatus)
+                        .currentStatus(TicketStatus.ASSIGNED)
+                        .actionNote(request.getReason())
+                        .build();
+        ticketHistoryRepository.save(history);
+
+        return ticketMapper.toTicketResponse(ticket);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(
+            AssignmentStatus status, org.springframework.data.domain.Pageable pageable) {
+        User currentUser = getCurrentUser();
+
+        if (currentUser.getDepartment() == null) {
+            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
+
+        UUID deptId = currentUser.getDepartment().getDepartmentId();
+
+        List<AssignmentStatus> targetStatuses = (status != null)
+                ? List.of(status)
+                : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS);
+
+        org.springframework.data.domain.Page<TicketAssignment> assignmentsPage =
+                ticketAssignmentRepository.findByDepartmentDepartmentIdAndStatusIn(deptId, targetStatuses, pageable);
+
+        return assignmentsPage.map(assignment -> ticketMapper.toTicketResponse(assignment.getTicket()));
     }
 }
 

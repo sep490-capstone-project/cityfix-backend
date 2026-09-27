@@ -18,5 +18,7 @@ public interface TicketService {
     org.springframework.data.domain.Page<TicketResponse> getPendingReviewTickets(org.springframework.data.domain.Pageable pageable);
     List<com.cityfix.backend.model.dto.response.DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId);
     TicketResponse reviewTicket(UUID ticketId, com.cityfix.backend.model.dto.request.ReviewTicketRequest request);
+    TicketResponse rerouteTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RerouteTicketRequest request);
+    org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(com.cityfix.backend.model.enums.AssignmentStatus status, org.springframework.data.domain.Pageable pageable);
 }
 
