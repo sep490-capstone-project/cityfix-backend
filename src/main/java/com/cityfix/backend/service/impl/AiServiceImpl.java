@@ -63,7 +63,7 @@ public class AiServiceImpl implements AiService {
                 .collect(Collectors.joining(", "));
 
             // 3. Prepare Gemini API Request
-            String geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=" + apiKey;
+            String geminiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
             String prompt = "Phân tích hình ảnh hoặc video này để xác định xem nó có phải là một sự cố cơ sở hạ tầng (ví dụ: đường hỏng, rò rỉ nước, v.v.) hay không. Nếu KHÔNG phải là sự cố cơ sở hạ tầng (hình ảnh/video không liên quan), hãy trả về 'isValidIssue' là false, 'description' là lời giải thích lý do từ chối bằng TIẾNG VIỆT, và các trường khác để null. Nếu ĐÚNG là sự cố cơ sở hạ tầng, trả về 'isValidIssue' là true và cung cấp các thông tin sau. Chỉ trả về một đối tượng JSON hợp lệ không có định dạng markdown, chứa chính xác 6 trường: 'isValidIssue' (true/false), 'categoryId' (BẮT BUỘC chỉ trả về mã UUID chuẩn 36 ký tự, KHÔNG trả về tên category. Chọn UUID phù hợp nhất từ danh sách này: " + categoriesStr + "), 'severity' (chọn từ LOW, MEDIUM, HIGH, CRITICAL), 'dangerLevel' (chọn từ SAFE, CAUTION, DANGEROUS, CRITICAL), 'confidenceScore' (số thập phân từ 0 đến 100), và 'description' (mô tả ngắn gọn về sự cố bằng TIẾNG VIỆT).";
 
             Map<String, Object> textPart = new HashMap<>();
