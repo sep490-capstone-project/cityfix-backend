@@ -43,10 +43,10 @@ public class StaffTicketController {
 
     @PutMapping("/{id}/reject")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Từ chối & Bổ sung cơ quan đúng", description = "Cán bộ từ chối vé sai chuyên môn, gợi ý cơ quan/danh mục đúng và hệ thống sẽ tự động re-route.")
+    @Operation(summary = "Reject Ticket and Reroute", description = "Reject wrong ticket and reroute (Only for Dispatcher)")
     public ResponseEntity<BaseResponse<TicketResponse>> rejectTicket(
             @PathVariable java.util.UUID id,
-            @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
+            @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
         TicketResponse response = ticketService.rejectTicket(id, request);
         return ResponseEntity.ok(BaseResponse.success("Từ chối và định tuyến lại vé thành công", response));
     }

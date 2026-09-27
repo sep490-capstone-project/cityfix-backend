@@ -474,6 +474,10 @@ public class TicketServiceImpl implements TicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        if (ticket.getStatus() == TicketStatus.RESOLVED || ticket.getStatus() == TicketStatus.COMPLETED) {
+            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
+        }
+
         // Get the active assignment for this department
         List<TicketAssignment> assignments = ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
                 ticketId, List.of(AssignmentStatus.OPEN, AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
@@ -521,6 +525,13 @@ public class TicketServiceImpl implements TicketService {
 
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if (request.getSuggestedCategoryId() != null) {
+            Category category = categoryRepository.findById(request.getSuggestedCategoryId())
+                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
+            ticket.setCategory(category);
+            ticket = ticketRepository.save(ticket);
+        }
 
         TicketHistory rejectHistory = ticketHistoryMapper.toTicketHistory(
                 ticket, currentUser, ActionType.REJECTED, ticket.getStatus(), ticket.getStatus(), request.getReason()
