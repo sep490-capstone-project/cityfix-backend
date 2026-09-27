@@ -7,6 +7,8 @@ import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.model.dto.request.CreateTicketRequest;
 import com.cityfix.backend.model.dto.request.RerouteTicketRequest;
 import com.cityfix.backend.model.dto.request.ReviewTicketRequest;
+import com.cityfix.backend.model.dto.request.AssignTicketRequest;
+import com.cityfix.backend.model.dto.request.RejectTicketRequest;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
@@ -450,6 +452,99 @@ public class TicketServiceImpl implements TicketService {
                 ticketAssignmentRepository.findByDepartmentDepartmentIdAndStatusIn(deptId, targetStatuses, pageable);
 
         return assignmentsPage.map(assignment -> ticketMapper.toTicketResponse(assignment.getTicket()));
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse assignTicket(UUID ticketId, AssignTicketRequest request) {
+        User currentUser = getCurrentUser();
+        
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
+        
+        if (!isAdmin && !isDispatcher) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        
+        Department userDept = currentUser.getDepartment();
+        if (userDept == null && !isAdmin) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        // Get the active assignment for this department
+        List<TicketAssignment> assignments = ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
+                ticketId, List.of(AssignmentStatus.OPEN, AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
+                
+        TicketAssignment assignment = assignments.stream()
+                .filter(a -> a.getDepartment() != null && 
+                        (isAdmin || a.getDepartment().getDepartmentId().equals(userDept.getDepartmentId())))
+                .findFirst()
+                .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST));
+
+        User assignee = userRepository.findById(request.getAssigneeId())
+                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+
+        if (assignee.getDepartment() == null || !assignee.getDepartment().getDepartmentId().equals(assignment.getDepartment().getDepartmentId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
+        assignment.setAssignee(assignee);
+        assignment.setStatus(AssignmentStatus.ASSIGNED);
+        ticketAssignmentRepository.save(assignment);
+
+        TicketStatus prevStatus = ticket.getStatus();
+        ticket.setStatus(TicketStatus.ASSIGNED);
+        ticket = ticketRepository.save(ticket);
+
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.ASSIGNED, prevStatus, TicketStatus.ASSIGNED, "Phân công cho " + assignee.getFullName()
+        );
+        ticketHistoryRepository.save(history);
+
+        return ticketMapper.toTicketResponse(ticket);
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse rejectTicket(UUID ticketId, RejectTicketRequest request) {
+        User currentUser = getCurrentUser();
+        
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
+        
+        if (!isAdmin && !isDispatcher) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        TicketHistory rejectHistory = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.REJECTED, ticket.getStatus(), ticket.getStatus(), request.getReason()
+        );
+        ticketHistoryRepository.save(rejectHistory);
+
+        UUID targetDepartmentId = request.getSuggestedDepartmentId();
+        if (targetDepartmentId == null && request.getSuggestedCategoryId() != null) {
+            List<DepartmentResponse> suggestedDepts = getSuggestedDepartments(ticketId, request.getSuggestedCategoryId());
+            if (suggestedDepts != null && !suggestedDepts.isEmpty()) {
+                targetDepartmentId = suggestedDepts.get(0).departmentId();
+            }
+        }
+        
+        if (targetDepartmentId == null) {
+            throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
+        }
+
+        RerouteTicketRequest rerouteReq = RerouteTicketRequest.builder()
+                .targetDepartmentId(targetDepartmentId)
+                .reason(request.getReason() != null ? request.getReason() : "Từ chối và định tuyến lại")
+                .build();
+                
+        return this.rerouteTicket(ticketId, rerouteReq);
     }
 }
 
