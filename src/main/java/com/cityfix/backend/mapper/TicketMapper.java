@@ -30,4 +30,27 @@ public interface TicketMapper {
     @Mapping(target = "assigneeId", source = "assignee.userId")
     @Mapping(target = "assigneeName", source = "assignee.fullName")
     com.cityfix.backend.model.dto.response.TicketAssignmentResponse toAssignmentResponse(com.cityfix.backend.model.entity.TicketAssignment assignment);
+
+    @Mapping(target = "ticketId", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "category", source = "category")
+    @Mapping(target = "user", source = "user")
+    @Mapping(target = "location", source = "location")
+    @Mapping(target = "status", source = "status")
+    @Mapping(target = "needsManualReview", source = "needsManualReview")
+    @Mapping(target = "isLifeThreatening", constant = "false")
+    @Mapping(target = "description", source = "request.description")
+    @Mapping(target = "severity", source = "request.severity")
+    @Mapping(target = "dangerLevel", source = "request.dangerLevel")
+    @Mapping(target = "locationMethod", source = "request.locationMethod")
+    @Mapping(target = "address", source = "request.address")
+    Ticket toTicket(
+            com.cityfix.backend.model.dto.request.CreateTicketRequest request,
+            com.cityfix.backend.model.entity.Category category,
+            com.cityfix.backend.model.entity.User user,
+            org.locationtech.jts.geom.Point location,
+            com.cityfix.backend.model.enums.TicketStatus status,
+            boolean needsManualReview
+    );
 }

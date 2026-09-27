@@ -58,6 +58,8 @@ public class TicketServiceImpl implements TicketService {
     private final ImageMapper imageMapper;
     private final TicketMapper ticketMapper;
     private final com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
+    private final com.cityfix.backend.mapper.TicketAssignmentMapper ticketAssignmentMapper;
+    private final com.cityfix.backend.mapper.TicketHistoryMapper ticketHistoryMapper;
 
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
@@ -160,29 +162,11 @@ public class TicketServiceImpl implements TicketService {
         boolean finalNeedsReview = needsReview || (assignedDepartment == null);
         TicketStatus initialStatus = finalNeedsReview ? TicketStatus.PENDING_REVIEW : TicketStatus.ASSIGNED;
 
-        Ticket ticket = Ticket.builder()
-                .description(request.getDescription())
-                .category(category)
-                .severity(request.getSeverity())
-                .dangerLevel(request.getDangerLevel())
-                .locationMethod(request.getLocationMethod())
-                .address(request.getAddress())
-                .status(initialStatus)
-                .isLifeThreatening(false)
-                .needsManualReview(finalNeedsReview)
-                .location(location)
-                .user(user)
-                .build();
-
+        Ticket ticket = ticketMapper.toTicket(request, category, user, location, initialStatus, finalNeedsReview);
         ticket = ticketRepository.save(ticket);
 
         if (assignedDepartment != null) {
-            TicketAssignment assignment =
-                    TicketAssignment.builder()
-                            .ticket(ticket)
-                            .department(assignedDepartment)
-                            .status(AssignmentStatus.ASSIGNED)
-                            .build();
+            TicketAssignment assignment = ticketAssignmentMapper.toTicketAssignment(ticket, assignedDepartment, AssignmentStatus.ASSIGNED);
             ticketAssignmentRepository.save(assignment);
             ticket.getAssignments().add(assignment);
         }
@@ -192,21 +176,13 @@ public class TicketServiceImpl implements TicketService {
                 ? "Tự động định tuyến thành công tới đơn vị: " + assignedDepartment.getName()
                 : "Chuyển sang duyệt thủ công do chưa có quy tắc định tuyến phù hợp";
 
-        TicketHistory history =
-                TicketHistory.builder()
-                        .ticket(ticket)
-                        .actor(user)
-                        .actionType(ActionType.ROUTED)
-                        .currentStatus(initialStatus)
-                        .actionNote(historyNote)
-                        .build();
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, user, ActionType.ROUTED, null, initialStatus, historyNote
+        );
         ticketHistoryRepository.save(history);
 
         if (request.getImageUrl() != null && !request.getImageUrl().isEmpty()) {
-            ReportImage image = ReportImage.builder()
-                    .ticket(ticket)
-                    .imageUrl(request.getImageUrl())
-                    .build();
+            ReportImage image = imageMapper.toReportImage(ticket, request.getImageUrl());
             reportImageRepository.save(image);
         }
 
@@ -390,11 +366,7 @@ public class TicketServiceImpl implements TicketService {
                 Department department = departmentRepository.findById(deptId)
                         .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
                 
-                TicketAssignment assignment = TicketAssignment.builder()
-                        .ticket(ticket)
-                        .department(department)
-                        .status(AssignmentStatus.OPEN)
-                        .build();
+                TicketAssignment assignment = ticketAssignmentMapper.toTicketAssignment(ticket, department, AssignmentStatus.OPEN);
                 ticket.getAssignments().add(assignment);
             }
         }
@@ -408,17 +380,18 @@ public class TicketServiceImpl implements TicketService {
     public TicketResponse rerouteTicket(UUID ticketId, RerouteTicketRequest request) {
         User currentUser = getCurrentUser();
 
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
+
+        if (!isAdmin && !isDispatcher) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
         if (ticket.getStatus() == TicketStatus.RESOLVED || ticket.getStatus() == TicketStatus.COMPLETED) {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
-        }
-
-        if (currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName())) {
-            if (currentUser.getDepartment() == null) {
-                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
-            }
         }
 
         Department targetDepartment = departmentRepository.findById(request.getTargetDepartmentId())
@@ -432,17 +405,15 @@ public class TicketServiceImpl implements TicketService {
                 );
 
         for (TicketAssignment oldAssignment : activeAssignments) {
+            if (oldAssignment.getDepartment() != null && oldAssignment.getDepartment().getDepartmentId().equals(request.getTargetDepartmentId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
             oldAssignment.setStatus(AssignmentStatus.TRANSFERRED);
             ticketAssignmentRepository.save(oldAssignment);
         }
 
         // Create new assignment for target department
-        TicketAssignment newAssignment =
-                TicketAssignment.builder()
-                        .ticket(ticket)
-                        .department(targetDepartment)
-                        .status(AssignmentStatus.ASSIGNED)
-                        .build();
+        TicketAssignment newAssignment = ticketAssignmentMapper.toTicketAssignment(ticket, targetDepartment, AssignmentStatus.ASSIGNED);
         ticketAssignmentRepository.save(newAssignment);
 
         TicketStatus prevStatus = ticket.getStatus();
@@ -451,15 +422,9 @@ public class TicketServiceImpl implements TicketService {
         ticket = ticketRepository.save(ticket);
 
         // Audit Log
-        TicketHistory history =
-                TicketHistory.builder()
-                        .ticket(ticket)
-                        .actor(currentUser)
-                        .actionType(ActionType.REROUTED)
-                        .previousStatus(prevStatus)
-                        .currentStatus(TicketStatus.ASSIGNED)
-                        .actionNote(request.getReason())
-                        .build();
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.REROUTED, prevStatus, TicketStatus.ASSIGNED, request.getReason()
+        );
         ticketHistoryRepository.save(history);
 
         return ticketMapper.toTicketResponse(ticket);

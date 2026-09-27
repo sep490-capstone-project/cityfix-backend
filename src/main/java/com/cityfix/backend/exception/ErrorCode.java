@@ -136,6 +136,16 @@ public enum ErrorCode {
     TICKET_INVALID_STATUS(
             HttpStatus.BAD_REQUEST,
             "Vé ở trạng thái không thể thực hiện thao tác này"
+    ),
+
+    FORBIDDEN(
+            HttpStatus.FORBIDDEN,
+            "Không có quyền thực hiện thao tác này"
+    ),
+
+    INVALID_REQUEST(
+            HttpStatus.BAD_REQUEST,
+            "Yêu cầu không hợp lệ"
     );
 
     private final HttpStatus status;
