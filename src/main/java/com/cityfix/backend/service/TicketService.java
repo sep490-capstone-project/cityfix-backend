@@ -10,8 +10,8 @@ import java.util.List;
 import java.util.UUID;
 
 public interface TicketService {
-    TicketResponse createTicket(CreateTicketRequest request, String currentUsername);
-    void upvoteTicket(UUID ticketId, String currentUsername);
+    TicketResponse createTicket(CreateTicketRequest request);
+    void upvoteTicket(UUID ticketId);
     List<ImageUploadResponse> uploadImage(List<MultipartFile> files, String folder);
     List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID categoryId);
     

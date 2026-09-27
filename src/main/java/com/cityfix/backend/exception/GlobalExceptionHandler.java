@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -75,6 +77,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(BaseResponse.error(ErrorCode.VALIDATION_ERROR.name(), message));
+    }
+
+    @ExceptionHandler({AccessDeniedException.class, AuthorizationDeniedException.class})
+    public ResponseEntity<BaseResponse<Void>> handleAccessDeniedException(Exception ex) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(BaseResponse.error("FORBIDDEN", "Bạn không có quyền thực hiện hành động này."));
     }
 
     @ExceptionHandler(Exception.class)

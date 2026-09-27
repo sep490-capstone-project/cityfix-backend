@@ -27,7 +27,7 @@ public class DepartmentController {
     private final DepartmentService departmentService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Tạo mới cơ quan phụ trách", description = "Dành cho Admin tạo cơ quan xử lý sự cố")
     public ResponseEntity<BaseResponse<DepartmentResponse>> createDepartment(
             @Valid @RequestBody CreateDepartmentRequest request) {
@@ -36,7 +36,7 @@ public class DepartmentController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Lấy danh sách cơ quan phụ trách", description = "Hỗ trợ phân trang và lọc các phòng ban đang hoạt động")
     public ResponseEntity<BaseResponse<Page<DepartmentResponse>>> getAllDepartments(
             @RequestParam(value = "activeOnly", required = false, defaultValue = "false") Boolean activeOnly,
@@ -46,7 +46,7 @@ public class DepartmentController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Chi tiết cơ quan phụ trách", description = "Lấy thông tin chi tiết cơ quan theo ID")
     public ResponseEntity<BaseResponse<DepartmentResponse>> getDepartmentById(@PathVariable UUID id) {
         DepartmentResponse response = departmentService.getDepartmentById(id);
@@ -54,7 +54,7 @@ public class DepartmentController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Cập nhật thông tin cơ quan phụ trách", description = "Cập nhật tên, cấp quản lý, email liên hệ, số điện thoại, trạng thái hoạt động")
     public ResponseEntity<BaseResponse<DepartmentResponse>> updateDepartment(
             @PathVariable UUID id,
@@ -64,7 +64,7 @@ public class DepartmentController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Vô hiệu hóa cơ quan phụ trách", description = "Chuyển trạng thái isActive của cơ quan sang false")
     public ResponseEntity<BaseResponse<Void>> deleteDepartment(@PathVariable UUID id) {
         departmentService.deleteDepartment(id);
