@@ -87,11 +87,30 @@ public class TicketServiceImpl implements TicketService {
 
     // WGS84 SRID is 4326
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+    private User getCurrentUser() {
+        org.springframework.security.core.Authentication authentication =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof User user) {
+            return user;
+        }
+
+        String email = (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails)
+                ? userDetails.getUsername()
+                : principal.toString();
+
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+    }
+
     @Override
     @Transactional
-    public TicketResponse createTicket(CreateTicketRequest request, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+    public TicketResponse createTicket(CreateTicketRequest request) {
+        User user = getCurrentUser();
 
         Category category = null;
         if (request.getCategoryId() != null) {
@@ -140,9 +159,8 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional
-    public void upvoteTicket(UUID ticketId, String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+    public void upvoteTicket(UUID ticketId) {
+        User user = getCurrentUser();
 
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new RuntimeException("Ticket not found"));

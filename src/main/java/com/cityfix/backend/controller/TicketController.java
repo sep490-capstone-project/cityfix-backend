@@ -34,24 +34,20 @@ public class TicketController {
     private final AiService aiService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('RESIDENT')")
+    @PreAuthorize("hasRole('RESIDENT')")
     public ResponseEntity<BaseResponse<TicketResponse>> createTicket(
-            @Valid @RequestBody CreateTicketRequest request,
-            Authentication authentication) {
+            @Valid @RequestBody CreateTicketRequest request) {
         
-        String email = authentication.getName();
-        TicketResponse response = ticketService.createTicket(request, email);
+        TicketResponse response = ticketService.createTicket(request);
         return ResponseEntity.ok(BaseResponse.success("Success", response));
     }
 
     @PostMapping("/{id}/upvote")
     @PreAuthorize("hasAuthority('RESIDENT')")
     public ResponseEntity<BaseResponse<String>> upvoteTicket(
-            @PathVariable UUID id,
-            Authentication authentication) {
+            @PathVariable UUID id) {
         
-        String email = authentication.getName();
-        ticketService.upvoteTicket(id, email);
+        ticketService.upvoteTicket(id);
         return ResponseEntity.ok(BaseResponse.success("Upvoted successfully", null));
     }
 

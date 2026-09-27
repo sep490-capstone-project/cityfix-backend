@@ -23,6 +23,11 @@ public enum ErrorCode {
             "Tài khoản đã tồn tại nhưng đã bị xóa. Vui lòng gửi yêu cầu kích hoạt lại cho quản trị viên."
     ),
 
+    UNAUTHENTICATED(
+            HttpStatus.UNAUTHORIZED,
+            "Chưa xác thực"
+    ),
+
     VALIDATION_ERROR(
             HttpStatus.BAD_REQUEST,
             "Lỗi xác thực"

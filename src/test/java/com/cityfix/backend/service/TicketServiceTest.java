@@ -85,6 +85,12 @@ class TicketServiceTest {
     @Mock
     private com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
 
+    @Mock
+    private org.springframework.security.core.context.SecurityContext securityContext;
+
+    @Mock
+    private org.springframework.security.core.Authentication authentication;
+
     @InjectMocks
     private TicketServiceImpl ticketService;
 
@@ -104,6 +110,11 @@ class TicketServiceTest {
         mockUser = new User();
         mockUser.setUserId(UUID.randomUUID());
         mockUser.setEmail(email);
+
+        org.springframework.security.core.context.SecurityContextHolder.setContext(securityContext);
+        lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
+        lenient().when(authentication.isAuthenticated()).thenReturn(true);
+        lenient().when(authentication.getPrincipal()).thenReturn(mockUser);
 
         mockCategory = Category.builder()
                 .categoryId(categoryId)
@@ -150,6 +161,11 @@ class TicketServiceTest {
                 .build();
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
     // ==========================================
     // 1. Create Ticket Service Tests
     // ==========================================
@@ -157,12 +173,11 @@ class TicketServiceTest {
     @Test
     @DisplayName("createTicket_validData_returnsTicketResponse")
     void createTicket_validData_returnsTicketResponse() {
-        when(userRepository.findByEmail(email)).thenReturn(Optional.of(mockUser));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
 
-        TicketResponse result = ticketService.createTicket(createRequest, email);
+        TicketResponse result = ticketService.createTicket(createRequest);
 
         assertThat(result).isNotNull();
         assertThat(result.getDescription()).isEqualTo("Mặt đường bị sụt hố sâu lớn");
@@ -170,7 +185,6 @@ class TicketServiceTest {
         assertThat(result.getImageUrl()).isEqualTo(createRequest.getImageUrl());
         assertThat(result.getLocationMethod()).isEqualTo(LocationMethod.AUTO_GPS);
 
-        verify(userRepository, times(1)).findByEmail(email);
         verify(categoryRepository, times(1)).findById(categoryId);
         verify(ticketRepository, times(1)).save(any(Ticket.class));
         verify(reportImageRepository, times(1)).save(any());
@@ -180,9 +194,10 @@ class TicketServiceTest {
     @Test
     @DisplayName("createTicket_accountNotFound_throwsAccountNotFoundAppException")
     void createTicket_accountNotFound_throwsAccountNotFoundAppException() {
+        when(authentication.getPrincipal()).thenReturn(email);
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.createTicket(createRequest, email))
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
@@ -193,10 +208,9 @@ class TicketServiceTest {
     @Test
     @DisplayName("createTicket_categoryNotFound_throwsCategoryNotFoundAppException")
     void createTicket_categoryNotFound_throwsCategoryNotFoundAppException() {
-        when(userRepository.findByEmail(email)).thenReturn(Optional.of(mockUser));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.createTicket(createRequest, email))
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.CATEGORY_NOT_FOUND);
