@@ -45,6 +45,8 @@ public interface TicketMapper {
     @Mapping(target = "dangerLevel", source = "request.dangerLevel")
     @Mapping(target = "locationMethod", source = "request.locationMethod")
     @Mapping(target = "address", source = "request.address")
+    @Mapping(target = "assignments", ignore = true)
+    @Mapping(target = "reviewNote", ignore = true)
     Ticket toTicket(
             com.cityfix.backend.model.dto.request.CreateTicketRequest request,
             com.cityfix.backend.model.entity.Category category,

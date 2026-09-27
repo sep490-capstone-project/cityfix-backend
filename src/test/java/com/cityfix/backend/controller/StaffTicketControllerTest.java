@@ -59,4 +59,48 @@ class StaffTicketControllerTest {
 
         verify(ticketService, times(1)).getAssignedTicketsForStaff(eq(AssignmentStatus.ASSIGNED), any());
     }
+
+    @Test
+    @DisplayName("assignTicket_returns200Success")
+    void assignTicket_returns200Success() {
+        UUID ticketId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.AssignTicketRequest request = new com.cityfix.backend.model.dto.request.AssignTicketRequest(UUID.randomUUID());
+        
+        TicketResponse mockResponse = TicketResponse.builder()
+                .id(ticketId)
+                .status(TicketStatus.ASSIGNED)
+                .build();
+                
+        when(ticketService.assignTicket(eq(ticketId), any())).thenReturn(mockResponse);
+        
+        ResponseEntity<BaseResponse<TicketResponse>> response = staffTicketController.assignTicket(ticketId, request);
+        
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        
+        verify(ticketService, times(1)).assignTicket(eq(ticketId), any());
+    }
+
+    @Test
+    @DisplayName("rejectTicket_returns200Success")
+    void rejectTicket_returns200Success() {
+        UUID ticketId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.RejectTicketRequest request = new com.cityfix.backend.model.dto.request.RejectTicketRequest(UUID.randomUUID(), null, "Sai chuyên môn");
+        
+        TicketResponse mockResponse = TicketResponse.builder()
+                .id(ticketId)
+                .status(TicketStatus.ASSIGNED)
+                .build();
+                
+        when(ticketService.rejectTicket(eq(ticketId), any())).thenReturn(mockResponse);
+        
+        ResponseEntity<BaseResponse<TicketResponse>> response = staffTicketController.rejectTicket(ticketId, request);
+        
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        
+        verify(ticketService, times(1)).rejectTicket(eq(ticketId), any());
+    }
 }

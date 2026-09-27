@@ -13,6 +13,7 @@ public interface RoutingRuleMapper {
 
     @Mapping(target = "department", ignore = true)
     @Mapping(target = "category", ignore = true)
+    @Mapping(target = "ruleId", ignore = true)
     RoutingRule toEntity(CreateRoutingRuleRequest request);
 
     @Mapping(target = "departmentId", source = "department.departmentId")
@@ -25,5 +26,10 @@ public interface RoutingRuleMapper {
 
     @Mapping(target = "department", ignore = true)
     @Mapping(target = "category", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "deleted", ignore = true)
+    @Mapping(target = "deletedAt", ignore = true)
+    @Mapping(target = "ruleId", ignore = true)
     void updateEntityFromRequest(UpdateRoutingRuleRequest request, @MappingTarget RoutingRule routingRule);
 }
