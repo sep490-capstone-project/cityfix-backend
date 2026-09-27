@@ -39,5 +39,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             @Param("longitude") Double longitude,
             @Param("categoryId") UUID categoryId
     );
-}
 
+    org.springframework.data.domain.Page<Ticket> findByStatus(com.cityfix.backend.model.enums.TicketStatus status, org.springframework.data.domain.Pageable pageable);
+}

@@ -73,6 +73,24 @@ class TicketServiceTest {
     @Mock
     private Uploader uploader;
 
+    @Mock
+    private com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
+
+    @Mock
+    private com.cityfix.backend.repository.DepartmentRepository departmentRepository;
+
+    @Mock
+    private com.cityfix.backend.repository.TicketAssignmentRepository ticketAssignmentRepository;
+
+    @Mock
+    private com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
+
+    @Mock
+    private org.springframework.security.core.context.SecurityContext securityContext;
+
+    @Mock
+    private org.springframework.security.core.Authentication authentication;
+
     @InjectMocks
     private TicketServiceImpl ticketService;
 
@@ -92,6 +110,11 @@ class TicketServiceTest {
         mockUser = new User();
         mockUser.setUserId(UUID.randomUUID());
         mockUser.setEmail(email);
+
+        org.springframework.security.core.context.SecurityContextHolder.setContext(securityContext);
+        lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
+        lenient().when(authentication.isAuthenticated()).thenReturn(true);
+        lenient().when(authentication.getPrincipal()).thenReturn(mockUser);
 
         mockCategory = Category.builder()
                 .categoryId(categoryId)
@@ -138,6 +161,11 @@ class TicketServiceTest {
                 .build();
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
     // ==========================================
     // 1. Create Ticket Service Tests
     // ==========================================
@@ -145,12 +173,11 @@ class TicketServiceTest {
     @Test
     @DisplayName("createTicket_validData_returnsTicketResponse")
     void createTicket_validData_returnsTicketResponse() {
-        when(userRepository.findByEmail(email)).thenReturn(Optional.of(mockUser));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
 
-        TicketResponse result = ticketService.createTicket(createRequest, email);
+        TicketResponse result = ticketService.createTicket(createRequest);
 
         assertThat(result).isNotNull();
         assertThat(result.getDescription()).isEqualTo("Mặt đường bị sụt hố sâu lớn");
@@ -158,7 +185,6 @@ class TicketServiceTest {
         assertThat(result.getImageUrl()).isEqualTo(createRequest.getImageUrl());
         assertThat(result.getLocationMethod()).isEqualTo(LocationMethod.AUTO_GPS);
 
-        verify(userRepository, times(1)).findByEmail(email);
         verify(categoryRepository, times(1)).findById(categoryId);
         verify(ticketRepository, times(1)).save(any(Ticket.class));
         verify(reportImageRepository, times(1)).save(any());
@@ -168,9 +194,10 @@ class TicketServiceTest {
     @Test
     @DisplayName("createTicket_accountNotFound_throwsAccountNotFoundAppException")
     void createTicket_accountNotFound_throwsAccountNotFoundAppException() {
+        when(authentication.getPrincipal()).thenReturn(email);
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.createTicket(createRequest, email))
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
@@ -181,10 +208,9 @@ class TicketServiceTest {
     @Test
     @DisplayName("createTicket_categoryNotFound_throwsCategoryNotFoundAppException")
     void createTicket_categoryNotFound_throwsCategoryNotFoundAppException() {
-        when(userRepository.findByEmail(email)).thenReturn(Optional.of(mockUser));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.createTicket(createRequest, email))
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.CATEGORY_NOT_FOUND);
@@ -433,5 +459,65 @@ class TicketServiceTest {
                 .isEqualTo(ErrorCode.VALIDATION_ERROR);
 
         verify(ticketRepository, never()).findDuplicateTickets(any(), any(), any());
+    }
+
+    // ==========================================
+    // 4. Admin Ticket Management Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("getPendingReviewTickets_returnsPageOfTickets")
+    void getPendingReviewTickets_returnsPageOfTickets() {
+        org.springframework.data.domain.Page<Ticket> page = new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
+        when(ticketRepository.findByStatus(eq(TicketStatus.PENDING_REVIEW), any())).thenReturn(page);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getPendingReviewTickets(org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).hasSize(1);
+        verify(ticketRepository, times(1)).findByStatus(eq(TicketStatus.PENDING_REVIEW), any());
+    }
+
+    @Test
+    @DisplayName("reviewTicket_validData_returnsUpdatedTicket")
+    void reviewTicket_validData_returnsUpdatedTicket() {
+        mockTicket.setStatus(TicketStatus.PENDING_REVIEW);
+        
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
+        request.setDepartmentIds(List.of(UUID.randomUUID()));
+        request.setIsLifeThreatening(true);
+        request.setReviewNote("Khẩn cấp");
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        // mock departmentRepository
+        com.cityfix.backend.model.entity.Department mockDept = new com.cityfix.backend.model.entity.Department();
+        when(departmentRepository.findById(any())).thenReturn(Optional.of(mockDept));
+
+        TicketResponse result = ticketService.reviewTicket(mockTicket.getTicketId(), request);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository, times(1)).save(mockTicket);
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(mockTicket.getNeedsManualReview()).isFalse();
+        assertThat(mockTicket.getReviewNote()).isEqualTo("Khẩn cấp");
+        assertThat(mockTicket.getAssignments()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_notPendingReview_throwsException")
+    void reviewTicket_notPendingReview_throwsException() {
+        mockTicket.setStatus(TicketStatus.OPEN); // Not PENDING_REVIEW
+        
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.reviewTicket(mockTicket.getTicketId(), request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TICKET_NOT_PENDING_REVIEW);
     }
 }

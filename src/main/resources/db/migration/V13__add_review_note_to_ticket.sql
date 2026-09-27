@@ -1,0 +1,1 @@
+ALTER TABLE ticket ADD COLUMN IF NOT EXISTS review_note TEXT;

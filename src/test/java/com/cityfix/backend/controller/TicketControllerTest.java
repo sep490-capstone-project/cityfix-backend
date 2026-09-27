@@ -106,12 +106,11 @@ class TicketControllerTest {
     @Test
     @DisplayName("createTicket_validData_returns200OKWrappedInBaseResponse")
     void createTicket_validData_returns200OKWrappedInBaseResponse() {
-        when(authentication.getName()).thenReturn(email);
-        when(ticketService.createTicket(any(CreateTicketRequest.class), eq(email)))
+        when(ticketService.createTicket(any(CreateTicketRequest.class)))
                 .thenReturn(mockTicketResponse);
 
         ResponseEntity<BaseResponse<TicketResponse>> response =
-                ticketController.createTicket(validCreateRequest, authentication);
+                ticketController.createTicket(validCreateRequest);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -120,7 +119,7 @@ class TicketControllerTest {
         assertThat(response.getBody().getData().getDescription()).isEqualTo("Mặt đường xuất hiện ổ gà lớn");
         assertThat(response.getBody().getData().getLatitude()).isEqualTo(10.776889);
 
-        verify(ticketService, times(1)).createTicket(validCreateRequest, email);
+        verify(ticketService, times(1)).createTicket(validCreateRequest);
     }
 
     @Test

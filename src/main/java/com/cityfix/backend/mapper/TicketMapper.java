@@ -24,4 +24,10 @@ public interface TicketMapper {
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
     @Mapping(target = "imageUrl", ignore = true)
     TicketResponse toTicketResponse(Ticket ticket);
+
+    @Mapping(target = "departmentId", source = "department.departmentId")
+    @Mapping(target = "departmentName", source = "department.name")
+    @Mapping(target = "assigneeId", source = "assignee.userId")
+    @Mapping(target = "assigneeName", source = "assignee.fullName")
+    com.cityfix.backend.model.dto.response.TicketAssignmentResponse toAssignmentResponse(com.cityfix.backend.model.entity.TicketAssignment assignment);
 }

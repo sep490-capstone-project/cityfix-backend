@@ -23,4 +23,5 @@ public class TicketResponse {
     private Double longitude;
     private UUID createdBy;
     private LocalDateTime createdAt;
+    private java.util.List<TicketAssignmentResponse> assignments;
 }
