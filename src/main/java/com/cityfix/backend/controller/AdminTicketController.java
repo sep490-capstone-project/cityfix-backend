@@ -28,7 +28,7 @@ public class AdminTicketController {
     private final TicketService ticketService;
 
     @GetMapping("/pending-review")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Lấy danh sách vé chờ duyệt", description = "Trả về danh sách vé đang ở trạng thái PENDING_REVIEW")
     public ResponseEntity<BaseResponse<Page<TicketResponse>>> getPendingReviewTickets(
             @PageableDefault(size = 20) Pageable pageable) {
@@ -37,7 +37,7 @@ public class AdminTicketController {
     }
 
     @GetMapping("/{id}/suggested-departments")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Gợi ý phòng ban cho vé", description = "Tìm phòng ban phù hợp dựa trên routing rule (Category và Địa chỉ)")
     public ResponseEntity<BaseResponse<List<DepartmentResponse>>> getSuggestedDepartments(
             @PathVariable UUID id,
@@ -47,7 +47,7 @@ public class AdminTicketController {
     }
 
     @PutMapping("/{id}/review")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Duyệt vé và định tuyến", description = "Xác nhận category, đánh dấu SOS và giao việc cho nhiều phòng ban")
     public ResponseEntity<BaseResponse<TicketResponse>> reviewTicket(
             @PathVariable UUID id,

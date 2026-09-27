@@ -90,7 +90,9 @@ public class TicketServiceImpl implements TicketService {
     private User getCurrentUser() {
         org.springframework.security.core.Authentication authentication =
                 org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        if (authentication == null 
+                || !authentication.isAuthenticated() 
+                || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
 

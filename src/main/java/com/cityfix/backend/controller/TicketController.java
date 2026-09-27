@@ -43,7 +43,7 @@ public class TicketController {
     }
 
     @PostMapping("/{id}/upvote")
-    @PreAuthorize("hasAuthority('RESIDENT')")
+    @PreAuthorize("hasRole('RESIDENT')")
     public ResponseEntity<BaseResponse<String>> upvoteTicket(
             @PathVariable UUID id) {
         
@@ -52,7 +52,7 @@ public class TicketController {
     }
 
     @PostMapping("/analyze")
-    // @PreAuthorize("hasAuthority('RESIDENT')") // Tạm tắt JWT
+    // @PreAuthorize("hasRole('RESIDENT')") // Tạm tắt JWT
     public ResponseEntity<BaseResponse<AiAnalyzeResponse>> analyzeMedia(
             @Valid @RequestBody AiAnalyzeRequest request) {
         

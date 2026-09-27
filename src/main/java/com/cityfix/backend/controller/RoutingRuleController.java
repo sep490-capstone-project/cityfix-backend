@@ -28,7 +28,7 @@ public class RoutingRuleController {
     private final RoutingRuleService routingRuleService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Tạo mới quy tắc định tuyến", description = "Phân công phòng ban quản lý loại sự cố tại khu vực cụ thể")
     public ResponseEntity<BaseResponse<RoutingRuleResponse>> createRoutingRule(
             @Valid @RequestBody CreateRoutingRuleRequest request) {
@@ -37,7 +37,7 @@ public class RoutingRuleController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Tìm kiếm / Tìm danh sách quy tắc định tuyến", description = "Hỗ trợ lọc theo categoryId, province, ward, departmentId và phân trang")
     public ResponseEntity<BaseResponse<Page<RoutingRuleResponse>>> searchRoutingRules(
             @RequestParam(value = "categoryId", required = false) UUID categoryId,
@@ -50,7 +50,7 @@ public class RoutingRuleController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Chi tiết quy tắc định tuyến", description = "Lấy chi tiết quy tắc định tuyến theo ID")
     public ResponseEntity<BaseResponse<RoutingRuleResponse>> getRoutingRuleById(@PathVariable UUID id) {
         RoutingRuleResponse response = routingRuleService.getRoutingRuleById(id);
@@ -58,7 +58,7 @@ public class RoutingRuleController {
     }
 
     @GetMapping("/department/{departmentId}")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @Operation(summary = "Danh sách quy tắc định tuyến theo cơ quan phụ trách", description = "Lấy danh sách quy tắc định tuyến gán cho cơ quan cụ thể")
     public ResponseEntity<BaseResponse<List<RoutingRuleResponse>>> getRoutingRulesByDepartment(
             @PathVariable UUID departmentId) {
@@ -67,7 +67,7 @@ public class RoutingRuleController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Cập nhật quy tắc định tuyến", description = "Cập nhật phòng ban, loại sự cố hoặc khu vực của quy tắc")
     public ResponseEntity<BaseResponse<RoutingRuleResponse>> updateRoutingRule(
             @PathVariable UUID id,
@@ -77,7 +77,7 @@ public class RoutingRuleController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Xóa quy tắc định tuyến", description = "Xóa hẳn quy tắc định tuyến khỏi hệ thống")
     public ResponseEntity<BaseResponse<Void>> deleteRoutingRule(@PathVariable UUID id) {
         routingRuleService.deleteRoutingRule(id);
