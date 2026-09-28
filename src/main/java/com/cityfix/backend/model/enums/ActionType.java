@@ -8,7 +8,9 @@ public enum ActionType {
     ASSIGNED,
     REASSIGNED,
     REROUTED,
+    REJECTED,
     WORK_STARTED,
     EVIDENCE_SUBMITTED,
-    CLOSED
+    CLOSED,
+    CANCELLED
 }

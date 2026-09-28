@@ -1,0 +1,63 @@
+package com.cityfix.backend.controller;
+
+import com.cityfix.backend.model.dto.response.BaseResponse;
+import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.service.TicketService;
+import io.swagger.v3.oas.annotations.Operation;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/v1/staff/tickets")
+@RequiredArgsConstructor
+public class StaffTicketController {
+
+    private final TicketService ticketService;
+
+    @GetMapping("/assigned")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @Operation(summary = "Lấy danh sách vé được phân công cho phòng ban của cán bộ", description = "Trích xuất phòng ban từ thông tin xác thực cán bộ đang đăng nhập, hỗ trợ phân trang và lọc theo trạng thái phân công.")
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getAssignedTicketsForStaff(
+            @RequestParam(value = "status", required = false) AssignmentStatus status,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        Page<TicketResponse> response = ticketService.getAssignedTicketsForStaff(status, pageable);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé phân công thành công.", response));
+    }
+
+    @PutMapping("/{id}/assign")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Tiếp nhận & Phân công vé", description = "Cán bộ xác nhận vé đúng chuyên môn và phân công cho nhân viên cụ thể.")
+    public ResponseEntity<BaseResponse<TicketResponse>> assignTicket(
+            @PathVariable java.util.UUID id,
+            @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.AssignTicketRequest request) {
+        TicketResponse response = ticketService.assignTicket(id, request);
+        return ResponseEntity.ok(BaseResponse.success("Phân công vé thành công", response));
+    }
+
+    @PutMapping("/{id}/forward")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Chuyển giao vé (Reroute)", description = "Chuyển vé sang phòng ban khác nếu không thuộc thẩm quyền")
+    public ResponseEntity<BaseResponse<TicketResponse>> forwardTicket(
+            @PathVariable java.util.UUID id,
+            @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
+        TicketResponse response = ticketService.forwardTicket(id, request);
+        return ResponseEntity.ok(BaseResponse.success("Chuyển giao vé thành công", response));
+    }
+
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Từ chối hồ sơ", description = "Điều phối viên từ chối hẳn vé (chuyển thành REJECTED) kèm lý do")
+    public ResponseEntity<BaseResponse<TicketResponse>> rejectAssignedTicket(
+            @PathVariable java.util.UUID id,
+            @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
+        TicketResponse response = ticketService.rejectAssignedTicket(id, request.getReason());
+        return ResponseEntity.ok(BaseResponse.success("Từ chối hồ sơ thành công", response));
+    }
+}

@@ -83,7 +83,16 @@ class TicketServiceTest {
     private com.cityfix.backend.repository.TicketAssignmentRepository ticketAssignmentRepository;
 
     @Mock
+    private com.cityfix.backend.repository.TicketHistoryRepository ticketHistoryRepository;
+
+    @Mock
     private com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
+
+    @Mock
+    private com.cityfix.backend.mapper.TicketAssignmentMapper ticketAssignmentMapper;
+
+    @Mock
+    private com.cityfix.backend.mapper.TicketHistoryMapper ticketHistoryMapper;
 
     @Mock
     private org.springframework.security.core.context.SecurityContext securityContext;
@@ -143,6 +152,65 @@ class TicketServiceTest {
                 .status(TicketStatus.INITIATED)
                 .user(mockUser)
                 .build();
+
+        lenient().when(ticketMapper.toTicket(any(), any(), any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+            CreateTicketRequest req = invocation.getArgument(0);
+            Category cat = invocation.getArgument(1);
+            User u = invocation.getArgument(2);
+            org.locationtech.jts.geom.Point loc = invocation.getArgument(3);
+            TicketStatus st = invocation.getArgument(4);
+            boolean needsRev = invocation.getArgument(5);
+
+            return Ticket.builder()
+                    .description(req.getDescription())
+                    .category(cat)
+                    .severity(req.getSeverity())
+                    .dangerLevel(req.getDangerLevel())
+                    .locationMethod(req.getLocationMethod())
+                    .address(req.getAddress())
+                    .status(st)
+                    .needsManualReview(needsRev)
+                    .location(loc)
+                    .user(u)
+                    .build();
+        });
+
+        lenient().when(ticketAssignmentMapper.toTicketAssignment(any(), any(), any())).thenAnswer(invocation -> {
+            Ticket t = invocation.getArgument(0);
+            com.cityfix.backend.model.entity.Department dept = invocation.getArgument(1);
+            com.cityfix.backend.model.enums.AssignmentStatus st = invocation.getArgument(2);
+            return com.cityfix.backend.model.entity.TicketAssignment.builder()
+                    .ticket(t)
+                    .department(dept)
+                    .status(st)
+                    .build();
+        });
+
+        lenient().when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            Ticket t = invocation.getArgument(0);
+            User actor = invocation.getArgument(1);
+            com.cityfix.backend.model.enums.ActionType action = invocation.getArgument(2);
+            TicketStatus prev = invocation.getArgument(3);
+            TicketStatus curr = invocation.getArgument(4);
+            String note = invocation.getArgument(5);
+            return com.cityfix.backend.model.entity.TicketHistory.builder()
+                    .ticket(t)
+                    .actor(actor)
+                    .actionType(action)
+                    .previousStatus(prev)
+                    .currentStatus(curr)
+                    .actionNote(note)
+                    .build();
+        });
+
+        lenient().when(imageMapper.toReportImage(any(), any())).thenAnswer(invocation -> {
+            Ticket t = invocation.getArgument(0);
+            String url = invocation.getArgument(1);
+            return com.cityfix.backend.model.entity.ReportImage.builder()
+                    .ticket(t)
+                    .imageUrl(url)
+                    .build();
+        });
 
         mockResponse = TicketResponse.builder()
                 .id(mockTicket.getTicketId())
@@ -466,22 +534,22 @@ class TicketServiceTest {
     // ==========================================
 
     @Test
-    @DisplayName("getPendingReviewTickets_returnsPageOfTickets")
-    void getPendingReviewTickets_returnsPageOfTickets() {
+    @DisplayName("getInitiatedTickets_returnsPageOfTickets")
+    void getInitiatedTickets_returnsPageOfTickets() {
         org.springframework.data.domain.Page<Ticket> page = new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
-        when(ticketRepository.findByStatus(eq(TicketStatus.PENDING_REVIEW), any())).thenReturn(page);
+        when(ticketRepository.findByStatus(eq(TicketStatus.INITIATED), any())).thenReturn(page);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
 
-        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getPendingReviewTickets(org.springframework.data.domain.PageRequest.of(0, 10));
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getInitiatedTickets(org.springframework.data.domain.PageRequest.of(0, 10));
 
         assertThat(result.getContent()).hasSize(1);
-        verify(ticketRepository, times(1)).findByStatus(eq(TicketStatus.PENDING_REVIEW), any());
+        verify(ticketRepository, times(1)).findByStatus(eq(TicketStatus.INITIATED), any());
     }
 
     @Test
     @DisplayName("reviewTicket_validData_returnsUpdatedTicket")
     void reviewTicket_validData_returnsUpdatedTicket() {
-        mockTicket.setStatus(TicketStatus.PENDING_REVIEW);
+        mockTicket.setStatus(TicketStatus.INITIATED);
         
         com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
         request.setDepartmentIds(List.of(UUID.randomUUID()));
@@ -507,9 +575,9 @@ class TicketServiceTest {
     }
 
     @Test
-    @DisplayName("reviewTicket_notPendingReview_throwsException")
-    void reviewTicket_notPendingReview_throwsException() {
-        mockTicket.setStatus(TicketStatus.OPEN); // Not PENDING_REVIEW
+    @DisplayName("reviewTicket_notInitiated_throwsException")
+    void reviewTicket_notInitiated_throwsException() {
+        mockTicket.setStatus(TicketStatus.OPEN); // Not INITIATED
         
         com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
         
@@ -518,6 +586,400 @@ class TicketServiceTest {
         assertThatThrownBy(() -> ticketService.reviewTicket(mockTicket.getTicketId(), request))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
-                .isEqualTo(ErrorCode.TICKET_NOT_PENDING_REVIEW);
+                .isEqualTo(ErrorCode.TICKET_NOT_INITIATED);
+    }
+
+    @Test
+    @DisplayName("createTicket_noRoutingRuleMatches_setsInitiatedAndNeedsManualReview")
+    void createTicket_noRoutingRuleMatches_setsInitiatedAndNeedsManualReview() {
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+        when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(any()))
+                .thenReturn(List.of());
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository, times(1)).save(argThat(t ->
+                t.getStatus() == TicketStatus.INITIATED && Boolean.TRUE.equals(t.getNeedsManualReview())
+        ));
+        verify(ticketHistoryRepository, times(1)).save(argThat(h ->
+                h.getActionType() == com.cityfix.backend.model.enums.ActionType.ROUTED &&
+                h.getCurrentStatus() == TicketStatus.INITIATED
+        ));
+    }
+
+    // ==========================================
+    // 5. Re-route & Staff Ticket List Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("rerouteTicket_validRequest_success")
+    void rerouteTicket_validRequest_success() {
+        mockUser.setIsDispatcher(true);
+        UUID targetDeptId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(targetDeptId)
+                        .reason("Không thuộc thẩm quyền xử lý")
+                        .build();
+
+        mockTicket.setStatus(TicketStatus.OPEN);
+
+        com.cityfix.backend.model.entity.Department targetDept = new com.cityfix.backend.model.entity.Department();
+        targetDept.setDepartmentId(targetDeptId);
+        targetDept.setName("Phòng B");
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(departmentRepository.findById(targetDeptId)).thenReturn(Optional.of(targetDept));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketResponse response = ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest);
+
+        assertThat(response).isNotNull();
+        verify(ticketAssignmentRepository, times(1)).save(any());
+        verify(ticketHistoryRepository, times(1)).save(any());
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.ASSIGNED);
+    }
+
+    @Test
+    @DisplayName("rerouteTicket_userNotAdminOrDispatcher_throwsFORBIDDEN")
+    void rerouteTicket_userNotAdminOrDispatcher_throwsFORBIDDEN() {
+        mockUser.setIsDispatcher(false);
+        mockUser.setRole(null);
+
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(UUID.randomUUID())
+                        .reason("Tự động chuyển")
+                        .build();
+
+        assertThatThrownBy(() -> ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("rerouteTicket_targetDepartmentMatchesCurrentActive_throwsINVALID_REQUEST")
+    void rerouteTicket_targetDepartmentMatchesCurrentActive_throwsINVALID_REQUEST() {
+        mockUser.setIsDispatcher(true);
+        UUID currentDeptId = UUID.randomUUID();
+
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(currentDeptId)
+                        .reason("Chuyển nhầm trùng phòng ban")
+                        .build();
+
+        mockTicket.setStatus(TicketStatus.ASSIGNED);
+
+        com.cityfix.backend.model.entity.Department currentDept = new com.cityfix.backend.model.entity.Department();
+        currentDept.setDepartmentId(currentDeptId);
+        currentDept.setName("Phòng A");
+
+        com.cityfix.backend.model.entity.TicketAssignment currentAssignment =
+                com.cityfix.backend.model.entity.TicketAssignment.builder()
+                        .ticket(mockTicket)
+                        .department(currentDept)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
+                        .build();
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(departmentRepository.findById(currentDeptId)).thenReturn(Optional.of(currentDept));
+        when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(any(), any()))
+                .thenReturn(List.of(currentAssignment));
+
+        assertThatThrownBy(() -> ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("rerouteTicket_resolvedTicket_throwsTICKET_INVALID_STATUS")
+    void rerouteTicket_resolvedTicket_throwsTICKET_INVALID_STATUS() {
+        mockUser.setIsDispatcher(true);
+        mockUser.setDepartment(new com.cityfix.backend.model.entity.Department()); mockTicket.setStatus(TicketStatus.RESOLVED);
+
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(UUID.randomUUID())
+                        .reason("Chuyển nhầm")
+                        .build();
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TICKET_INVALID_STATUS);
+    }
+
+    @Test
+    @DisplayName("getAssignedTicketsForStaff_validStaff_success")
+    void getAssignedTicketsForStaff_validStaff_success() {
+        com.cityfix.backend.model.entity.Department dept = new com.cityfix.backend.model.entity.Department();
+        dept.setDepartmentId(UUID.randomUUID());
+        dept.setName("Phòng Giao thông");
+        mockUser.setDepartment(dept);
+
+        com.cityfix.backend.model.entity.TicketAssignment assignment =
+                com.cityfix.backend.model.entity.TicketAssignment.builder()
+                        .ticket(mockTicket)
+                        .department(dept)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
+                        .build();
+
+        org.springframework.data.domain.Page<com.cityfix.backend.model.entity.TicketAssignment> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(assignment));
+
+        when(ticketAssignmentRepository.findByDepartmentDepartmentIdAndStatusIn(any(), any(), any())).thenReturn(page);
+        when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(mockResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getAssignedTicketsForStaff(null, org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("getAssignedTicketsForStaff_userWithoutDepartment_throwsUSER_NOT_IN_DEPARTMENT")
+    void getAssignedTicketsForStaff_userWithoutDepartment_throwsUSER_NOT_IN_DEPARTMENT() {
+        mockUser.setDepartment(null);
+
+        assertThatThrownBy(() -> ticketService.getAssignedTicketsForStaff(null, org.springframework.data.domain.PageRequest.of(0, 10)))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+    }
+
+    @Test
+    @DisplayName("assignTicket_success")
+    void assignTicket_success() {
+        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
+        mockStaffRole.setRoleName("STAFF");
+        mockUser.setRole(mockStaffRole);
+        mockUser.setIsDispatcher(true);
+        
+        UUID assigneeId = UUID.randomUUID();
+        User assignee = new User();
+        assignee.setUserId(assigneeId);
+        
+        com.cityfix.backend.model.entity.Department mockDepartment = new com.cityfix.backend.model.entity.Department();
+        mockDepartment.setDepartmentId(UUID.randomUUID());
+        mockUser.setDepartment(mockDepartment);
+        assignee.setDepartment(mockDepartment);
+        
+        com.cityfix.backend.model.entity.TicketAssignment assignment = new com.cityfix.backend.model.entity.TicketAssignment();
+        assignment.setDepartment(mockDepartment);
+        assignment.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
+                .thenReturn(List.of(assignment));
+        when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
+        
+        TicketResponse mockResponse = TicketResponse.builder().build();
+        when(ticketMapper.toTicketResponse(any())).thenReturn(mockResponse);
+        
+        com.cityfix.backend.model.dto.request.AssignTicketRequest req = new com.cityfix.backend.model.dto.request.AssignTicketRequest(assigneeId);
+        
+        TicketResponse res = ticketService.assignTicket(mockTicket.getTicketId(), req);
+        
+        assertThat(res).isNotNull();
+        verify(ticketAssignmentRepository).save(assignment);
+        verify(ticketRepository).save(mockTicket);
+        verify(ticketHistoryRepository).save(any());
+        assertThat(assignment.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.ASSIGNED);
+    }
+
+    @Test
+    @DisplayName("forwardTicket_success")
+    void forwardTicket_success() {
+        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
+        mockStaffRole.setRoleName("STAFF");
+        mockUser.setRole(mockStaffRole);
+        mockUser.setIsDispatcher(true);
+        
+        com.cityfix.backend.model.entity.Department mockDepartment = new com.cityfix.backend.model.entity.Department();
+        mockDepartment.setDepartmentId(UUID.randomUUID());
+        mockUser.setDepartment(mockDepartment);
+        
+        UUID suggestedDeptId = UUID.randomUUID();
+        com.cityfix.backend.model.entity.Department suggestedDept = new com.cityfix.backend.model.entity.Department();
+        suggestedDept.setDepartmentId(suggestedDeptId);
+        
+        com.cityfix.backend.model.entity.TicketAssignment assignment = new com.cityfix.backend.model.entity.TicketAssignment();
+        assignment.setDepartment(mockDepartment);
+        assignment.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(departmentRepository.findById(suggestedDeptId)).thenReturn(Optional.of(suggestedDept));
+        when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
+                .thenReturn(List.of(assignment));
+                
+        TicketResponse mockResponse = TicketResponse.builder().build();
+        when(ticketMapper.toTicketResponse(any())).thenReturn(mockResponse);
+        
+        com.cityfix.backend.model.dto.request.RejectTicketRequest req = new com.cityfix.backend.model.dto.request.RejectTicketRequest(null, suggestedDeptId, "Reason");
+        
+        TicketResponse res = ticketService.forwardTicket(mockTicket.getTicketId(), req);
+        
+        assertThat(res).isNotNull();
+        // check that history is logged for REJECTED
+        verify(ticketHistoryRepository, atLeastOnce()).save(argThat(history -> 
+            history != null && (history.getActionType() == com.cityfix.backend.model.enums.ActionType.REJECTED || history.getActionType() == com.cityfix.backend.model.enums.ActionType.REROUTED)
+        ));
+    }
+
+    @Test
+    @DisplayName("assignTicket_resolvedTicket_throwsTICKET_INVALID_STATUS")
+    void assignTicket_resolvedTicket_throwsTICKET_INVALID_STATUS() {
+        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
+        mockStaffRole.setRoleName("STAFF");
+        mockUser.setRole(mockStaffRole);
+        mockUser.setIsDispatcher(true);
+        mockUser.setDepartment(new com.cityfix.backend.model.entity.Department()); mockTicket.setStatus(TicketStatus.RESOLVED);
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        
+        com.cityfix.backend.model.dto.request.AssignTicketRequest req = new com.cityfix.backend.model.dto.request.AssignTicketRequest(UUID.randomUUID());
+        
+        assertThatThrownBy(() -> ticketService.assignTicket(mockTicket.getTicketId(), req))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TICKET_INVALID_STATUS);
+    }
+    
+    @Test
+    @DisplayName("assignTicket_assigneeWrongDepartment_throwsINVALID_REQUEST")
+    void assignTicket_assigneeWrongDepartment_throwsINVALID_REQUEST() {
+        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
+        mockStaffRole.setRoleName("STAFF");
+        mockUser.setRole(mockStaffRole);
+        mockUser.setIsDispatcher(true);
+        
+        com.cityfix.backend.model.entity.Department mockDepartment = new com.cityfix.backend.model.entity.Department();
+        mockDepartment.setDepartmentId(UUID.randomUUID());
+        mockUser.setDepartment(mockDepartment);
+        
+        UUID assigneeId = UUID.randomUUID();
+        User assignee = new User();
+        assignee.setUserId(assigneeId);
+        com.cityfix.backend.model.entity.Department otherDept = new com.cityfix.backend.model.entity.Department();
+        otherDept.setDepartmentId(UUID.randomUUID());
+        assignee.setDepartment(otherDept);
+        
+        com.cityfix.backend.model.entity.TicketAssignment assignment = new com.cityfix.backend.model.entity.TicketAssignment();
+        assignment.setDepartment(mockDepartment);
+        assignment.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
+                .thenReturn(List.of(assignment));
+        when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
+        
+        com.cityfix.backend.model.dto.request.AssignTicketRequest req = new com.cityfix.backend.model.dto.request.AssignTicketRequest(assigneeId);
+        
+        assertThatThrownBy(() -> ticketService.assignTicket(mockTicket.getTicketId(), req))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+    
+    @Test
+    @DisplayName("forwardTicket_withoutDepartmentOrCategory_throwsDEPARTMENT_NOT_FOUND")
+    void forwardTicket_withoutDepartmentOrCategory_throwsDEPARTMENT_NOT_FOUND() {
+        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
+        mockStaffRole.setRoleName("STAFF");
+        mockUser.setRole(mockStaffRole);
+        mockUser.setIsDispatcher(true);
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        
+        com.cityfix.backend.model.dto.request.RejectTicketRequest req = new com.cityfix.backend.model.dto.request.RejectTicketRequest(null, null, "Reason");
+        
+        assertThatThrownBy(() -> ticketService.forwardTicket(mockTicket.getTicketId(), req))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("forwardTicket_userNotDispatcher_throwsFORBIDDEN")
+    void forwardTicket_userNotDispatcher_throwsFORBIDDEN() {
+        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
+        mockStaffRole.setRoleName("STAFF");
+        mockUser.setRole(mockStaffRole);
+        mockUser.setIsDispatcher(false);
+        
+        com.cityfix.backend.model.dto.request.RejectTicketRequest req = new com.cityfix.backend.model.dto.request.RejectTicketRequest(null, null, "Reason");
+        
+        assertThatThrownBy(() -> ticketService.forwardTicket(mockTicket.getTicketId(), req))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("forwardTicket_withSuggestedCategory_updatesCategoryAndReroutes")
+    void forwardTicket_withSuggestedCategory_updatesCategoryAndReroutes() {
+        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
+        mockStaffRole.setRoleName("STAFF");
+        mockUser.setRole(mockStaffRole);
+        mockUser.setIsDispatcher(true);
+        
+        com.cityfix.backend.model.entity.Department mockDepartment = new com.cityfix.backend.model.entity.Department();
+        mockDepartment.setDepartmentId(UUID.randomUUID());
+        mockUser.setDepartment(mockDepartment);
+        
+        UUID suggestedCategoryId = UUID.randomUUID();
+        Category suggestedCategory = new Category();
+        suggestedCategory.setCategoryId(suggestedCategoryId);
+        
+        UUID suggestedDeptId = UUID.randomUUID();
+        com.cityfix.backend.model.entity.Department suggestedDept = new com.cityfix.backend.model.entity.Department();
+        suggestedDept.setDepartmentId(suggestedDeptId);
+        
+        com.cityfix.backend.model.dto.response.DepartmentResponse deptResp = new com.cityfix.backend.model.dto.response.DepartmentResponse(
+            suggestedDeptId, "Name", null, "email", "phone", 0, true
+        );
+        
+        com.cityfix.backend.model.entity.TicketAssignment assignment = new com.cityfix.backend.model.entity.TicketAssignment();
+        assignment.setDepartment(mockDepartment);
+        assignment.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
+        
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(categoryRepository.findById(suggestedCategoryId)).thenReturn(Optional.of(suggestedCategory));
+        when(ticketRepository.save(mockTicket)).thenReturn(mockTicket);
+        
+        // Mock getSuggestedDepartments
+        // Note: we might not be able to easily mock getSuggestedDepartments as it's an internal method call on the same bean,
+        // but it will try to call routingRuleRepository!
+        // We will mock routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(suggestedCategoryId))
+            .thenReturn(List.of(com.cityfix.backend.model.entity.RoutingRule.builder().department(suggestedDept).build()));
+            
+        when(departmentMapper.toResponseList(any())).thenReturn(List.of(deptResp));
+        when(departmentRepository.findById(suggestedDeptId)).thenReturn(Optional.of(suggestedDept));
+        when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
+                .thenReturn(List.of(assignment));
+                
+        TicketResponse mockResponse = TicketResponse.builder().build();
+        when(ticketMapper.toTicketResponse(any())).thenReturn(mockResponse);
+        
+        com.cityfix.backend.model.dto.request.RejectTicketRequest req = new com.cityfix.backend.model.dto.request.RejectTicketRequest(suggestedCategoryId, null, "Reason");
+        
+        TicketResponse res = ticketService.forwardTicket(mockTicket.getTicketId(), req);
+        
+        assertThat(res).isNotNull();
+        assertThat(mockTicket.getCategory()).isEqualTo(suggestedCategory);
+        verify(categoryRepository).findById(suggestedCategoryId);
     }
 }

@@ -26,7 +26,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
         FROM ticket t
         LEFT JOIN category c ON t.category_id = c.category_id
         WHERE t.category_id = :categoryId
-          AND t.status IN ('INITIATED', 'ASSIGNED', 'IN_PROGRESS')
+          AND t.status IN ('INITIATED', 'OPEN', 'ASSIGNED', 'IN_PROGRESS')
           AND ST_DWithin(
                 t.location::geography,
                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,

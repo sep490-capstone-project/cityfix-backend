@@ -18,6 +18,11 @@ public interface ImageMapper {
     @Mapping(target = "createdAt", expression = "java(getMapString(map, \"created_at\"))")
     ImageUploadResponse toImageUploadResponse(Map<String, Object> map);
 
+    @Mapping(target = "mediaId", ignore = true)
+    @Mapping(target = "ticket", source = "ticket")
+    @Mapping(target = "imageUrl", source = "imageUrl")
+    com.cityfix.backend.model.entity.ReportImage toReportImage(com.cityfix.backend.model.entity.Ticket ticket, String imageUrl);
+
     default String getMapString(Map<String, Object> map, String key) {
         if (map == null || !map.containsKey(key) || map.get(key) == null) {
             return null;
