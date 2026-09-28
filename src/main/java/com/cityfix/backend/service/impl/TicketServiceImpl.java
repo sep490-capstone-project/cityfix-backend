@@ -577,12 +577,14 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
         }
 
+        String finalReason = (reason == null || reason.trim().isEmpty()) ? "Không có lý do từ chối" : reason;
+
         ticket.setStatus(TicketStatus.REJECTED);
         ticket.setNeedsManualReview(false);
-        ticket.setReviewNote(reason);
+        ticket.setReviewNote(finalReason);
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.REJECTED, TicketStatus.INITIATED, TicketStatus.REJECTED, reason
+                ticket, currentUser, ActionType.REJECTED, TicketStatus.INITIATED, TicketStatus.REJECTED, finalReason
         );
         ticketHistoryRepository.save(history);
 
@@ -603,7 +605,7 @@ public class TicketServiceImpl implements TicketService {
         }
 
         if (ticket.getStatus() != TicketStatus.INITIATED) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
         }
 
         ticket.setStatus(TicketStatus.CANCELLED);
@@ -631,12 +633,14 @@ public class TicketServiceImpl implements TicketService {
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
         if (ticket.getStatus() != TicketStatus.ASSIGNED && ticket.getStatus() != TicketStatus.OPEN) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
         }
+
+        String finalReason = (reason == null || reason.trim().isEmpty()) ? "Không có lý do từ chối" : reason;
 
         TicketStatus prevStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.REJECTED);
-        ticket.setReviewNote(reason);
+        ticket.setReviewNote(finalReason);
 
         // Cancel assignments
         List<TicketAssignment> activeAssignments =
@@ -651,7 +655,7 @@ public class TicketServiceImpl implements TicketService {
         }
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.REJECTED, prevStatus, TicketStatus.REJECTED, reason
+                ticket, currentUser, ActionType.REJECTED, prevStatus, TicketStatus.REJECTED, finalReason
         );
         ticketHistoryRepository.save(history);
 
