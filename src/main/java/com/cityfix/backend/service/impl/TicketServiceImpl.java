@@ -162,21 +162,28 @@ public class TicketServiceImpl implements TicketService {
         }
 
         boolean finalNeedsReview = needsReview || (assignedDepartment == null);
-        TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.ASSIGNED;
+        TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.OPEN;
 
         Ticket ticket = ticketMapper.toTicket(request, category, user, location, initialStatus, finalNeedsReview);
         ticket = ticketRepository.save(ticket);
 
-        if (assignedDepartment != null) {
-            TicketAssignment assignment = ticketAssignmentMapper.toTicketAssignment(ticket, assignedDepartment, AssignmentStatus.ASSIGNED);
+        if (assignedDepartment != null && !finalNeedsReview) {
+            TicketAssignment assignment = ticketAssignmentMapper.toTicketAssignment(ticket, assignedDepartment, AssignmentStatus.OPEN);
             ticketAssignmentRepository.save(assignment);
             ticket.getAssignments().add(assignment);
         }
 
         // Audit Log
-        String historyNote = (assignedDepartment != null)
-                ? "Tự động định tuyến thành công tới đơn vị: " + assignedDepartment.getName()
-                : "Chuyển sang duyệt thủ công do chưa có quy tắc định tuyến phù hợp";
+        String historyNote;
+        if (finalNeedsReview) {
+            if (assignedDepartment != null) {
+                historyNote = "Chuyển sang duyệt thủ công do tính chất nguy hiểm hoặc điểm AI thấp (Đã dự kiến gợi ý: " + assignedDepartment.getName() + ")";
+            } else {
+                historyNote = "Chuyển sang duyệt thủ công do chưa có quy tắc định tuyến phù hợp";
+            }
+        } else {
+            historyNote = "Tự động định tuyến thành công tới đơn vị: " + assignedDepartment.getName();
+        }
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
                 ticket, user, ActionType.ROUTED, null, initialStatus, historyNote
@@ -673,5 +680,7 @@ public class TicketServiceImpl implements TicketService {
         return ticketHistoryMapper.toTicketHistoryResponseList(histories);
     }
 }
+
+
 
 
