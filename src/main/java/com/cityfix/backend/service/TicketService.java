@@ -15,13 +15,17 @@ public interface TicketService {
     List<ImageUploadResponse> uploadImage(List<MultipartFile> files, String folder);
     List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID categoryId);
     
-    org.springframework.data.domain.Page<TicketResponse> getPendingReviewTickets(org.springframework.data.domain.Pageable pageable);
+    org.springframework.data.domain.Page<TicketResponse> getInitiatedTickets(org.springframework.data.domain.Pageable pageable);
     List<com.cityfix.backend.model.dto.response.DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId);
     TicketResponse reviewTicket(UUID ticketId, com.cityfix.backend.model.dto.request.ReviewTicketRequest request);
     TicketResponse rerouteTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RerouteTicketRequest request);
     org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(com.cityfix.backend.model.enums.AssignmentStatus status, org.springframework.data.domain.Pageable pageable);
     
     TicketResponse assignTicket(UUID ticketId, com.cityfix.backend.model.dto.request.AssignTicketRequest request);
-    TicketResponse rejectTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RejectTicketRequest request);
+    TicketResponse forwardTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RejectTicketRequest request);
+    TicketResponse rejectAssignedTicket(UUID ticketId, String reason);
+    TicketResponse rejectInitiatedTicket(UUID ticketId, String reason);
+    TicketResponse cancelTicket(UUID ticketId);
+    List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> getTicketHistory(UUID ticketId);
 }
 

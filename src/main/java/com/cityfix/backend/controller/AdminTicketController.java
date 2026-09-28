@@ -27,12 +27,12 @@ public class AdminTicketController {
 
     private final TicketService ticketService;
 
-    @GetMapping("/pending-review")
+    @GetMapping("/initiated")
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    @Operation(summary = "Lấy danh sách vé chờ duyệt", description = "Trả về danh sách vé đang ở trạng thái PENDING_REVIEW")
-    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getPendingReviewTickets(
+    @Operation(summary = "Lấy danh sách vé chờ duyệt", description = "Trả về danh sách vé đang ở trạng thái INITIATED")
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getInitiatedTickets(
             @PageableDefault(size = 20) Pageable pageable) {
-        Page<TicketResponse> response = ticketService.getPendingReviewTickets(pageable);
+        Page<TicketResponse> response = ticketService.getInitiatedTickets(pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé chờ duyệt thành công", response));
     }
 
@@ -54,5 +54,15 @@ public class AdminTicketController {
             @Valid @RequestBody ReviewTicketRequest request) {
         TicketResponse response = ticketService.reviewTicket(id, request);
         return ResponseEntity.ok(BaseResponse.success("Duyệt và định tuyến vé thành công", response));
+    }
+
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @Operation(summary = "Từ chối vé (Manual Review)", description = "Admin/Staff từ chối vé, chuyển trạng thái sang REJECTED")
+    public ResponseEntity<BaseResponse<TicketResponse>> rejectInitiatedTicket(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
+        TicketResponse response = ticketService.rejectInitiatedTicket(id, request.getReason());
+        return ResponseEntity.ok(BaseResponse.success("Từ chối vé thành công", response));
     }
 }

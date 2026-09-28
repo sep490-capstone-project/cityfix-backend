@@ -21,6 +21,7 @@ public class TicketResponse {
     private com.cityfix.backend.model.enums.TicketStatus status;
     private Double latitude;
     private Double longitude;
+    private String reviewNote;
     private UUID createdBy;
     private LocalDateTime createdAt;
     private java.util.List<TicketAssignmentResponse> assignments;

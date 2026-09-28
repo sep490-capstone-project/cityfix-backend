@@ -41,13 +41,23 @@ public class StaffTicketController {
         return ResponseEntity.ok(BaseResponse.success("Phân công vé thành công", response));
     }
 
-    @PutMapping("/{id}/reject")
+    @PutMapping("/{id}/forward")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Reject Ticket and Reroute", description = "Reject wrong ticket and reroute (Only for Dispatcher)")
-    public ResponseEntity<BaseResponse<TicketResponse>> rejectTicket(
+    @Operation(summary = "Chuyển giao vé (Reroute)", description = "Chuyển vé sang phòng ban khác nếu không thuộc thẩm quyền")
+    public ResponseEntity<BaseResponse<TicketResponse>> forwardTicket(
             @PathVariable java.util.UUID id,
             @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
-        TicketResponse response = ticketService.rejectTicket(id, request);
-        return ResponseEntity.ok(BaseResponse.success("Từ chối và định tuyến lại vé thành công", response));
+        TicketResponse response = ticketService.forwardTicket(id, request);
+        return ResponseEntity.ok(BaseResponse.success("Chuyển giao vé thành công", response));
+    }
+
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Từ chối hồ sơ", description = "Điều phối viên từ chối hẳn vé (chuyển thành REJECTED) kèm lý do")
+    public ResponseEntity<BaseResponse<TicketResponse>> rejectAssignedTicket(
+            @PathVariable java.util.UUID id,
+            @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
+        TicketResponse response = ticketService.rejectAssignedTicket(id, request.getReason());
+        return ResponseEntity.ok(BaseResponse.success("Từ chối hồ sơ thành công", response));
     }
 }

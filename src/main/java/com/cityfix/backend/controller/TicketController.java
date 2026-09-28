@@ -94,6 +94,23 @@ public class TicketController {
         return ResponseEntity.ok(BaseResponse.success("Chuyển tuyến vé thành công.", response));
     }
 
+    @PutMapping("/{id}/cancel")
+    @PreAuthorize("hasRole('RESIDENT')")
+    @Operation(summary = "Hủy vé (Resident)", description = "Người dân hủy vé do chính mình tạo (chỉ hủy được khi vé ở trạng thái INITIATED)")
+    public ResponseEntity<BaseResponse<TicketResponse>> cancelTicket(
+            @PathVariable UUID id) {
+        TicketResponse response = ticketService.cancelTicket(id);
+        return ResponseEntity.ok(BaseResponse.success("Hủy vé thành công", response));
+    }
+
+    @GetMapping("/{id}/history")
+    @Operation(summary = "Lấy lịch sử thao tác của vé", description = "Trả về danh sách các sự kiện (timeline) đã xảy ra với vé, bao gồm lý do luân chuyển hoặc từ chối.")
+    public ResponseEntity<BaseResponse<List<com.cityfix.backend.model.dto.response.TicketHistoryResponse>>> getTicketHistory(
+            @PathVariable UUID id) {
+        List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> response = ticketService.getTicketHistory(id);
+        return ResponseEntity.ok(BaseResponse.success("Lấy lịch sử vé thành công", response));
+    }
+
     private LocationCoords parseLocation(String locationStr, Double fallbackLat, Double fallbackLng) {
         if (locationStr != null && !locationStr.isBlank()) {
             String trimmed = locationStr.trim();

@@ -37,14 +37,14 @@ class AdminTicketControllerTest {
     private AdminTicketController adminTicketController;
 
     @Test
-    @DisplayName("getPendingReviewTickets_returnsPageOfTickets")
-    void getPendingReviewTickets_returnsPageOfTickets() {
+    @DisplayName("getInitiatedTickets_returnsPageOfTickets")
+    void getInitiatedTickets_returnsPageOfTickets() {
         TicketResponse mockResponse = TicketResponse.builder().id(UUID.randomUUID()).description("Test").build();
         Page<TicketResponse> page = new PageImpl<>(List.of(mockResponse));
         
-        when(ticketService.getPendingReviewTickets(any(Pageable.class))).thenReturn(page);
+        when(ticketService.getInitiatedTickets(any(Pageable.class))).thenReturn(page);
 
-        ResponseEntity<BaseResponse<Page<TicketResponse>>> response = adminTicketController.getPendingReviewTickets(PageRequest.of(0, 20));
+        ResponseEntity<BaseResponse<Page<TicketResponse>>> response = adminTicketController.getInitiatedTickets(PageRequest.of(0, 20));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
