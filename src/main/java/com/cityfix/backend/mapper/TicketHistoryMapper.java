@@ -27,4 +27,11 @@ public interface TicketHistoryMapper {
             TicketStatus currentStatus,
             String actionNote
     );
+
+    @Mapping(target = "ticketId", source = "ticket.ticketId")
+    @Mapping(target = "actorId", source = "actor.userId")
+    @Mapping(target = "actorName", source = "actor.fullName")
+    com.cityfix.backend.model.dto.response.TicketHistoryResponse toTicketHistoryResponse(TicketHistory history);
+
+    java.util.List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> toTicketHistoryResponseList(java.util.List<TicketHistory> histories);
 }

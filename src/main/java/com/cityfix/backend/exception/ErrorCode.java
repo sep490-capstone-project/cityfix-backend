@@ -123,9 +123,9 @@ public enum ErrorCode {
             "Không tìm thấy vé"
     ),
 
-    TICKET_NOT_PENDING_REVIEW(
+    TICKET_NOT_INITIATED(
             HttpStatus.BAD_REQUEST,
-            "Vé không ở trạng thái chờ duyệt"
+            "Vé không ở trạng thái khởi tạo"
     ),
 
     USER_NOT_IN_DEPARTMENT(

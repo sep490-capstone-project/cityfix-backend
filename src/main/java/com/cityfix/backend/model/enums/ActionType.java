@@ -11,5 +11,6 @@ public enum ActionType {
     REJECTED,
     WORK_STARTED,
     EVIDENCE_SUBMITTED,
-    CLOSED
+    CLOSED,
+    CANCELLED
 }

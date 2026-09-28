@@ -162,7 +162,7 @@ public class TicketServiceImpl implements TicketService {
         }
 
         boolean finalNeedsReview = needsReview || (assignedDepartment == null);
-        TicketStatus initialStatus = finalNeedsReview ? TicketStatus.PENDING_REVIEW : TicketStatus.ASSIGNED;
+        TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.ASSIGNED;
 
         Ticket ticket = ticketMapper.toTicket(request, category, user, location, initialStatus, finalNeedsReview);
         ticket = ticketRepository.save(ticket);
@@ -304,8 +304,8 @@ public class TicketServiceImpl implements TicketService {
     
     @Override
     @Transactional(readOnly = true)
-    public org.springframework.data.domain.Page<TicketResponse> getPendingReviewTickets(org.springframework.data.domain.Pageable pageable) {
-        org.springframework.data.domain.Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.PENDING_REVIEW, pageable);
+    public org.springframework.data.domain.Page<TicketResponse> getInitiatedTickets(org.springframework.data.domain.Pageable pageable) {
+        org.springframework.data.domain.Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
         return tickets.map(ticketMapper::toTicketResponse);
     }
 
@@ -342,8 +342,8 @@ public class TicketServiceImpl implements TicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
                 
-        if (ticket.getStatus() != TicketStatus.PENDING_REVIEW) {
-            throw new AppException(ErrorCode.TICKET_NOT_PENDING_REVIEW);
+        if (ticket.getStatus() != TicketStatus.INITIATED) {
+            throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
         }
                 
         if (request.getCategoryId() != null) {
@@ -513,7 +513,7 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional
-    public TicketResponse rejectTicket(UUID ticketId, RejectTicketRequest request) {
+    public TicketResponse forwardTicket(UUID ticketId, RejectTicketRequest request) {
         User currentUser = getCurrentUser();
         
         boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
@@ -533,10 +533,10 @@ public class TicketServiceImpl implements TicketService {
             ticket = ticketRepository.save(ticket);
         }
 
-        TicketHistory rejectHistory = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.REJECTED, ticket.getStatus(), ticket.getStatus(), request.getReason()
+        TicketHistory forwardHistory = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.REROUTED, ticket.getStatus(), ticket.getStatus(), request.getReason()
         );
-        ticketHistoryRepository.save(rejectHistory);
+        ticketHistoryRepository.save(forwardHistory);
 
         UUID targetDepartmentId = request.getSuggestedDepartmentId();
         if (targetDepartmentId == null && request.getSuggestedCategoryId() != null) {
@@ -556,6 +556,117 @@ public class TicketServiceImpl implements TicketService {
                 .build();
                 
         return this.rerouteTicket(ticketId, rerouteReq);
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse rejectInitiatedTicket(UUID ticketId, String reason) {
+        User currentUser = getCurrentUser();
+
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
+
+        if (!isAdmin && !isStaff) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if (ticket.getStatus() != TicketStatus.INITIATED) {
+            throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
+        }
+
+        ticket.setStatus(TicketStatus.REJECTED);
+        ticket.setNeedsManualReview(false);
+        ticket.setReviewNote(reason);
+
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.REJECTED, TicketStatus.INITIATED, TicketStatus.REJECTED, reason
+        );
+        ticketHistoryRepository.save(history);
+
+        ticket = ticketRepository.save(ticket);
+        return ticketMapper.toTicketResponse(ticket);
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse cancelTicket(UUID ticketId) {
+        User currentUser = getCurrentUser();
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if (ticket.getUser() == null || !ticket.getUser().getUserId().equals(currentUser.getUserId())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        if (ticket.getStatus() != TicketStatus.INITIATED) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        ticket.setStatus(TicketStatus.CANCELLED);
+
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.CANCELLED, TicketStatus.INITIATED, TicketStatus.CANCELLED, "Người dân tự hủy vé"
+        );
+        ticketHistoryRepository.save(history);
+
+        ticket = ticketRepository.save(ticket);
+        return ticketMapper.toTicketResponse(ticket);
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse rejectAssignedTicket(UUID ticketId, String reason) {
+        User currentUser = getCurrentUser();
+
+        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        if (!isStaff) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if (ticket.getStatus() != TicketStatus.ASSIGNED && ticket.getStatus() != TicketStatus.OPEN) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        TicketStatus prevStatus = ticket.getStatus();
+        ticket.setStatus(TicketStatus.REJECTED);
+        ticket.setReviewNote(reason);
+
+        // Cancel assignments
+        List<TicketAssignment> activeAssignments =
+                ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
+                        ticketId,
+                        List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
+                );
+
+        for (TicketAssignment assignment : activeAssignments) {
+            assignment.setStatus(AssignmentStatus.CANCELLED);
+            ticketAssignmentRepository.save(assignment);
+        }
+
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.REJECTED, prevStatus, TicketStatus.REJECTED, reason
+        );
+        ticketHistoryRepository.save(history);
+
+        ticket = ticketRepository.save(ticket);
+        return ticketMapper.toTicketResponse(ticket);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> getTicketHistory(UUID ticketId) {
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+        List<TicketHistory> histories = ticketHistoryRepository.findByTicketTicketIdOrderByCreatedAtDesc(ticketId);
+        return ticketHistoryMapper.toTicketHistoryResponseList(histories);
     }
 }
 
