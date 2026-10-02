@@ -59,4 +59,29 @@ public class EmailServiceImpl implements EmailService {
                 </div>
                 """.formatted(otp);
     }
+
+    @Override
+    public void sendTicketStatusEmail(String to, String title, String message) {
+        String body = """
+                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto; padding: 32px; border: 1px solid #e5e7eb; border-radius: 8px;">
+                  <h2 style="color: #1d4ed8; margin-bottom: 8px;">%s</h2>
+                  <p style="color: #374151; font-size: 15px;">
+                    %s
+                  </p>
+                </div>
+                """.formatted(title, message);
+
+        CreateEmailOptions options = CreateEmailOptions.builder()
+                .from(fromEmail)
+                .to(to)
+                .subject(title)
+                .html(body)
+                .build();
+
+        try {
+            resend.emails().send(options);
+        } catch (ResendException e) {
+            log.error("Failed to send status email to {}: {}", to, e.getMessage());
+        }
+    }
 }
