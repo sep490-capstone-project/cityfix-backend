@@ -47,6 +47,11 @@ class ProfileControllerTest {
     @BeforeEach
     void setUp() {
         mockProfileResponse = UserProfileResponse.builder()
+                .userId(java.util.UUID.randomUUID())
+                .email("nguyenvana@gmail.com")
+                .roleName("USER")
+                .departmentId(java.util.UUID.randomUUID())
+                .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
                 .fullName("Nguyen Van A")
                 .phoneNumber("0912345678")
                 .address("123 Nguyen Hue")
@@ -75,6 +80,8 @@ class ProfileControllerTest {
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getMessage()).isEqualTo("Lấy thông tin profile thành công.");
         assertThat(response.getBody().getData().getFullName()).isEqualTo("Nguyen Van A");
+        assertThat(response.getBody().getData().getEmail()).isEqualTo("nguyenvana@gmail.com");
+        assertThat(response.getBody().getData().getRoleName()).isEqualTo("USER");
 
         verify(userService, times(1)).getMyProfile();
     }
@@ -83,6 +90,9 @@ class ProfileControllerTest {
     @DisplayName("updateMyProfile_validRequest_returns200OKWithUpdatedProfile")
     void updateMyProfile_validRequest_returns200OKWithUpdatedProfile() {
         UserProfileResponse updatedResponse = UserProfileResponse.builder()
+                .userId(java.util.UUID.randomUUID())
+                .email("nguyenvana@gmail.com")
+                .roleName("USER")
                 .fullName("Nguyen Van B")
                 .phoneNumber("0987654321")
                 .address("456 Le Loi")

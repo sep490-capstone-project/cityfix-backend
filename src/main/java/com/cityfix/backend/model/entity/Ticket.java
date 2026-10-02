@@ -37,6 +37,10 @@ public class Ticket {
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<TicketAssignment> assignments = new java.util.ArrayList<>();
 
+    @Builder.Default
+    @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<ReportImage> images = new java.util.ArrayList<>();
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
 

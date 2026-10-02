@@ -62,6 +62,10 @@ public class TicketServiceImpl implements TicketService {
     private final com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
     private final com.cityfix.backend.mapper.TicketAssignmentMapper ticketAssignmentMapper;
     private final com.cityfix.backend.mapper.TicketHistoryMapper ticketHistoryMapper;
+    private final com.cityfix.backend.repository.NotificationRepository notificationRepository;
+    private final com.cityfix.backend.mapper.NotificationMapper notificationMapper;
+    private final com.cityfix.backend.service.EmailService emailService;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
 
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
@@ -103,14 +107,16 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
 
+        String email;
         Object principal = authentication.getPrincipal();
         if (principal instanceof User user) {
-            return user;
+            email = user.getEmail();
+        } else if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
+            email = userDetails.getUsername();
+        } else {
+            email = principal.toString();
         }
 
-        String email = (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails)
-                ? userDetails.getUsername()
-                : principal.toString();
 
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
@@ -514,6 +520,71 @@ public class TicketServiceImpl implements TicketService {
                 ticket, currentUser, ActionType.ASSIGNED, prevStatus, TicketStatus.ASSIGNED, "Phân công cho " + assignee.getFullName()
         );
         ticketHistoryRepository.save(history);
+
+        return ticketMapper.toTicketResponse(ticket);
+    }
+
+    @Override
+    @Transactional
+    public TicketResponse markTicketInProgress(UUID ticketId) {
+        User currentUser = getCurrentUser();
+
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
+
+        if (!isAdmin && !(isStaff && !isDispatcher)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if (ticket.getStatus() != TicketStatus.ASSIGNED) {
+            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
+        }
+
+        TicketAssignment assignment = ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
+                ticketId, List.of(AssignmentStatus.ASSIGNED)).stream()
+                .filter(a -> isAdmin || (a.getAssignee() != null && a.getAssignee().getUserId().equals(currentUser.getUserId())))
+                .findFirst()
+                .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST));
+
+        assignment.setStatus(AssignmentStatus.IN_PROGRESS);
+        ticketAssignmentRepository.save(assignment);
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket = ticketRepository.save(ticket);
+
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.WORK_STARTED, TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS, "Bắt đầu xử lý sự cố"
+        );
+        ticketHistoryRepository.save(history);
+
+        String title = "Cập nhật sự cố: Đang xử lý";
+        String message = "Sự cố của bạn đang được cán bộ chuyên trách tiến hành xử lý.";
+        
+        User ticketUser = ticket.getUser();
+        if (ticketUser != null) {
+            Notification notification = Notification.builder()
+                    .user(ticketUser)
+                    .title(title)
+                    .content(message)
+                    .isRead(false)
+                    .build();
+            notification = notificationRepository.save(notification);
+            
+            try {
+                com.cityfix.backend.model.dto.response.NotificationResponse notifResponse = notificationMapper.toResponse(notification);
+                messagingTemplate.convertAndSend("/topic/notifications/" + ticketUser.getUserId(), notifResponse);
+            } catch (Exception e) {
+                log.error("Lỗi khi gửi websocket notification: {}", e.getMessage());
+            }
+            
+            if (ticketUser.getEmail() != null) {
+                emailService.sendTicketStatusEmail(ticketUser.getEmail(), title, message);
+            }
+        }
 
         return ticketMapper.toTicketResponse(ticket);
     }

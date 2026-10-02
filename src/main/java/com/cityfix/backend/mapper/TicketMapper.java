@@ -22,7 +22,7 @@ public interface TicketMapper {
     @Mapping(target = "categoryName", source = "category.name")
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
-    @Mapping(target = "imageUrl", ignore = true)
+    @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
     TicketResponse toTicketResponse(Ticket ticket);
 
     @Mapping(target = "departmentId", source = "department.departmentId")

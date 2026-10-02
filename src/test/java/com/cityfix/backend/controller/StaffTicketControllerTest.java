@@ -103,4 +103,24 @@ class StaffTicketControllerTest {
         
         verify(ticketService, times(1)).forwardTicket(eq(ticketId), any());
     }
+
+    @Test
+    @DisplayName("markTicketInProgress_returns200Success")
+    void markTicketInProgress_returns200Success() {
+        UUID ticketId = UUID.randomUUID();
+        TicketResponse mockResponse = TicketResponse.builder()
+                .id(ticketId)
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+                
+        when(ticketService.markTicketInProgress(eq(ticketId))).thenReturn(mockResponse);
+        
+        ResponseEntity<BaseResponse<TicketResponse>> response = staffTicketController.markTicketInProgress(ticketId);
+        
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        
+        verify(ticketService, times(1)).markTicketInProgress(eq(ticketId));
+    }
 }

@@ -28,6 +28,8 @@ public interface UserMapper {
     @Mapping(target = "nextStep", ignore = true)
     UserRegisterResponse toCustomerRegisterResponse(User user);
 
+    @Mapping(source = "role.roleName", target = "roleName")
+    @Mapping(source = "department.departmentId", target = "departmentId")
     com.cityfix.backend.model.dto.response.UserProfileResponse toUserProfileResponse(User user);
 
     @org.mapstruct.BeanMapping(nullValuePropertyMappingStrategy = org.mapstruct.NullValuePropertyMappingStrategy.IGNORE)

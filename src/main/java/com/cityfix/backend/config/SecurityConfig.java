@@ -27,7 +27,8 @@ public class SecurityConfig {
             "/swagger-ui.html",
             "/v3/api-docs/**",
             "/api-docs/**",
-            "/api/v1/tickets/**" // Tạm thời public để test không cần JWT
+            "/api/v1/tickets/**", // Tạm thời public để test không cần JWT
+            "/ws/**"
     };
 
     @Bean

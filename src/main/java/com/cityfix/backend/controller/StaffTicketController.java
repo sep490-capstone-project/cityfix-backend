@@ -41,6 +41,15 @@ public class StaffTicketController {
         return ResponseEntity.ok(BaseResponse.success("Phân công vé thành công", response));
     }
 
+    @PutMapping("/{id}/in-progress")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Cập nhật trạng thái Đang xử lý", description = "Cán bộ chuyên môn cập nhật trạng thái vé sang IN_PROGRESS để báo cáo rằng họ đã bắt đầu xử lý.")
+    public ResponseEntity<BaseResponse<TicketResponse>> markTicketInProgress(
+            @PathVariable java.util.UUID id) {
+        TicketResponse response = ticketService.markTicketInProgress(id);
+        return ResponseEntity.ok(BaseResponse.success("Cập nhật trạng thái Đang xử lý thành công", response));
+    }
+
     @PutMapping("/{id}/forward")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @Operation(summary = "Chuyển giao vé (Reroute)", description = "Chuyển vé sang phòng ban khác nếu không thuộc thẩm quyền")
