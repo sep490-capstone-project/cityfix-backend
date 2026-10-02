@@ -211,6 +211,8 @@ class UserServiceImplTest {
 
         com.cityfix.backend.model.dto.response.UserProfileResponse profileResponse =
                 com.cityfix.backend.model.dto.response.UserProfileResponse.builder()
+                        .email("nguyenvana@gmail.com")
+                        .roleName("USER")
                         .fullName("Nguyen Van A")
                         .phoneNumber("0912345678")
                         .build();
@@ -245,6 +247,8 @@ class UserServiceImplTest {
 
         com.cityfix.backend.model.dto.response.UserProfileResponse updatedResponse =
                 com.cityfix.backend.model.dto.response.UserProfileResponse.builder()
+                        .email("nguyenvana@gmail.com")
+                        .roleName("USER")
                         .fullName("Nguyen Van B")
                         .phoneNumber("0987654321")
                         .address("123 Le Loi")
