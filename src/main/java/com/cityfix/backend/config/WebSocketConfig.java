@@ -75,6 +75,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                             log.error("Failed to authenticate STOMP connection: {}", e.getMessage());
                         }
                     }
+                } else if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+                    String destination = accessor.getDestination();
+                    if (destination != null && destination.startsWith("/topic/notifications/")) {
+                        String targetUserId = destination.substring("/topic/notifications/".length());
+                        java.security.Principal principal = accessor.getUser();
+                        if (principal instanceof UsernamePasswordAuthenticationToken auth) {
+                            User user = (User) auth.getPrincipal();
+                            if (!user.getUserId().toString().equals(targetUserId)) {
+                                throw new IllegalArgumentException("Forbidden: cannot subscribe to another user's notifications");
+                            }
+                        } else {
+                            throw new IllegalArgumentException("Forbidden: unauthenticated user");
+                        }
+                    }
                 }
                 return message;
             }

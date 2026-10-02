@@ -564,23 +564,26 @@ public class TicketServiceImpl implements TicketService {
         String title = "Cập nhật sự cố: Đang xử lý";
         String message = "Sự cố của bạn đang được cán bộ chuyên trách tiến hành xử lý.";
         
-        Notification notification = Notification.builder()
-                .user(ticket.getUser())
-                .title(title)
-                .content(message)
-                .isRead(false)
-                .build();
-        notification = notificationRepository.save(notification);
-        
-        try {
-            com.cityfix.backend.model.dto.response.NotificationResponse notifResponse = notificationMapper.toResponse(notification);
-            messagingTemplate.convertAndSend("/topic/notifications/" + ticket.getUser().getUserId(), notifResponse);
-        } catch (Exception e) {
-            log.error("Lỗi khi gửi websocket notification: {}", e.getMessage());
-        }
-        
-        if (ticket.getUser().getEmail() != null) {
-            emailService.sendTicketStatusEmail(ticket.getUser().getEmail(), title, message);
+        User ticketUser = ticket.getUser();
+        if (ticketUser != null) {
+            Notification notification = Notification.builder()
+                    .user(ticketUser)
+                    .title(title)
+                    .content(message)
+                    .isRead(false)
+                    .build();
+            notification = notificationRepository.save(notification);
+            
+            try {
+                com.cityfix.backend.model.dto.response.NotificationResponse notifResponse = notificationMapper.toResponse(notification);
+                messagingTemplate.convertAndSend("/topic/notifications/" + ticketUser.getUserId(), notifResponse);
+            } catch (Exception e) {
+                log.error("Lỗi khi gửi websocket notification: {}", e.getMessage());
+            }
+            
+            if (ticketUser.getEmail() != null) {
+                emailService.sendTicketStatusEmail(ticketUser.getEmail(), title, message);
+            }
         }
 
         return ticketMapper.toTicketResponse(ticket);
