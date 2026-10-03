@@ -217,7 +217,7 @@ class UserServiceImplTest {
                         .phoneNumber("0912345678")
                         .build();
 
-        when(userRepository.findByEmailAndIsDeletedFalse("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
         when(userMapper.toUserProfileResponse(mockUser)).thenReturn(profileResponse);
 
         com.cityfix.backend.model.dto.response.UserProfileResponse result = userService.getMyProfile();
@@ -256,7 +256,7 @@ class UserServiceImplTest {
                         .ward("Phuong 1")
                         .build();
 
-        when(userRepository.findByEmailAndIsDeletedFalse("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
         when(userRepository.findByPhoneNumber("0987654321")).thenReturn(Optional.empty());
         when(userMapper.toUserProfileResponse(mockUser)).thenReturn(updatedResponse);
 
