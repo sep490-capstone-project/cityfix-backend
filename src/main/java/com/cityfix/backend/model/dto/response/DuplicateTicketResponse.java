@@ -21,5 +21,6 @@ public class DuplicateTicketResponse {
     private Double latitude;
     private Double longitude;
     private Double distanceMeters;
+    private String imageUrl;
     private LocalDateTime createdAt;
 }

@@ -224,6 +224,7 @@ class TicketControllerTest {
                 .latitude(10.762700)
                 .longitude(106.660250)
                 .distanceMeters(18.5)
+                .imageUrl("https://cloudinary.com/image.jpg")
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -239,6 +240,7 @@ class TicketControllerTest {
         assertThat(response.getBody().getMessage()).isEqualTo("Kiểm tra vé trùng lặp thành công.");
         assertThat(response.getBody().getData()).hasSize(1);
         assertThat(response.getBody().getData().get(0).getTicketId()).isEqualTo(mockDuplicateResponse.getTicketId());
+        assertThat(response.getBody().getData().get(0).getImageUrl()).isEqualTo("https://cloudinary.com/image.jpg");
 
         verify(ticketService, times(1)).findDuplicateTickets(latitude, longitude, categoryId);
     }

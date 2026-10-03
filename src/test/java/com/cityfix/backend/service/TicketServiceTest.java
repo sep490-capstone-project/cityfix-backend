@@ -515,6 +515,7 @@ class TicketServiceTest {
                 .latitude(10.762700)
                 .longitude(106.660250)
                 .distanceMeters(18.5)
+                .imageUrl("https://cloudinary.com/image.jpg")
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -528,6 +529,7 @@ class TicketServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getTicketId()).isEqualTo(mockDuplicateResponse.getTicketId());
         assertThat(result.get(0).getDistanceMeters()).isEqualTo(18.5);
+        assertThat(result.get(0).getImageUrl()).isEqualTo("https://cloudinary.com/image.jpg");
 
         verify(ticketRepository, times(1)).findDuplicateTickets(latitude, longitude, categoryId);
     }
@@ -811,47 +813,6 @@ class TicketServiceTest {
         verify(ticketHistoryRepository).save(any());
         assertThat(assignment.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
         assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.ASSIGNED);
-    }
-
-    @Test
-    @DisplayName("markTicketInProgress_success")
-    void markTicketInProgress_success() {
-        com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
-        mockStaffRole.setRoleName("STAFF");
-        mockUser.setRole(mockStaffRole);
-        mockUser.setIsDispatcher(false);
-        
-        com.cityfix.backend.model.entity.Department mockDepartment = new com.cityfix.backend.model.entity.Department();
-        mockDepartment.setDepartmentId(UUID.randomUUID());
-        mockUser.setDepartment(mockDepartment);
-        
-        mockTicket.setStatus(TicketStatus.ASSIGNED);
-        
-        com.cityfix.backend.model.entity.TicketAssignment assignment = new com.cityfix.backend.model.entity.TicketAssignment();
-        assignment.setDepartment(mockDepartment);
-        assignment.setAssignee(mockUser);
-        assignment.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
-        
-        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
-        when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
-                .thenReturn(List.of(assignment));
-        when(ticketRepository.save(any())).thenReturn(mockTicket);
-        
-        TicketResponse mockResponse = TicketResponse.builder().build();
-        when(ticketMapper.toTicketResponse(any())).thenReturn(mockResponse);
-        
-        TicketResponse res = ticketService.markTicketInProgress(mockTicket.getTicketId());
-        
-        assertThat(res).isNotNull();
-        verify(ticketAssignmentRepository).save(assignment);
-        verify(ticketRepository).save(mockTicket);
-        verify(ticketHistoryRepository).save(any());
-        verify(notificationRepository).save(any());
-        verify(messagingTemplate).convertAndSend(anyString(), org.mockito.ArgumentMatchers.nullable(Object.class));
-        verify(emailService).sendTicketStatusEmail(anyString(), anyString(), anyString());
-        
-        assertThat(assignment.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
-        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.service.StaffTicketService;
 import com.cityfix.backend.service.TicketService;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class StaffTicketController {
 
     private final TicketService ticketService;
+    private final StaffTicketService staffTicketService;
 
     @GetMapping("/assigned")
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
@@ -41,15 +43,6 @@ public class StaffTicketController {
         return ResponseEntity.ok(BaseResponse.success("Phân công vé thành công", response));
     }
 
-    @PutMapping("/{id}/in-progress")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Cập nhật trạng thái Đang xử lý", description = "Cán bộ chuyên môn cập nhật trạng thái vé sang IN_PROGRESS để báo cáo rằng họ đã bắt đầu xử lý.")
-    public ResponseEntity<BaseResponse<TicketResponse>> markTicketInProgress(
-            @PathVariable java.util.UUID id) {
-        TicketResponse response = ticketService.markTicketInProgress(id);
-        return ResponseEntity.ok(BaseResponse.success("Cập nhật trạng thái Đang xử lý thành công", response));
-    }
-
     @PutMapping("/{id}/forward")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @Operation(summary = "Chuyển giao vé (Reroute)", description = "Chuyển vé sang phòng ban khác nếu không thuộc thẩm quyền")
@@ -68,5 +61,27 @@ public class StaffTicketController {
             @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
         TicketResponse response = ticketService.rejectAssignedTicket(id, request.getReason());
         return ResponseEntity.ok(BaseResponse.success("Từ chối hồ sơ thành công", response));
+    }
+
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Cập nhật trạng thái vé", description = "Cán bộ thay đổi trạng thái vé. Hỗ trợ các trạng thái INITIATED, OPEN, ASSIGNED, IN_PROGRESS, RESOLVED, COMPLETED.")
+    public ResponseEntity<BaseResponse<TicketResponse>> updateTicketStatus(
+            @PathVariable java.util.UUID id,
+            @RequestParam com.cityfix.backend.model.enums.TicketStatus targetStatus,
+            @RequestBody(required = false) @jakarta.validation.Valid com.cityfix.backend.model.dto.request.UpdateStaffTicketStatusRequest request) {
+        TicketResponse response = staffTicketService.updateTicketStatus(id, targetStatus, request);
+        return ResponseEntity.ok(BaseResponse.success("Cập nhật trạng thái vé thành công", response));
+    }
+
+    @PostMapping(value = "/{id}/evidences", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Đính kèm bằng chứng xử lý", description = "Upload nhiều files (hình ảnh, video) và kèm ghi chú. Tối đa 7 files.")
+    public ResponseEntity<BaseResponse<java.util.List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse>>> submitEvidence(
+            @PathVariable java.util.UUID id,
+            @RequestPart("files") java.util.List<org.springframework.web.multipart.MultipartFile> files,
+            @RequestParam(value = "resolutionNote", required = false) String resolutionNote) {
+        java.util.List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> response = staffTicketService.submitEvidence(id, files, resolutionNote);
+        return ResponseEntity.ok(BaseResponse.success("Nộp bằng chứng xử lý thành công", response));
     }
 }
