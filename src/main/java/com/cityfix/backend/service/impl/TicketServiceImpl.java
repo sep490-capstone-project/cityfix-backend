@@ -524,70 +524,7 @@ public class TicketServiceImpl implements TicketService {
         return ticketMapper.toTicketResponse(ticket);
     }
 
-    @Override
-    @Transactional
-    public TicketResponse markTicketInProgress(UUID ticketId) {
-        User currentUser = getCurrentUser();
 
-        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
-
-        if (!isAdmin && !(isStaff && !isDispatcher)) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-
-        if (ticket.getStatus() != TicketStatus.ASSIGNED) {
-            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
-        }
-
-        TicketAssignment assignment = ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
-                ticketId, List.of(AssignmentStatus.ASSIGNED)).stream()
-                .filter(a -> isAdmin || (a.getAssignee() != null && a.getAssignee().getUserId().equals(currentUser.getUserId())))
-                .findFirst()
-                .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST));
-
-        assignment.setStatus(AssignmentStatus.IN_PROGRESS);
-        ticketAssignmentRepository.save(assignment);
-
-        ticket.setStatus(TicketStatus.IN_PROGRESS);
-        ticket = ticketRepository.save(ticket);
-
-        TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.WORK_STARTED, TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS, "Bắt đầu xử lý sự cố"
-        );
-        ticketHistoryRepository.save(history);
-
-        String title = "Cập nhật sự cố: Đang xử lý";
-        String message = "Sự cố của bạn đang được cán bộ chuyên trách tiến hành xử lý.";
-        
-        User ticketUser = ticket.getUser();
-        if (ticketUser != null) {
-            Notification notification = Notification.builder()
-                    .user(ticketUser)
-                    .title(title)
-                    .content(message)
-                    .isRead(false)
-                    .build();
-            notification = notificationRepository.save(notification);
-            
-            try {
-                com.cityfix.backend.model.dto.response.NotificationResponse notifResponse = notificationMapper.toResponse(notification);
-                messagingTemplate.convertAndSend("/topic/notifications/" + ticketUser.getUserId(), notifResponse);
-            } catch (Exception e) {
-                log.error("Lỗi khi gửi websocket notification: {}", e.getMessage());
-            }
-            
-            if (ticketUser.getEmail() != null) {
-                emailService.sendTicketStatusEmail(ticketUser.getEmail(), title, message);
-            }
-        }
-
-        return ticketMapper.toTicketResponse(ticket);
-    }
 
     @Override
     @Transactional

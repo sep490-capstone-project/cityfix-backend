@@ -146,6 +146,11 @@ public enum ErrorCode {
     INVALID_REQUEST(
             HttpStatus.BAD_REQUEST,
             "Yêu cầu không hợp lệ"
+    ),
+
+    EVIDENCE_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "Yêu cầu phải có ít nhất 1 bằng chứng xử lý để hoàn tất"
     );
 
     private final HttpStatus status;
