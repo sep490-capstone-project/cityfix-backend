@@ -12,5 +12,6 @@ public interface DuplicateTicketProjection {
     Double getLatitude();
     Double getLongitude();
     Double getDistanceMeters();
+    String getImageUrl();
     LocalDateTime getCreatedAt();
 }

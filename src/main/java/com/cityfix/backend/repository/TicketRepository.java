@@ -22,6 +22,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                ST_Y(t.location) AS latitude,
                ST_X(t.location) AS longitude,
                ST_Distance(t.location::geography, ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography) AS distanceMeters,
+               (SELECT ri.image_url FROM report_image ri WHERE ri.ticket_id = t.ticket_id ORDER BY ri.created_at ASC LIMIT 1) AS imageUrl,
                t.created_at AS createdAt
         FROM ticket t
         LEFT JOIN category c ON t.category_id = c.category_id

@@ -22,7 +22,7 @@ public interface TicketService {
     org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(com.cityfix.backend.model.enums.AssignmentStatus status, org.springframework.data.domain.Pageable pageable);
     
     TicketResponse assignTicket(UUID ticketId, com.cityfix.backend.model.dto.request.AssignTicketRequest request);
-    TicketResponse markTicketInProgress(UUID ticketId);
+
     TicketResponse forwardTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RejectTicketRequest request);
     TicketResponse rejectAssignedTicket(UUID ticketId, String reason);
     TicketResponse rejectInitiatedTicket(UUID ticketId, String reason);

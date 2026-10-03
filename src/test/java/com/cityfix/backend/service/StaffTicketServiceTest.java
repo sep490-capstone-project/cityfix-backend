@@ -1,0 +1,244 @@
+package com.cityfix.backend.service;
+
+import com.cityfix.backend.exception.AppException;
+import com.cityfix.backend.exception.ErrorCode;
+import com.cityfix.backend.mapper.EvidenceMapper;
+import com.cityfix.backend.mapper.TicketHistoryMapper;
+import com.cityfix.backend.mapper.TicketMapper;
+import com.cityfix.backend.mapper.NotificationMapper;
+import com.cityfix.backend.model.dto.request.UpdateStaffTicketStatusRequest;
+import com.cityfix.backend.model.dto.response.ImageUploadResponse;
+import com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse;
+import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.entity.*;
+import com.cityfix.backend.model.enums.ActionType;
+import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.model.enums.TicketStatus;
+import com.cityfix.backend.repository.*;
+import com.cityfix.backend.service.impl.StaffTicketServiceImpl;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+public class StaffTicketServiceTest {
+
+    @Mock
+    private TicketRepository ticketRepository;
+    @Mock
+    private TicketAssignmentRepository ticketAssignmentRepository;
+    @Mock
+    private TicketHistoryRepository ticketHistoryRepository;
+    @Mock
+    private ResolutionEvidenceRepository resolutionEvidenceRepository;
+    @Mock
+    private UserRepository userRepository;
+    @Mock
+    private NotificationRepository notificationRepository;
+    @Mock
+    private TicketMapper ticketMapper;
+    @Mock
+    private TicketHistoryMapper ticketHistoryMapper;
+    @Mock
+    private EvidenceMapper evidenceMapper;
+    @Mock
+    private NotificationMapper notificationMapper;
+    @Mock
+    private TicketService ticketService;
+    @Mock
+    private SimpMessagingTemplate messagingTemplate;
+    @Mock
+    private EmailService emailService;
+    @Mock
+    private SecurityContext securityContext;
+
+    @InjectMocks
+    private StaffTicketServiceImpl staffTicketService;
+
+    private User staffUser;
+    private Department department;
+    private Ticket ticket;
+    private UUID ticketId;
+
+    @BeforeEach
+    void setUp() {
+        department = new Department();
+        department.setDepartmentId(UUID.randomUUID());
+
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+
+        staffUser = new User();
+        staffUser.setUserId(UUID.randomUUID());
+        staffUser.setEmail("staff@cityfix.com");
+        staffUser.setRole(staffRole);
+        staffUser.setDepartment(department);
+
+        ticketId = UUID.randomUUID();
+        ticket = new Ticket();
+        ticket.setTicketId(ticketId);
+        ticket.setStatus(TicketStatus.ASSIGNED);
+        ticket.setAssignments(new ArrayList<>());
+        
+        User reporter = new User();
+        reporter.setUserId(UUID.randomUUID());
+        reporter.setEmail("reporter@cityfix.com");
+        ticket.setUser(reporter);
+    }
+
+    private void setupSecurityContext() {
+        SecurityContextHolder.setContext(securityContext);
+        when(securityContext.getAuthentication()).thenReturn(
+                new UsernamePasswordAuthenticationToken(staffUser.getEmail(), "password", Collections.emptyList())
+        );
+        when(userRepository.findByEmail(staffUser.getEmail())).thenReturn(Optional.of(staffUser));
+    }
+
+    private void setupActiveAssignment() {
+        TicketAssignment assignment = new TicketAssignment();
+        assignment.setStatus(AssignmentStatus.ASSIGNED);
+        assignment.setDepartment(department);
+        ticket.getAssignments().add(assignment);
+        lenient().when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(any(), any()))
+                .thenReturn(List.of(assignment));
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_in_progress_success")
+    void updateTicketStatus_in_progress_success() {
+        setupSecurityContext();
+        setupActiveAssignment();
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest("bắt đầu");
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(ticket);
+
+        TicketResponse mockResponse = TicketResponse.builder().build();
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketResponse response = staffTicketService.updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS, request);
+
+        assertThat(response).isNotNull();
+        verify(ticketHistoryRepository).save(any());
+        verify(ticketRepository).save(any());
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_forbidden")
+    void updateTicketStatus_forbidden() {
+        setupSecurityContext();
+
+        // No active assignment matching the staff's department
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_completed_without_evidence_throws_exception")
+    void updateTicketStatus_completed_missing_evidence() {
+        setupSecurityContext();
+        setupActiveAssignment();
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)).thenReturn(false);
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.COMPLETED, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EVIDENCE_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_completed_with_evidence_success")
+    void updateTicketStatus_completed_with_evidence_success() {
+        setupSecurityContext();
+        setupActiveAssignment();
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)).thenReturn(true);
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(ticket);
+        
+        TicketResponse mockResponse = TicketResponse.builder().status(TicketStatus.COMPLETED).build();
+        when(ticketMapper.toTicketResponse(any())).thenReturn(mockResponse);
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+        staffTicketService.updateTicketStatus(ticketId, TicketStatus.COMPLETED, request);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
+        verify(ticketHistoryRepository).save(any());
+        verify(notificationRepository).save(any()); // Notification sent upon completion
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_invalid_transition_throws_exception")
+    void updateTicketStatus_invalid_transition() {
+        setupSecurityContext();
+        setupActiveAssignment();
+
+        // Current status is ASSIGNED, trying to jump to COMPLETED
+        ticket.setStatus(TicketStatus.ASSIGNED);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.COMPLETED, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("submitEvidence_multipart_success")
+    void submitEvidence_multipart_success() {
+        setupSecurityContext();
+        setupActiveAssignment();
+
+        MultipartFile mockFile = mock(MultipartFile.class);
+        List<MultipartFile> files = List.of(mockFile);
+        
+        ImageUploadResponse uploadRes = ImageUploadResponse.builder().secureUrl("http://image.url").build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketService.uploadImage(any(), eq("cityfix/evidences"))).thenReturn(List.of(uploadRes));
+        when(resolutionEvidenceRepository.saveAll(any())).thenReturn(new ArrayList<>());
+        
+        staffTicketService.submitEvidence(ticketId, files, "Note");
+
+        verify(ticketService).uploadImage(any(), eq("cityfix/evidences"));
+        verify(resolutionEvidenceRepository).saveAll(anyList());
+        verify(ticketHistoryRepository).save(any());
+    }
+}

@@ -31,6 +31,9 @@ class StaffTicketControllerTest {
     @Mock
     private TicketService ticketService;
 
+    @Mock
+    private com.cityfix.backend.service.StaffTicketService staffTicketService;
+
     @InjectMocks
     private StaffTicketController staffTicketController;
 
@@ -105,22 +108,45 @@ class StaffTicketControllerTest {
     }
 
     @Test
-    @DisplayName("markTicketInProgress_returns200Success")
-    void markTicketInProgress_returns200Success() {
+    @DisplayName("updateTicketStatus_returns200Success")
+    void updateTicketStatus_returns200Success() {
         UUID ticketId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.UpdateStaffTicketStatusRequest request = new com.cityfix.backend.model.dto.request.UpdateStaffTicketStatusRequest("note");
+        
         TicketResponse mockResponse = TicketResponse.builder()
                 .id(ticketId)
                 .status(TicketStatus.IN_PROGRESS)
                 .build();
                 
-        when(ticketService.markTicketInProgress(eq(ticketId))).thenReturn(mockResponse);
+        when(staffTicketService.updateTicketStatus(eq(ticketId), eq(TicketStatus.IN_PROGRESS), any())).thenReturn(mockResponse);
         
-        ResponseEntity<BaseResponse<TicketResponse>> response = staffTicketController.markTicketInProgress(ticketId);
+        ResponseEntity<BaseResponse<TicketResponse>> response = staffTicketController.updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS, request);
         
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         
-        verify(ticketService, times(1)).markTicketInProgress(eq(ticketId));
+        verify(staffTicketService, times(1)).updateTicketStatus(eq(ticketId), eq(TicketStatus.IN_PROGRESS), any());
+    }
+
+    @Test
+    @DisplayName("submitEvidence_returns200Success")
+    void submitEvidence_returns200Success() {
+        UUID ticketId = UUID.randomUUID();
+        
+        com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse mockResponse = com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse.builder()
+                .evidenceId(UUID.randomUUID())
+                .build();
+                
+        when(staffTicketService.submitEvidence(eq(ticketId), any(), anyString())).thenReturn(List.of(mockResponse));
+        
+        ResponseEntity<BaseResponse<List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse>>> response = staffTicketController.submitEvidence(ticketId, List.of(), "note");
+        
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData()).hasSize(1);
+        
+        verify(staffTicketService, times(1)).submitEvidence(eq(ticketId), any(), anyString());
     }
 }
