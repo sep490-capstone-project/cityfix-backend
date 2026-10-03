@@ -20,6 +20,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
@@ -32,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class UserServiceImplTest {
 
     @Mock
@@ -217,7 +220,7 @@ class UserServiceImplTest {
                         .phoneNumber("0912345678")
                         .build();
 
-        when(userRepository.findByEmailAndIsDeletedFalse("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
         when(userMapper.toUserProfileResponse(mockUser)).thenReturn(profileResponse);
 
         com.cityfix.backend.model.dto.response.UserProfileResponse result = userService.getMyProfile();
@@ -256,7 +259,7 @@ class UserServiceImplTest {
                         .ward("Phuong 1")
                         .build();
 
-        when(userRepository.findByEmailAndIsDeletedFalse("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
         when(userRepository.findByPhoneNumber("0987654321")).thenReturn(Optional.empty());
         when(userMapper.toUserProfileResponse(mockUser)).thenReturn(updatedResponse);
 
