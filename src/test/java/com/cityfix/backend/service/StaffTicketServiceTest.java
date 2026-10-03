@@ -168,6 +168,7 @@ public class StaffTicketServiceTest {
         setupSecurityContext();
         setupActiveAssignment();
 
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)).thenReturn(false);
 
@@ -185,6 +186,7 @@ public class StaffTicketServiceTest {
         setupSecurityContext();
         setupActiveAssignment();
 
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)).thenReturn(true);
         when(ticketRepository.save(any(Ticket.class))).thenReturn(ticket);
@@ -198,6 +200,24 @@ public class StaffTicketServiceTest {
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
         verify(ticketHistoryRepository).save(any());
         verify(notificationRepository).save(any()); // Notification sent upon completion
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_invalid_transition_throws_exception")
+    void updateTicketStatus_invalid_transition() {
+        setupSecurityContext();
+        setupActiveAssignment();
+
+        // Current status is ASSIGNED, trying to jump to COMPLETED
+        ticket.setStatus(TicketStatus.ASSIGNED);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.COMPLETED, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
     }
 
     @Test

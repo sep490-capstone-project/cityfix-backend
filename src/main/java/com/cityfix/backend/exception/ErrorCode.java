@@ -151,6 +151,11 @@ public enum ErrorCode {
     EVIDENCE_REQUIRED(
             HttpStatus.BAD_REQUEST,
             "Yêu cầu phải có ít nhất 1 bằng chứng xử lý để hoàn tất"
+    ),
+
+    INVALID_STATUS_TRANSITION(
+            HttpStatus.BAD_REQUEST,
+            "Luồng chuyển trạng thái không hợp lệ"
     );
 
     private final HttpStatus status;

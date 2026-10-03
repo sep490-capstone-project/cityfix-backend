@@ -52,6 +52,22 @@ public class StaffTicketServiceImpl implements StaffTicketService {
     private final SimpMessagingTemplate messagingTemplate;
     private final EmailService emailService;
 
+    private static final java.util.Map<TicketStatus, java.util.Set<TicketStatus>> ALLOWED_TRANSITIONS = java.util.Map.of(
+            TicketStatus.ASSIGNED, java.util.Set.of(TicketStatus.IN_PROGRESS, TicketStatus.REJECTED),
+            TicketStatus.IN_PROGRESS, java.util.Set.of(TicketStatus.RESOLVED, TicketStatus.COMPLETED, TicketStatus.CANCELLED),
+            TicketStatus.RESOLVED, java.util.Set.of(TicketStatus.COMPLETED)
+    );
+
+    private void validateStatusTransition(TicketStatus currentStatus, TicketStatus targetStatus, boolean isAdmin) {
+        if (currentStatus == targetStatus) return;
+        if (isAdmin) return; // Admin can jump states if needed, or keeping it strict for everyone. The prompt: "(Nếu có case đặc biệt cho ADMIN override... hãy xử lý gọn gàng)". I'll allow admin override.
+        
+        java.util.Set<TicketStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(currentStatus, java.util.Collections.emptySet());
+        if (!allowed.contains(targetStatus)) {
+            throw new AppException(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+    }
+
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {
@@ -92,6 +108,8 @@ public class StaffTicketServiceImpl implements StaffTicketService {
         validateStaffAccess(ticket, currentUser, isAdmin);
 
         TicketStatus prevStatus = ticket.getStatus();
+        
+        validateStatusTransition(prevStatus, targetStatus, isAdmin);
 
         if (targetStatus == TicketStatus.COMPLETED) {
             if (!resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)) {

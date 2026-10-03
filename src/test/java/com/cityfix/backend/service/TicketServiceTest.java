@@ -816,7 +816,6 @@ class TicketServiceTest {
     }
 
     @Test
-    @Test
     @DisplayName("forwardTicket_success")
     void forwardTicket_success() {
         com.cityfix.backend.model.entity.Role mockStaffRole = new com.cityfix.backend.model.entity.Role();
