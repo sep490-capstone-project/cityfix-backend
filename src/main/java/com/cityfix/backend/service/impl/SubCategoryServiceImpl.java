@@ -42,7 +42,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
     @Override
     @Transactional
     public SubCategoryResponse updateSubCategory(UUID id, SubCategoryRequest request) {
-        SubCategory subCategory = subCategoryRepository.findById(id)
+        SubCategory subCategory = subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
 
         Category category = categoryRepository.findById(request.getCategoryId())
@@ -61,7 +61,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
     @Override
     @Transactional
     public void deleteSubCategory(UUID id) {
-        SubCategory subCategory = subCategoryRepository.findById(id)
+        SubCategory subCategory = subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
         
         subCategory.setActive(false);
@@ -72,14 +72,14 @@ public class SubCategoryServiceImpl implements SubCategoryService {
 
     @Override
     public SubCategoryResponse getSubCategory(UUID id) {
-        return subCategoryRepository.findById(id)
+        return subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(id)
                 .map(subCategoryMapper::toResponse)
                 .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
     }
 
     @Override
     public List<SubCategoryResponse> getAllSubCategories() {
-        return subCategoryRepository.findAll().stream()
+        return subCategoryRepository.findByIsDeletedFalse().stream()
                 .map(subCategoryMapper::toResponse)
                 .collect(Collectors.toList());
     }
