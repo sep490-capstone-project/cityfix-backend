@@ -1,6 +1,5 @@
 package com.cityfix.backend.model.entity;
 
-import com.cityfix.backend.model.enums.DangerLevel;
 import com.cityfix.backend.model.enums.LocationMethod;
 import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
@@ -33,6 +32,10 @@ public class Ticket {
     @JoinColumn(name = "category_id")
     private Category category;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sub_category_id")
+    private SubCategory subCategory;
+
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<TicketAssignment> assignments = new java.util.ArrayList<>();
@@ -49,8 +52,8 @@ public class Ticket {
     private SeverityLevel severity;
     
     @Enumerated(EnumType.STRING)
-    @Column(name = "danger_level", length = 20)
-    private DangerLevel dangerLevel;
+    @Column(name = "priority", length = 20)
+    private com.cityfix.backend.model.enums.Priority priority;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "location_method", length = 20)

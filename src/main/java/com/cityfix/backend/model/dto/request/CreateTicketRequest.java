@@ -17,11 +17,14 @@ public class CreateTicketRequest {
     @NotNull(message = "Category ID is required")
     private java.util.UUID categoryId;
 
+    @NotNull(message = "SubCategory ID is required")
+    private java.util.UUID subCategoryId;
+
     @NotNull(message = "Severity is required")
     private com.cityfix.backend.model.enums.SeverityLevel severity;
 
-    @NotNull(message = "Danger level is required")
-    private com.cityfix.backend.model.enums.DangerLevel dangerLevel;
+    @NotNull(message = "Priority is required")
+    private com.cityfix.backend.model.enums.Priority priority;
     
     @NotNull(message = "Location method is required")
     private com.cityfix.backend.model.enums.LocationMethod locationMethod;

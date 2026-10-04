@@ -43,14 +43,14 @@ class CategoryServiceImplTest {
         categoryRequest = CategoryRequest.builder()
                 .name("Hạ tầng")
                 .description("Vấn đề hạ tầng")
-                .sla(24)
+                
                 .build();
 
         category = Category.builder()
                 .categoryId(categoryId)
                 .name("Hạ tầng")
                 .description("Vấn đề hạ tầng")
-                .sla(24)
+                
                 .isActive(true)
                 .build();
     }
