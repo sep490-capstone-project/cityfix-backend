@@ -139,11 +139,19 @@ public class TicketServiceImpl implements TicketService {
         if (request.getSubCategoryId() != null) {
             subCategory = subCategoryRepository.findById(request.getSubCategoryId())
                     .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
+            
+            if (!subCategory.isActive() || subCategory.isDeleted()) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ đã bị vô hiệu hóa hoặc bị xóa");
+            }
+
+            if (category != null && !subCategory.getCategory().getCategoryId().equals(category.getCategoryId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ không thuộc danh mục đã chọn");
+            }
         }
 
         Point location = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
 
-        boolean isDangerous = (request.getPriority() == com.cityfix.backend.model.enums.Priority.HIGH);
+        boolean isDangerous = (request.getPriority() == com.cityfix.backend.model.enums.Priority.HIGH || request.getPriority() == com.cityfix.backend.model.enums.Priority.MEDIUM);
         boolean isAiUncertain = (request.getConfidenceScore() != null && request.getConfidenceScore() < 70.0);
         boolean needsReview = isDangerous || isAiUncertain;
 

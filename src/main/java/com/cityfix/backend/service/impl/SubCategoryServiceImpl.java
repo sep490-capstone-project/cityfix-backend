@@ -86,7 +86,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
 
     @Override
     public List<SubCategoryResponse> getSubCategoriesByCategoryId(UUID categoryId) {
-        return subCategoryRepository.findByCategory_CategoryIdAndIsActiveTrue(categoryId).stream()
+        return subCategoryRepository.findByCategory_CategoryIdAndIsActiveTrueAndIsDeletedFalse(categoryId).stream()
                 .map(subCategoryMapper::toResponse)
                 .collect(Collectors.toList());
     }

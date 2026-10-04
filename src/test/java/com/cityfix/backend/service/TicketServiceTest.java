@@ -59,6 +59,9 @@ class TicketServiceTest {
     private CategoryRepository categoryRepository;
 
     @Mock
+    private com.cityfix.backend.repository.SubCategoryRepository subCategoryRepository;
+
+    @Mock
     private ReportImageRepository reportImageRepository;
 
     @Mock

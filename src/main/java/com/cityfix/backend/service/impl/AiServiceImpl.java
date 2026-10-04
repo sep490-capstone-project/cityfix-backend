@@ -59,7 +59,7 @@ public class AiServiceImpl implements AiService {
 
             // 2. Fetch categories and subcategories
             List<Category> categories = categoryRepository.findAll();
-            List<com.cityfix.backend.model.entity.SubCategory> subCategories = subCategoryRepository.findByIsActiveTrue();
+            List<com.cityfix.backend.model.entity.SubCategory> subCategories = subCategoryRepository.findByIsActiveTrueAndIsDeletedFalse();
 
             StringBuilder categoriesStr = new StringBuilder();
             for (Category c : categories) {
@@ -121,8 +121,20 @@ public class AiServiceImpl implements AiService {
                 }
                 
                 if (aiResponse.getSubCategoryId() != null) {
-                    subCategoryRepository.findById(aiResponse.getSubCategoryId())
-                            .ifPresent(subCategory -> aiResponse.setSubCategoryName(subCategory.getName()));
+                    java.util.Optional<com.cityfix.backend.model.entity.SubCategory> subCatOpt = subCategoryRepository.findById(aiResponse.getSubCategoryId());
+                    if (subCatOpt.isPresent()) {
+                        com.cityfix.backend.model.entity.SubCategory sc = subCatOpt.get();
+                        // Validate category match and active status
+                        if (sc.isActive() && !sc.isDeleted() && aiResponse.getCategoryId() != null && sc.getCategory().getCategoryId().equals(aiResponse.getCategoryId())) {
+                            aiResponse.setSubCategoryName(sc.getName());
+                        } else {
+                            // Fallback if mismatched or inactive
+                            aiResponse.setSubCategoryId(null);
+                            aiResponse.setSubCategoryName(null);
+                        }
+                    } else {
+                        aiResponse.setSubCategoryId(null);
+                    }
                 }
                 return aiResponse;
             } else {

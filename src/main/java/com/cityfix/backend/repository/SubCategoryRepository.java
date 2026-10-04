@@ -9,6 +9,6 @@ import java.util.UUID;
 
 @Repository
 public interface SubCategoryRepository extends JpaRepository<SubCategory, UUID> {
-    List<SubCategory> findByIsActiveTrue();
-    List<SubCategory> findByCategory_CategoryIdAndIsActiveTrue(UUID categoryId);
+    List<SubCategory> findByIsActiveTrueAndIsDeletedFalse();
+    List<SubCategory> findByCategory_CategoryIdAndIsActiveTrueAndIsDeletedFalse(UUID categoryId);
 }
