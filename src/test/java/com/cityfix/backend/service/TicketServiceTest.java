@@ -11,7 +11,7 @@ import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.Category;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.User;
-import com.cityfix.backend.model.enums.DangerLevel;
+import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.LocationMethod;
 import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
@@ -57,6 +57,9 @@ class TicketServiceTest {
 
     @Mock
     private CategoryRepository categoryRepository;
+
+    @Mock
+    private com.cityfix.backend.repository.SubCategoryRepository subCategoryRepository;
 
     @Mock
     private ReportImageRepository reportImageRepository;
@@ -149,7 +152,7 @@ class TicketServiceTest {
         createRequest.setImageUrl("https://cloudinary.com/image.jpg");
         createRequest.setCategoryId(categoryId);
         createRequest.setSeverity(SeverityLevel.HIGH);
-        createRequest.setDangerLevel(DangerLevel.DANGEROUS);
+        createRequest.setPriority(Priority.HIGH);
         createRequest.setLocationMethod(LocationMethod.AUTO_GPS);
         createRequest.setAddress("268 Lý Thường Kiệt, Q10");
         createRequest.setLatitude(10.762622);
@@ -160,26 +163,26 @@ class TicketServiceTest {
                 .description(createRequest.getDescription())
                 .category(mockCategory)
                 .severity(createRequest.getSeverity())
-                .dangerLevel(createRequest.getDangerLevel())
+                .priority(createRequest.getPriority())
                 .locationMethod(createRequest.getLocationMethod())
                 .address(createRequest.getAddress())
                 .status(TicketStatus.INITIATED)
                 .user(mockUser)
                 .build();
 
-        lenient().when(ticketMapper.toTicket(any(), any(), any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
+        lenient().when(ticketMapper.toTicket(any(), any(), any(), any(), any(), any(), anyBoolean())).thenAnswer(invocation -> {
             CreateTicketRequest req = invocation.getArgument(0);
             Category cat = invocation.getArgument(1);
-            User u = invocation.getArgument(2);
-            org.locationtech.jts.geom.Point loc = invocation.getArgument(3);
-            TicketStatus st = invocation.getArgument(4);
-            boolean needsRev = invocation.getArgument(5);
+            User u = invocation.getArgument(3);
+            org.locationtech.jts.geom.Point loc = invocation.getArgument(4);
+            TicketStatus st = invocation.getArgument(5);
+            boolean needsRev = invocation.getArgument(6);
 
             return Ticket.builder()
                     .description(req.getDescription())
                     .category(cat)
                     .severity(req.getSeverity())
-                    .dangerLevel(req.getDangerLevel())
+                    .priority(req.getPriority())
                     .locationMethod(req.getLocationMethod())
                     .address(req.getAddress())
                     .status(st)
@@ -232,7 +235,7 @@ class TicketServiceTest {
                 .imageUrl(createRequest.getImageUrl())
                 .categoryId(categoryId)
                 .severity(createRequest.getSeverity())
-                .dangerLevel(createRequest.getDangerLevel())
+                .priority(createRequest.getPriority())
                 .locationMethod(createRequest.getLocationMethod())
                 .address(createRequest.getAddress())
                 .status(TicketStatus.INITIATED)

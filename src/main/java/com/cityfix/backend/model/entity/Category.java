@@ -24,9 +24,6 @@ public class Category extends BaseEntity {
 
     private String description;
 
-    @Column(name = "sla")
-    private Integer sla;
-
     @Builder.Default
     @Column(name = "is_active", nullable = false)
     private boolean isActive = true;

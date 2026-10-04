@@ -13,7 +13,9 @@ public class AiAnalyzeResponse {
     private java.util.UUID categoryId;
     private String categoryName;
     private com.cityfix.backend.model.enums.SeverityLevel severity;
-    private com.cityfix.backend.model.enums.DangerLevel dangerLevel;
+    private java.util.UUID subCategoryId;
+    private String subCategoryName;
+    private com.cityfix.backend.model.enums.Priority priority;
     private java.math.BigDecimal confidenceScore;
     private String description;
     private Boolean isValidIssue;

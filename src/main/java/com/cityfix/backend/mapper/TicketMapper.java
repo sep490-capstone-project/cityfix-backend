@@ -23,6 +23,8 @@ public interface TicketMapper {
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
     @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
+    @Mapping(target = "subCategoryId", source = "subCategory.subCategoryId")
+    @Mapping(target = "subCategoryName", source = "subCategory.name")
     TicketResponse toTicketResponse(Ticket ticket);
 
     @Mapping(target = "departmentId", source = "department.departmentId")
@@ -42,14 +44,16 @@ public interface TicketMapper {
     @Mapping(target = "isLifeThreatening", constant = "false")
     @Mapping(target = "description", source = "request.description")
     @Mapping(target = "severity", source = "request.severity")
-    @Mapping(target = "dangerLevel", source = "request.dangerLevel")
+    @Mapping(target = "priority", source = "request.priority")
     @Mapping(target = "locationMethod", source = "request.locationMethod")
     @Mapping(target = "address", source = "request.address")
+    @Mapping(target = "subCategory", source = "subCategory")
     @Mapping(target = "assignments", ignore = true)
     @Mapping(target = "reviewNote", ignore = true)
     Ticket toTicket(
             com.cityfix.backend.model.dto.request.CreateTicketRequest request,
             com.cityfix.backend.model.entity.Category category,
+            com.cityfix.backend.model.entity.SubCategory subCategory,
             com.cityfix.backend.model.entity.User user,
             org.locationtech.jts.geom.Point location,
             com.cityfix.backend.model.enums.TicketStatus status,

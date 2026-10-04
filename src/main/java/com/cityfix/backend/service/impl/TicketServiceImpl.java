@@ -16,11 +16,12 @@ import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
-import com.cityfix.backend.model.enums.DangerLevel;
+
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
 
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.CategoryRepository;
+import com.cityfix.backend.repository.SubCategoryRepository;
 import com.cityfix.backend.repository.ReportImageRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.TicketRepository;
@@ -51,6 +52,7 @@ public class TicketServiceImpl implements TicketService {
     private final TicketVoteRepository ticketVoteRepository;
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
+    private final SubCategoryRepository subCategoryRepository;
     private final ReportImageRepository reportImageRepository;
     private final com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
     private final com.cityfix.backend.repository.DepartmentRepository departmentRepository;
@@ -133,9 +135,23 @@ public class TicketServiceImpl implements TicketService {
                     .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
         }
 
+        com.cityfix.backend.model.entity.SubCategory subCategory = null;
+        if (request.getSubCategoryId() != null) {
+            subCategory = subCategoryRepository.findById(request.getSubCategoryId())
+                    .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
+            
+            if (!subCategory.isActive() || subCategory.isDeleted()) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ đã bị vô hiệu hóa hoặc bị xóa");
+            }
+
+            if (category != null && !subCategory.getCategory().getCategoryId().equals(category.getCategoryId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ không thuộc danh mục đã chọn");
+            }
+        }
+
         Point location = geometryFactory.createPoint(new Coordinate(request.getLongitude(), request.getLatitude()));
 
-        boolean isDangerous = (request.getDangerLevel() == DangerLevel.DANGEROUS || request.getDangerLevel() == DangerLevel.CRITICAL);
+        boolean isDangerous = (request.getPriority() == com.cityfix.backend.model.enums.Priority.HIGH || request.getPriority() == com.cityfix.backend.model.enums.Priority.MEDIUM);
         boolean isAiUncertain = (request.getConfidenceScore() != null && request.getConfidenceScore() < 70.0);
         boolean needsReview = isDangerous || isAiUncertain;
 
@@ -170,7 +186,7 @@ public class TicketServiceImpl implements TicketService {
         boolean finalNeedsReview = needsReview || (assignedDepartment == null);
         TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.OPEN;
 
-        Ticket ticket = ticketMapper.toTicket(request, category, user, location, initialStatus, finalNeedsReview);
+        Ticket ticket = ticketMapper.toTicket(request, category, subCategory, user, location, initialStatus, finalNeedsReview);
         ticket = ticketRepository.save(ticket);
 
         if (assignedDepartment != null && !finalNeedsReview) {
