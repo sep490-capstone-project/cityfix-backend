@@ -30,7 +30,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
     @Override
     @Transactional
     public SubCategoryResponse createSubCategory(SubCategoryRequest request) {
-        Category category = categoryRepository.findById(request.getCategoryId())
+        Category category = categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
 
         SubCategory subCategory = subCategoryMapper.toEntity(request);
@@ -45,7 +45,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
         SubCategory subCategory = subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
 
-        Category category = categoryRepository.findById(request.getCategoryId())
+        Category category = categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())
                 .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
 
         subCategory.setCategory(category);
