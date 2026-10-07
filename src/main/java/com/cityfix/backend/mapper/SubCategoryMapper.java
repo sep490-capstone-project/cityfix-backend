@@ -9,9 +9,11 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface SubCategoryMapper {
     @Mapping(target = "categoryId", source = "category.categoryId")
+    @Mapping(target = "isActive", source = "active")
     SubCategoryResponse toResponse(SubCategory subCategory);
     
     @Mapping(target = "category", ignore = true)
     @Mapping(target = "subCategoryId", ignore = true)
+    @Mapping(target = "isActive", source = "isActive")
     SubCategory toEntity(SubCategoryRequest request);
 }

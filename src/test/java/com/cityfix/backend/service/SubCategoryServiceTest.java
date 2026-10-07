@@ -77,7 +77,7 @@ class SubCategoryServiceTest {
 
     @Test
     void createSubCategory_Success() {
-        when(categoryRepository.findById(request.getCategoryId())).thenReturn(Optional.of(category));
+        when(categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())).thenReturn(Optional.of(category));
         when(subCategoryMapper.toEntity(request)).thenReturn(subCategory);
         when(subCategoryRepository.save(any(SubCategory.class))).thenReturn(subCategory);
         when(subCategoryMapper.toResponse(subCategory)).thenReturn(response);
@@ -91,7 +91,7 @@ class SubCategoryServiceTest {
 
     @Test
     void createSubCategory_CategoryNotFound() {
-        when(categoryRepository.findById(request.getCategoryId())).thenReturn(Optional.empty());
+        when(categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())).thenReturn(Optional.empty());
 
         AppException ex = assertThrows(AppException.class, () -> subCategoryService.createSubCategory(request));
         assertEquals(ErrorCode.CATEGORY_NOT_FOUND, ex.getErrorCode());

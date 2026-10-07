@@ -16,7 +16,4 @@ public class CategoryRequest {
     @NotBlank(message = "Category name is required")
     private String name;
     private String description;
-    @NotNull(message = "SLA is required")
-    @Min(value = 1, message = "SLA must be at least 1 hour")
-    private Integer sla;
 }

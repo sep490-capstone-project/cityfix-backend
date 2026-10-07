@@ -15,7 +15,6 @@ public class CategoryResponse {
     private UUID categoryId;
     private String name;
     private String description;
-    private Integer sla;
     private boolean active;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -18,4 +18,8 @@ CREATE TABLE sub_category (
 ALTER TABLE ticket ADD COLUMN sub_category_id UUID;
 ALTER TABLE ticket ADD CONSTRAINT fk_ticket_sub_category FOREIGN KEY (sub_category_id) REFERENCES sub_category(sub_category_id);
 
+UPDATE ticket SET danger_level = 'HIGH' WHERE danger_level IN ('DANGEROUS', 'CRITICAL');
+UPDATE ticket SET danger_level = 'MEDIUM' WHERE danger_level = 'CAUTION';
+UPDATE ticket SET danger_level = 'LOW' WHERE danger_level = 'SAFE';
+
 ALTER TABLE ticket RENAME COLUMN danger_level TO priority;

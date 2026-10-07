@@ -58,7 +58,7 @@ public class AiServiceImpl implements AiService {
             log.info("Downloaded media: {} bytes, mimeType: {}", mediaBytes.length, mimeType);
 
             // 2. Fetch categories and subcategories
-            List<Category> categories = categoryRepository.findAll();
+            List<Category> categories = categoryRepository.findAllByIsDeletedFalse();
             List<com.cityfix.backend.model.entity.SubCategory> subCategories = subCategoryRepository.findByIsActiveTrueAndIsDeletedFalse();
 
             StringBuilder categoriesStr = new StringBuilder();
