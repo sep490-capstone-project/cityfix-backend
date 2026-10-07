@@ -5,7 +5,7 @@ import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
-import com.cityfix.backend.model.enums.DangerLevel;
+import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.LocationMethod;
 import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
@@ -76,7 +76,7 @@ class TicketControllerTest {
         validCreateRequest.setImageUrl("https://cloudinary.com/test.jpg");
         validCreateRequest.setCategoryId(categoryId);
         validCreateRequest.setSeverity(SeverityLevel.MEDIUM);
-        validCreateRequest.setDangerLevel(DangerLevel.CAUTION);
+        validCreateRequest.setPriority(Priority.MEDIUM);
         validCreateRequest.setLocationMethod(LocationMethod.AUTO_GPS);
         validCreateRequest.setAddress("123 Nguyễn Huệ, Q1");
         validCreateRequest.setLatitude(10.776889);
@@ -88,7 +88,7 @@ class TicketControllerTest {
                 .imageUrl(validCreateRequest.getImageUrl())
                 .categoryId(categoryId)
                 .severity(validCreateRequest.getSeverity())
-                .dangerLevel(validCreateRequest.getDangerLevel())
+                .priority(validCreateRequest.getPriority())
                 .locationMethod(validCreateRequest.getLocationMethod())
                 .address(validCreateRequest.getAddress())
                 .status(TicketStatus.INITIATED)
