@@ -53,6 +53,11 @@ public enum ErrorCode {
             "Không tìm thấy sự cố phụ"
     ),
 
+    STEP_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy bước"
+    ),
+
     ACCOUNT_ALREADY_VERIFIED(
             HttpStatus.CONFLICT,
             "Tài khoản đã được xác minh"
