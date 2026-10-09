@@ -11,7 +11,9 @@ import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.Category;
 import com.cityfix.backend.model.entity.Role;
 import com.cityfix.backend.model.entity.Ticket;
+import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.LocationMethod;
 import com.cityfix.backend.model.enums.SeverityLevel;
@@ -658,6 +660,16 @@ class TicketServiceTest {
                         .build();
 
         mockTicket.setStatus(TicketStatus.OPEN);
+
+        com.cityfix.backend.model.entity.Step mockStepEntity = new com.cityfix.backend.model.entity.Step();
+        TicketStep activeStep = TicketStep.builder()
+                .ticket(mockTicket)
+                .step(mockStepEntity)
+                .status(AssignmentStatus.OPEN)
+                .orderIndex(0)
+                .build();
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), anyList()))
+                .thenReturn(List.of(activeStep));
 
         com.cityfix.backend.model.entity.Department targetDept = new com.cityfix.backend.model.entity.Department();
         targetDept.setDepartmentId(targetDeptId);

@@ -202,19 +202,13 @@ public class TicketServiceImpl implements TicketService {
             ticket.getSubCategories().add(tsc);
 
             User autoStaff = assignedDepartment != null 
-                    ? userRepository.findFirstByDepartmentDepartmentIdAndIsDeletedFalse(assignedDepartment.getDepartmentId()).orElse(null) 
+                    ? userRepository.findRepresentativeStaffByDepartmentId(assignedDepartment.getDepartmentId()).orElse(null) 
                     : null;
 
             List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
             int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
             for (Step s : steps) {
-                TicketStep ts = TicketStep.builder()
-                        .ticket(ticket)
-                        .step(s)
-                        .assignee(autoStaff)
-                        .status(AssignmentStatus.OPEN)
-                        .orderIndex(index++)
-                        .build();
+                TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, index++);
                 ticketStepRepository.save(ts);
                 ticket.getSteps().add(ts);
             }
@@ -451,12 +445,23 @@ public class TicketServiceImpl implements TicketService {
         if (request.getDepartmentIds() != null && !request.getDepartmentIds().isEmpty()) {
             java.util.Map<UUID, User> deptStaffMap = new java.util.HashMap<>();
             for (UUID dId : request.getDepartmentIds()) {
-                userRepository.findFirstByDepartmentDepartmentIdAndIsDeletedFalse(dId)
+                userRepository.findRepresentativeStaffByDepartmentId(dId)
                         .ifPresent(u -> deptStaffMap.put(dId, u));
             }
 
-            if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
-                int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
+            List<TicketStep> existingSteps = ticket.getSteps();
+            if (existingSteps != null && !existingSteps.isEmpty()) {
+                for (int i = 0; i < existingSteps.size(); i++) {
+                    TicketStep ts = existingSteps.get(i);
+                    UUID targetDeptId = i < request.getDepartmentIds().size() ? request.getDepartmentIds().get(i) : request.getDepartmentIds().get(0);
+                    User staff = deptStaffMap.get(targetDeptId);
+                    if (staff != null) {
+                        ts.setAssignee(staff);
+                        ticketStepRepository.save(ts);
+                    }
+                }
+            } else if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
+                int index = 0;
                 for (int i = 0; i < ticket.getSubCategories().size(); i++) {
                     com.cityfix.backend.model.entity.TicketSubCategory tsc = ticket.getSubCategories().get(i);
                     if (tsc.getSubCategory() != null) {
@@ -465,13 +470,7 @@ public class TicketServiceImpl implements TicketService {
 
                         List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
                         for (Step s : steps) {
-                            TicketStep ts = TicketStep.builder()
-                                    .ticket(ticket)
-                                    .step(s)
-                                    .assignee(staff)
-                                    .status(AssignmentStatus.OPEN)
-                                    .orderIndex(index++)
-                                    .build();
+                            TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
                             ticketStepRepository.save(ts);
                             ticket.getSteps().add(ts);
                         }
@@ -513,18 +512,33 @@ public class TicketServiceImpl implements TicketService {
             ticketStepRepository.save(oldStep);
         }
 
-        User targetStaff = userRepository.findFirstByDepartmentDepartmentIdAndIsDeletedFalse(targetDepartment.getDepartmentId()).orElse(null);
-        Step fallbackStep = activeSteps.isEmpty() ? stepRepository.findAll().stream().findFirst().orElse(null) : activeSteps.get(0).getStep();
-        if (fallbackStep != null) {
-            TicketStep newStep = TicketStep.builder()
-                    .ticket(ticket)
-                    .step(fallbackStep)
-                    .assignee(targetStaff)
-                    .status(AssignmentStatus.OPEN)
-                    .orderIndex(ticket.getSteps() != null ? ticket.getSteps().size() : 0)
-                    .build();
-            ticketStepRepository.save(newStep);
-            ticket.getSteps().add(newStep);
+        User targetStaff = userRepository.findRepresentativeStaffByDepartmentId(targetDepartment.getDepartmentId()).orElse(null);
+
+        int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
+        boolean createdNewStep = false;
+        if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
+            for (com.cityfix.backend.model.entity.TicketSubCategory tsc : ticket.getSubCategories()) {
+                if (tsc.getSubCategory() != null) {
+                    List<Step> targetSteps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
+                    for (Step s : targetSteps) {
+                        TicketStep newStep = ticketStepMapper.toTicketStep(ticket, s, targetStaff, AssignmentStatus.OPEN, index++);
+                        ticketStepRepository.save(newStep);
+                        ticket.getSteps().add(newStep);
+                        createdNewStep = true;
+                    }
+                }
+            }
+        }
+
+        if (!createdNewStep) {
+            if (!activeSteps.isEmpty()) {
+                Step fallbackStep = activeSteps.get(0).getStep();
+                TicketStep newStep = ticketStepMapper.toTicketStep(ticket, fallbackStep, targetStaff, AssignmentStatus.OPEN, index++);
+                ticketStepRepository.save(newStep);
+                ticket.getSteps().add(newStep);
+            } else {
+                throw new AppException(ErrorCode.STEP_NOT_FOUND);
+            }
         }
 
         TicketStatus prevStatus = ticket.getStatus();

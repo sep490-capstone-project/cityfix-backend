@@ -69,7 +69,17 @@ BEGIN
                     (SELECT s.step_id FROM step s JOIN ticket t ON t.sub_category_id = s.sub_category_id WHERE t.ticket_id = ta.ticket_id LIMIT 1),
                     legacy_step_id
                 ) AS step_id,
-                COALESCE(ta.assignee_id, (SELECT u.user_id FROM user_account u WHERE u.department_id = ta.department_id AND u.is_deleted = FALSE LIMIT 1)) AS assignee_id,
+                COALESCE(
+                    ta.assignee_id,
+                    (SELECT u.user_id 
+                     FROM user_account u 
+                     JOIN role r ON u.role_id = r.role_id 
+                     WHERE u.department_id = ta.department_id 
+                       AND UPPER(r.role_name) = 'STAFF' 
+                       AND u.status = 'ACTIVE' 
+                       AND u.is_deleted = FALSE 
+                     LIMIT 1)
+                ) AS assignee_id,
                 ta.assignment_status,
                 ta.created_at,
                 ta.updated_at

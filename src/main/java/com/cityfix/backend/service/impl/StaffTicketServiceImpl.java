@@ -125,13 +125,22 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
         ticket.setStatus(targetStatus);
 
+        UUID userDeptId = (!isAdmin && currentUser.getDepartment() != null) ? currentUser.getDepartment().getDepartmentId() : null;
+
         List<TicketStep> activeSteps = ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
                 ticketId, List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
         );
 
-        if (!activeSteps.isEmpty()) {
+        List<TicketStep> targetActiveSteps = activeSteps.stream()
+                .filter(step -> isAdmin || (userDeptId != null 
+                        && step.getAssignee() != null 
+                        && step.getAssignee().getDepartment() != null 
+                        && userDeptId.equals(step.getAssignee().getDepartment().getDepartmentId())))
+                .toList();
+
+        if (!targetActiveSteps.isEmpty()) {
             if (targetStatus == TicketStatus.IN_PROGRESS) {
-                TicketStep firstStep = activeSteps.get(0);
+                TicketStep firstStep = targetActiveSteps.get(0);
                 firstStep.setStatus(AssignmentStatus.IN_PROGRESS);
                 if (firstStep.getStartedAt() == null) {
                     firstStep.setStartedAt(java.time.LocalDateTime.now());
@@ -139,11 +148,11 @@ public class StaffTicketServiceImpl implements StaffTicketService {
                 ticketStepRepository.save(firstStep);
             } else if (targetStatus == TicketStatus.COMPLETED || targetStatus == TicketStatus.RESOLVED || targetStatus == TicketStatus.CANCELLED) {
                 AssignmentStatus targetStepStatus = (targetStatus == TicketStatus.CANCELLED) ? AssignmentStatus.CANCELLED : AssignmentStatus.COMPLETED;
-                for (TicketStep step : activeSteps) {
+                for (TicketStep step : targetActiveSteps) {
                     step.setStatus(targetStepStatus);
                     step.setCompletedAt(java.time.LocalDateTime.now());
                 }
-                ticketStepRepository.saveAll(activeSteps);
+                ticketStepRepository.saveAll(targetActiveSteps);
             }
         }
 

@@ -38,21 +38,12 @@ public interface TicketMapper {
     }
 
     default List<SubCategoryResponse> mapTicketSubCategories(List<TicketSubCategory> ticketSubCategories, SubCategoryMapper subCategoryMapper) {
-        if (ticketSubCategories == null || ticketSubCategories.isEmpty()) {
+        if (ticketSubCategories == null || ticketSubCategories.isEmpty() || subCategoryMapper == null) {
             return java.util.Collections.emptyList();
         }
         return ticketSubCategories.stream()
-                .filter(tsc -> tsc.getSubCategory() != null)
-                .map(tsc -> subCategoryMapper != null ? subCategoryMapper.toResponse(tsc.getSubCategory()) : 
-                        SubCategoryResponse.builder()
-                                .subCategoryId(tsc.getSubCategory().getSubCategoryId())
-                                .categoryId(tsc.getSubCategory().getCategory() != null ? tsc.getSubCategory().getCategory().getCategoryId() : null)
-                                .name(tsc.getSubCategory().getName())
-                                .description(tsc.getSubCategory().getDescription())
-                                .sla(tsc.getSubCategory().getSla())
-                                .priority(tsc.getSubCategory().getPriority())
-                                .isActive(tsc.getSubCategory().isActive())
-                                .build())
+                .filter(tsc -> tsc != null && tsc.getSubCategory() != null)
+                .map(tsc -> subCategoryMapper.toResponse(tsc.getSubCategory()))
                 .collect(Collectors.toList());
     }
 
