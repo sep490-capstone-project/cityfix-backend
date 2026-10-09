@@ -385,12 +385,43 @@ public class TicketServiceImpl implements TicketService {
         return departmentMapper.toResponseList(suggestedDepts);
     }
 
+    private void validateStaffDepartmentAccess(Ticket ticket, User currentUser) {
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        if (isAdmin) return;
+
+        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
+        if (!isStaff) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        if (currentUser.getDepartment() == null) {
+            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
+
+        UUID userDeptId = currentUser.getDepartment().getDepartmentId();
+
+        boolean hasSteps = ticket.getSteps() != null && !ticket.getSteps().isEmpty();
+        if (hasSteps) {
+            boolean belongsToDept = ticket.getSteps().stream()
+                    .anyMatch(step -> step.getAssignee() != null 
+                            && step.getAssignee().getDepartment() != null 
+                            && userDeptId.equals(step.getAssignee().getDepartment().getDepartmentId()));
+
+            if (!belongsToDept) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
+    }
+
     @Override
     @Transactional
     public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
+        User currentUser = getCurrentUser();
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
                 
+        validateStaffDepartmentAccess(ticket, currentUser);
+
         if (ticket.getStatus() != TicketStatus.INITIATED) {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
         }
@@ -442,14 +473,10 @@ public class TicketServiceImpl implements TicketService {
     public TicketResponse rerouteTicket(UUID ticketId, RerouteTicketRequest request) {
         User currentUser = getCurrentUser();
 
-        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-
-        if (!isAdmin) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        validateStaffDepartmentAccess(ticket, currentUser);
 
         if (ticket.getStatus() == TicketStatus.RESOLVED || ticket.getStatus() == TicketStatus.COMPLETED) {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
@@ -500,25 +527,21 @@ public class TicketServiceImpl implements TicketService {
                 ? List.of(status)
                 : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS);
 
-        org.springframework.data.domain.Page<TicketStep> stepsPage =
-                ticketStepRepository.findByAssigneeDepartmentDepartmentIdAndStatusIn(deptId, targetStatuses, pageable);
+        org.springframework.data.domain.Page<Ticket> ticketsPage =
+                ticketStepRepository.findDistinctTicketsByDepartmentAndStatusIn(deptId, targetStatuses, pageable);
 
-        return stepsPage.map(step -> ticketMapper.toTicketResponse(step.getTicket()));
+        return ticketsPage.map(ticketMapper::toTicketResponse);
     }
 
     @Override
     @Transactional
     public TicketResponse assignTicket(UUID ticketId, AssignTicketRequest request) {
         User currentUser = getCurrentUser();
-        
-        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        
-        if (!isAdmin) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
 
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        validateStaffDepartmentAccess(ticket, currentUser);
 
         if (ticket.getStatus() == TicketStatus.RESOLVED || ticket.getStatus() == TicketStatus.COMPLETED) {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
@@ -553,15 +576,11 @@ public class TicketServiceImpl implements TicketService {
     @Transactional
     public TicketResponse forwardTicket(UUID ticketId, RejectTicketRequest request) {
         User currentUser = getCurrentUser();
-        
-        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        
-        if (!isAdmin) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
 
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        validateStaffDepartmentAccess(ticket, currentUser);
 
         if (request.getSuggestedCategoryId() != null) {
             Category category = categoryRepository.findById(request.getSuggestedCategoryId())
@@ -600,15 +619,10 @@ public class TicketServiceImpl implements TicketService {
     public TicketResponse rejectInitiatedTicket(UUID ticketId, String reason) {
         User currentUser = getCurrentUser();
 
-        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
-
-        if (!isAdmin && !isStaff) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        validateStaffDepartmentAccess(ticket, currentUser);
 
         if (ticket.getStatus() != TicketStatus.INITIATED) {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);

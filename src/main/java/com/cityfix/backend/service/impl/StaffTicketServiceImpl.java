@@ -85,12 +85,19 @@ public class StaffTicketServiceImpl implements StaffTicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        boolean hasActiveStep = ticket.getSteps() != null && ticket.getSteps().stream()
-                .anyMatch(s -> (s.getStatus() == AssignmentStatus.IN_PROGRESS || s.getStatus() == AssignmentStatus.ASSIGNED || s.getStatus() == AssignmentStatus.OPEN)
-                        && ((s.getAssignee() != null && s.getAssignee().getUserId().equals(currentUser.getUserId()))
-                            || (currentUser.getDepartment() != null)));
+        if (currentUser.getDepartment() == null) {
+            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
 
-        if (!hasActiveStep) {
+        UUID userDeptId = currentUser.getDepartment().getDepartmentId();
+
+        boolean hasActiveStepInDept = ticket.getSteps() != null && ticket.getSteps().stream()
+                .anyMatch(s -> (s.getStatus() == AssignmentStatus.IN_PROGRESS || s.getStatus() == AssignmentStatus.ASSIGNED || s.getStatus() == AssignmentStatus.OPEN)
+                        && s.getAssignee() != null 
+                        && s.getAssignee().getDepartment() != null 
+                        && userDeptId.equals(s.getAssignee().getDepartment().getDepartmentId()));
+
+        if (!hasActiveStepInDept) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
     }

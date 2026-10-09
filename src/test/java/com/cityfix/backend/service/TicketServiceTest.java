@@ -565,6 +565,7 @@ class TicketServiceTest {
     @Test
     @DisplayName("reviewTicket_validData_returnsUpdatedTicket")
     void reviewTicket_validData_returnsUpdatedTicket() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
         mockTicket.setStatus(TicketStatus.INITIATED);
         
         com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
@@ -589,6 +590,7 @@ class TicketServiceTest {
     @Test
     @DisplayName("reviewTicket_notInitiated_throwsException")
     void reviewTicket_notInitiated_throwsException() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
         mockTicket.setStatus(TicketStatus.OPEN); // Not INITIATED
         
         com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
@@ -679,6 +681,8 @@ class TicketServiceTest {
         Role residentRole = new Role(UUID.randomUUID(), "RESIDENT");
         mockUser.setRole(residentRole);
 
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
         com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
                 com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
                         .targetDepartmentId(UUID.randomUUID())
@@ -726,10 +730,10 @@ class TicketServiceTest {
                         .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
                         .build();
 
-        org.springframework.data.domain.Page<com.cityfix.backend.model.entity.TicketStep> page =
-                new org.springframework.data.domain.PageImpl<>(List.of(step));
+        org.springframework.data.domain.Page<com.cityfix.backend.model.entity.Ticket> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
 
-        when(ticketStepRepository.findByAssigneeDepartmentDepartmentIdAndStatusIn(any(), any(), any())).thenReturn(page);
+        when(ticketStepRepository.findDistinctTicketsByDepartmentAndStatusIn(any(), any(), any())).thenReturn(page);
         when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(mockResponse);
 
         org.springframework.data.domain.Page<TicketResponse> result =
@@ -847,8 +851,10 @@ class TicketServiceTest {
     @Test
     @DisplayName("forwardTicket_userNotAdmin_throwsFORBIDDEN")
     void forwardTicket_userNotAdmin_throwsFORBIDDEN() {
-        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
-        mockUser.setRole(staffRole);
+        Role residentRole = new Role(UUID.randomUUID(), "RESIDENT");
+        mockUser.setRole(residentRole);
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
 
         com.cityfix.backend.model.dto.request.RejectTicketRequest req = new com.cityfix.backend.model.dto.request.RejectTicketRequest(null, null, "Reason");
 
