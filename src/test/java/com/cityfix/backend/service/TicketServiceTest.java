@@ -760,8 +760,12 @@ class TicketServiceTest {
         mockUser.setRole(adminRole);
 
         UUID assigneeId = UUID.randomUUID();
+        com.cityfix.backend.model.entity.Department dept = new com.cityfix.backend.model.entity.Department();
+        dept.setDepartmentId(UUID.randomUUID());
+
         User assignee = new User();
         assignee.setUserId(assigneeId);
+        assignee.setDepartment(dept);
 
         com.cityfix.backend.model.entity.TicketStep step = new com.cityfix.backend.model.entity.TicketStep();
         step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);

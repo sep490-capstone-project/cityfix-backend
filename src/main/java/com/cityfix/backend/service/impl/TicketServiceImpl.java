@@ -497,6 +497,18 @@ public class TicketServiceImpl implements TicketService {
             ticketStepRepository.save(oldStep);
         }
 
+        Step fallbackStep = activeSteps.isEmpty() ? stepRepository.findAll().stream().findFirst().orElse(null) : activeSteps.get(0).getStep();
+        if (fallbackStep != null) {
+            TicketStep newStep = TicketStep.builder()
+                    .ticket(ticket)
+                    .step(fallbackStep)
+                    .status(AssignmentStatus.OPEN)
+                    .orderIndex(ticket.getSteps() != null ? ticket.getSteps().size() : 0)
+                    .build();
+            ticketStepRepository.save(newStep);
+            ticket.getSteps().add(newStep);
+        }
+
         TicketStatus prevStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.ASSIGNED);
         ticket.setNeedsManualReview(false);
@@ -555,6 +567,10 @@ public class TicketServiceImpl implements TicketService {
 
         User assignee = userRepository.findById(request.getAssigneeId())
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+
+        if (assignee.getDepartment() == null) {
+            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
 
         stepToAssign.setAssignee(assignee);
         stepToAssign.setStatus(AssignmentStatus.ASSIGNED);

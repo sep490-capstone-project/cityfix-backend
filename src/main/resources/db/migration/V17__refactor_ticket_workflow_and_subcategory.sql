@@ -45,21 +45,36 @@ CREATE TABLE IF NOT EXISTS ticket_step (
 
 -- Migrate data from ticket_assignment to ticket_step if ticket_assignment table exists
 DO $$
+DECLARE
+    legacy_subcat_id UUID;
+    legacy_step_id UUID;
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ticket_assignment') THEN
-        INSERT INTO ticket_step (ticket_id, step_id, assignee_id, assignment_status, created_at, updated_at)
-        SELECT 
-            ta.ticket_id,
-            COALESCE(
-                (SELECT s.step_id FROM step s JOIN ticket t ON t.sub_category_id = s.sub_category_id WHERE t.ticket_id = ta.ticket_id LIMIT 1),
-                (SELECT step_id FROM step LIMIT 1)
-            ) AS step_id,
-            ta.assignee_id,
-            ta.assignment_status,
-            ta.created_at,
-            ta.updated_at
-        FROM ticket_assignment ta
-        WHERE EXISTS (SELECT 1 FROM step);
+        -- Select an existing subcategory for fallback step creation
+        SELECT sub_category_id INTO legacy_subcat_id FROM sub_category LIMIT 1;
+
+        IF legacy_subcat_id IS NOT NULL THEN
+            SELECT step_id INTO legacy_step_id FROM step WHERE step_name = 'Legacy Workflow Step' LIMIT 1;
+
+            IF legacy_step_id IS NULL THEN
+                legacy_step_id := gen_random_uuid();
+                INSERT INTO step (step_id, sub_category_id, step_name, description, duration)
+                VALUES (legacy_step_id, legacy_subcat_id, 'Legacy Workflow Step', 'Mặc định cho các phân công cũ', 1);
+            END IF;
+
+            INSERT INTO ticket_step (ticket_id, step_id, assignee_id, assignment_status, created_at, updated_at)
+            SELECT 
+                ta.ticket_id,
+                COALESCE(
+                    (SELECT s.step_id FROM step s JOIN ticket t ON t.sub_category_id = s.sub_category_id WHERE t.ticket_id = ta.ticket_id LIMIT 1),
+                    legacy_step_id
+                ) AS step_id,
+                ta.assignee_id,
+                ta.assignment_status,
+                ta.created_at,
+                ta.updated_at
+            FROM ticket_assignment ta;
+        END IF;
     END IF;
 END $$;
 
