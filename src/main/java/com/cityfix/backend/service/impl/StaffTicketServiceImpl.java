@@ -125,21 +125,25 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
         ticket.setStatus(targetStatus);
 
-        TicketStep activeStep = ticketStepRepository.findByTicketTicketIdAndStatusIn(
+        List<TicketStep> activeSteps = ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
                 ticketId, List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
-        ).stream().findFirst().orElse(null);
+        );
 
-        if (activeStep != null) {
+        if (!activeSteps.isEmpty()) {
             if (targetStatus == TicketStatus.IN_PROGRESS) {
-                activeStep.setStatus(AssignmentStatus.IN_PROGRESS);
-                if (activeStep.getStartedAt() == null) {
-                    activeStep.setStartedAt(java.time.LocalDateTime.now());
+                TicketStep firstStep = activeSteps.get(0);
+                firstStep.setStatus(AssignmentStatus.IN_PROGRESS);
+                if (firstStep.getStartedAt() == null) {
+                    firstStep.setStartedAt(java.time.LocalDateTime.now());
                 }
-                ticketStepRepository.save(activeStep);
+                ticketStepRepository.save(firstStep);
             } else if (targetStatus == TicketStatus.COMPLETED || targetStatus == TicketStatus.RESOLVED || targetStatus == TicketStatus.CANCELLED) {
-                activeStep.setStatus(targetStatus == TicketStatus.CANCELLED ? AssignmentStatus.CANCELLED : AssignmentStatus.COMPLETED);
-                activeStep.setCompletedAt(java.time.LocalDateTime.now());
-                ticketStepRepository.save(activeStep);
+                AssignmentStatus targetStepStatus = (targetStatus == TicketStatus.CANCELLED) ? AssignmentStatus.CANCELLED : AssignmentStatus.COMPLETED;
+                for (TicketStep step : activeSteps) {
+                    step.setStatus(targetStepStatus);
+                    step.setCompletedAt(java.time.LocalDateTime.now());
+                }
+                ticketStepRepository.saveAll(activeSteps);
             }
         }
 

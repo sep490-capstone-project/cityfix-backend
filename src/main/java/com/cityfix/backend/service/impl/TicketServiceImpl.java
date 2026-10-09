@@ -201,12 +201,17 @@ public class TicketServiceImpl implements TicketService {
             ticketSubCategoryRepository.save(tsc);
             ticket.getSubCategories().add(tsc);
 
+            User autoStaff = assignedDepartment != null 
+                    ? userRepository.findFirstByDepartmentDepartmentIdAndIsDeletedFalse(assignedDepartment.getDepartmentId()).orElse(null) 
+                    : null;
+
             List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
             int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
             for (Step s : steps) {
                 TicketStep ts = TicketStep.builder()
                         .ticket(ticket)
                         .step(s)
+                        .assignee(autoStaff)
                         .status(AssignmentStatus.OPEN)
                         .orderIndex(index++)
                         .build();
@@ -444,15 +449,26 @@ public class TicketServiceImpl implements TicketService {
         ticket.setNeedsManualReview(false);
         
         if (request.getDepartmentIds() != null && !request.getDepartmentIds().isEmpty()) {
+            java.util.Map<UUID, User> deptStaffMap = new java.util.HashMap<>();
+            for (UUID dId : request.getDepartmentIds()) {
+                userRepository.findFirstByDepartmentDepartmentIdAndIsDeletedFalse(dId)
+                        .ifPresent(u -> deptStaffMap.put(dId, u));
+            }
+
             if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
-                for (com.cityfix.backend.model.entity.TicketSubCategory tsc : ticket.getSubCategories()) {
+                int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
+                for (int i = 0; i < ticket.getSubCategories().size(); i++) {
+                    com.cityfix.backend.model.entity.TicketSubCategory tsc = ticket.getSubCategories().get(i);
                     if (tsc.getSubCategory() != null) {
+                        UUID targetDeptId = i < request.getDepartmentIds().size() ? request.getDepartmentIds().get(i) : request.getDepartmentIds().get(0);
+                        User staff = deptStaffMap.get(targetDeptId);
+
                         List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
-                        int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
                         for (Step s : steps) {
                             TicketStep ts = TicketStep.builder()
                                     .ticket(ticket)
                                     .step(s)
+                                    .assignee(staff)
                                     .status(AssignmentStatus.OPEN)
                                     .orderIndex(index++)
                                     .build();
@@ -487,7 +503,7 @@ public class TicketServiceImpl implements TicketService {
 
         // Mark old active steps as TRANSFERRED
         List<TicketStep> activeSteps =
-                ticketStepRepository.findByTicketTicketIdAndStatusIn(
+                ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
                         ticketId,
                         List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
                 );
@@ -497,11 +513,13 @@ public class TicketServiceImpl implements TicketService {
             ticketStepRepository.save(oldStep);
         }
 
+        User targetStaff = userRepository.findFirstByDepartmentDepartmentIdAndIsDeletedFalse(targetDepartment.getDepartmentId()).orElse(null);
         Step fallbackStep = activeSteps.isEmpty() ? stepRepository.findAll().stream().findFirst().orElse(null) : activeSteps.get(0).getStep();
         if (fallbackStep != null) {
             TicketStep newStep = TicketStep.builder()
                     .ticket(ticket)
                     .step(fallbackStep)
+                    .assignee(targetStaff)
                     .status(AssignmentStatus.OPEN)
                     .orderIndex(ticket.getSteps() != null ? ticket.getSteps().size() : 0)
                     .build();
@@ -559,7 +577,7 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
         }
 
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdAndStatusIn(
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
                 ticketId, List.of(AssignmentStatus.OPEN, AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
                 
         TicketStep stepToAssign = steps.stream().findFirst()

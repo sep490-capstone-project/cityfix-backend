@@ -46,6 +46,7 @@ public interface TicketMapper {
                 .map(tsc -> subCategoryMapper != null ? subCategoryMapper.toResponse(tsc.getSubCategory()) : 
                         SubCategoryResponse.builder()
                                 .subCategoryId(tsc.getSubCategory().getSubCategoryId())
+                                .categoryId(tsc.getSubCategory().getCategory() != null ? tsc.getSubCategory().getCategory().getCategoryId() : null)
                                 .name(tsc.getSubCategory().getName())
                                 .description(tsc.getSubCategory().getDescription())
                                 .sla(tsc.getSubCategory().getSla())

@@ -771,7 +771,7 @@ class TicketServiceTest {
         step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
 
         when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
-        when(ticketStepRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
                 .thenReturn(List.of(step));
         when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
 
@@ -805,7 +805,7 @@ class TicketServiceTest {
 
         when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(departmentRepository.findById(suggestedDeptId)).thenReturn(Optional.of(suggestedDept));
-        when(ticketStepRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
                 .thenReturn(List.of(step));
 
         TicketResponse mockResponse = TicketResponse.builder().build();
@@ -898,7 +898,7 @@ class TicketServiceTest {
 
         when(departmentMapper.toResponseList(any())).thenReturn(List.of(deptResp));
         when(departmentRepository.findById(suggestedDeptId)).thenReturn(Optional.of(suggestedDept));
-        when(ticketStepRepository.findByTicketTicketIdAndStatusIn(eq(mockTicket.getTicketId()), any()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
                 .thenReturn(List.of(step));
 
         TicketResponse mockResponse = TicketResponse.builder().build();

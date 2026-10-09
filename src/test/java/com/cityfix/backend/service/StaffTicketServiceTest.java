@@ -120,6 +120,8 @@ public class StaffTicketServiceTest {
         step.setStatus(AssignmentStatus.ASSIGNED);
         step.setAssignee(staffUser);
         ticket.getSteps().add(step);
+        lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(any(), any()))
+                .thenReturn(List.of(step));
         lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusIn(any(), any()))
                 .thenReturn(List.of(step));
     }

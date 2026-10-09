@@ -18,6 +18,8 @@ public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
     List<TicketStep> findByTicketTicketIdAndStatusIn(UUID ticketId, List<AssignmentStatus> statuses);
 
+    List<TicketStep> findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(UUID ticketId, List<AssignmentStatus> statuses);
+
     Page<TicketStep> findByAssigneeUserIdAndStatusIn(UUID assigneeId, List<AssignmentStatus> statuses, Pageable pageable);
 
     Page<TicketStep> findByAssigneeDepartmentDepartmentIdAndStatusIn(UUID departmentId, List<AssignmentStatus> statuses, Pageable pageable);
