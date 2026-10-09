@@ -72,7 +72,6 @@ public class UserServiceImpl implements UserService {
         user.setRole(residentRole);
         user.setStatus(com.cityfix.backend.model.enums.UserStatus.BLOCKED);
         user.setEmailVerified(false);
-        user.setIsDispatcher(false);
 
         userRepository.save(user);
 

@@ -28,9 +28,6 @@ public class User extends BaseEntity {
     @JoinColumn(name = "department_id")
     private Department department;
 
-    @Column(name = "is_dispatcher")
-    private Boolean isDispatcher;
-
     @Column(name = "full_name", nullable = false, length = 100)
     private String fullName;
 

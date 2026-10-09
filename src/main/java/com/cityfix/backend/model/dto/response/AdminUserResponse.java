@@ -24,7 +24,6 @@ public class AdminUserResponse {
     private UUID roleId;
     private UUID departmentId;
     private UserStatus status;
-    private Boolean isDispatcher;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

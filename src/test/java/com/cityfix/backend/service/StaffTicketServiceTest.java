@@ -48,7 +48,7 @@ public class StaffTicketServiceTest {
     @Mock
     private TicketRepository ticketRepository;
     @Mock
-    private TicketAssignmentRepository ticketAssignmentRepository;
+    private TicketStepRepository ticketStepRepository;
     @Mock
     private TicketHistoryRepository ticketHistoryRepository;
     @Mock
@@ -99,7 +99,7 @@ public class StaffTicketServiceTest {
         ticket = new Ticket();
         ticket.setTicketId(ticketId);
         ticket.setStatus(TicketStatus.ASSIGNED);
-        ticket.setAssignments(new ArrayList<>());
+        ticket.setSteps(new ArrayList<>());
         
         User reporter = new User();
         reporter.setUserId(UUID.randomUUID());
@@ -116,12 +116,12 @@ public class StaffTicketServiceTest {
     }
 
     private void setupActiveAssignment() {
-        TicketAssignment assignment = new TicketAssignment();
-        assignment.setStatus(AssignmentStatus.ASSIGNED);
-        assignment.setDepartment(department);
-        ticket.getAssignments().add(assignment);
-        lenient().when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(any(), any()))
-                .thenReturn(List.of(assignment));
+        TicketStep step = new TicketStep();
+        step.setStatus(AssignmentStatus.ASSIGNED);
+        step.setAssignee(staffUser);
+        ticket.getSteps().add(step);
+        lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusIn(any(), any()))
+                .thenReturn(List.of(step));
     }
 
     @Test

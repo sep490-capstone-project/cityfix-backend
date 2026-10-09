@@ -8,26 +8,25 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "ticket_assignment")
+@Table(name = "ticket_step")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class TicketAssignment {
+public class TicketStep {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "assignment_id")
-    private UUID assignmentId;
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ticket_id", nullable = false)
     private Ticket ticket;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "department_id", nullable = false)
-    private Department department;
+    @JoinColumn(name = "step_id", nullable = false)
+    private Step step;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id")
@@ -37,6 +36,22 @@ public class TicketAssignment {
     @Enumerated(EnumType.STRING)
     @Column(name = "assignment_status", nullable = false, length = 20)
     private AssignmentStatus status = AssignmentStatus.OPEN;
+
+    @Builder.Default
+    @Column(name = "order_index", nullable = false)
+    private Integer orderIndex = 0;
+
+    @Column(name = "started_at")
+    private LocalDateTime startedAt;
+
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
+
+    @Column(name = "deadline")
+    private LocalDateTime deadline;
+
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

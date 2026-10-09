@@ -56,13 +56,16 @@ public class TicketServiceImpl implements TicketService {
     private final ReportImageRepository reportImageRepository;
     private final com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
     private final com.cityfix.backend.repository.DepartmentRepository departmentRepository;
-    private final com.cityfix.backend.repository.TicketAssignmentRepository ticketAssignmentRepository;
+    private final com.cityfix.backend.repository.TicketStepRepository ticketStepRepository;
+    private final com.cityfix.backend.repository.TicketSubCategoryRepository ticketSubCategoryRepository;
+    private final com.cityfix.backend.mapper.SubCategoryMapper subCategoryMapper;
+    private final com.cityfix.backend.repository.StepRepository stepRepository;
     private final com.cityfix.backend.repository.TicketHistoryRepository ticketHistoryRepository;
     private final Cloudinary cloudinary;
     private final ImageMapper imageMapper;
     private final TicketMapper ticketMapper;
     private final com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
-    private final com.cityfix.backend.mapper.TicketAssignmentMapper ticketAssignmentMapper;
+    private final com.cityfix.backend.mapper.TicketStepMapper ticketStepMapper;
     private final com.cityfix.backend.mapper.TicketHistoryMapper ticketHistoryMapper;
     private final com.cityfix.backend.repository.NotificationRepository notificationRepository;
     private final com.cityfix.backend.mapper.NotificationMapper notificationMapper;
@@ -135,17 +138,18 @@ public class TicketServiceImpl implements TicketService {
                     .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
         }
 
-        com.cityfix.backend.model.entity.SubCategory subCategory = null;
-        if (request.getSubCategoryId() != null) {
-            subCategory = subCategoryRepository.findById(request.getSubCategoryId())
-                    .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
-            
-            if (!subCategory.isActive() || subCategory.isDeleted()) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ đã bị vô hiệu hóa hoặc bị xóa");
-            }
-
-            if (category != null && !subCategory.getCategory().getCategoryId().equals(category.getCategoryId())) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ không thuộc danh mục đã chọn");
+        List<com.cityfix.backend.model.entity.SubCategory> subCategories = new java.util.ArrayList<>();
+        if (request.getSubCategoryIds() != null && !request.getSubCategoryIds().isEmpty()) {
+            for (UUID subCatId : request.getSubCategoryIds()) {
+                com.cityfix.backend.model.entity.SubCategory subCat = subCategoryRepository.findById(subCatId)
+                        .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
+                if (!subCat.isActive() || subCat.isDeleted()) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ đã bị vô hiệu hóa hoặc bị xóa");
+                }
+                if (category != null && !subCat.getCategory().getCategoryId().equals(category.getCategoryId())) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ không thuộc danh mục đã chọn");
+                }
+                subCategories.add(subCat);
             }
         }
 
@@ -186,13 +190,29 @@ public class TicketServiceImpl implements TicketService {
         boolean finalNeedsReview = needsReview || (assignedDepartment == null);
         TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.OPEN;
 
-        Ticket ticket = ticketMapper.toTicket(request, category, subCategory, user, location, initialStatus, finalNeedsReview);
+        Ticket ticket = ticketMapper.toTicket(request, category, user, location, initialStatus, finalNeedsReview);
         ticket = ticketRepository.save(ticket);
 
-        if (assignedDepartment != null && !finalNeedsReview) {
-            TicketAssignment assignment = ticketAssignmentMapper.toTicketAssignment(ticket, assignedDepartment, AssignmentStatus.OPEN);
-            ticketAssignmentRepository.save(assignment);
-            ticket.getAssignments().add(assignment);
+        for (com.cityfix.backend.model.entity.SubCategory subCat : subCategories) {
+            com.cityfix.backend.model.entity.TicketSubCategory tsc = com.cityfix.backend.model.entity.TicketSubCategory.builder()
+                    .ticket(ticket)
+                    .subCategory(subCat)
+                    .build();
+            ticketSubCategoryRepository.save(tsc);
+            ticket.getSubCategories().add(tsc);
+
+            List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
+            int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
+            for (Step s : steps) {
+                TicketStep ts = TicketStep.builder()
+                        .ticket(ticket)
+                        .step(s)
+                        .status(AssignmentStatus.OPEN)
+                        .orderIndex(index++)
+                        .build();
+                ticketStepRepository.save(ts);
+                ticket.getSteps().add(ts);
+            }
         }
 
         // Audit Log
@@ -393,12 +413,23 @@ public class TicketServiceImpl implements TicketService {
         ticket.setNeedsManualReview(false);
         
         if (request.getDepartmentIds() != null && !request.getDepartmentIds().isEmpty()) {
-            for (UUID deptId : request.getDepartmentIds()) {
-                Department department = departmentRepository.findById(deptId)
-                        .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
-                
-                TicketAssignment assignment = ticketAssignmentMapper.toTicketAssignment(ticket, department, AssignmentStatus.OPEN);
-                ticket.getAssignments().add(assignment);
+            if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
+                for (com.cityfix.backend.model.entity.TicketSubCategory tsc : ticket.getSubCategories()) {
+                    if (tsc.getSubCategory() != null) {
+                        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
+                        int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
+                        for (Step s : steps) {
+                            TicketStep ts = TicketStep.builder()
+                                    .ticket(ticket)
+                                    .step(s)
+                                    .status(AssignmentStatus.OPEN)
+                                    .orderIndex(index++)
+                                    .build();
+                            ticketStepRepository.save(ts);
+                            ticket.getSteps().add(ts);
+                        }
+                    }
+                }
             }
         }
         
@@ -412,9 +443,8 @@ public class TicketServiceImpl implements TicketService {
         User currentUser = getCurrentUser();
 
         boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
 
-        if (!isAdmin && !isDispatcher) {
+        if (!isAdmin) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
@@ -428,24 +458,17 @@ public class TicketServiceImpl implements TicketService {
         Department targetDepartment = departmentRepository.findById(request.getTargetDepartmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
-        // Mark old active assignments as TRANSFERRED
-        List<TicketAssignment> activeAssignments =
-                ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
+        // Mark old active steps as TRANSFERRED
+        List<TicketStep> activeSteps =
+                ticketStepRepository.findByTicketTicketIdAndStatusIn(
                         ticketId,
                         List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
                 );
 
-        for (TicketAssignment oldAssignment : activeAssignments) {
-            if (oldAssignment.getDepartment() != null && oldAssignment.getDepartment().getDepartmentId().equals(request.getTargetDepartmentId())) {
-                throw new AppException(ErrorCode.INVALID_REQUEST);
-            }
-            oldAssignment.setStatus(AssignmentStatus.TRANSFERRED);
-            ticketAssignmentRepository.save(oldAssignment);
+        for (TicketStep oldStep : activeSteps) {
+            oldStep.setStatus(AssignmentStatus.TRANSFERRED);
+            ticketStepRepository.save(oldStep);
         }
-
-        // Create new assignment for target department
-        TicketAssignment newAssignment = ticketAssignmentMapper.toTicketAssignment(ticket, targetDepartment, AssignmentStatus.ASSIGNED);
-        ticketAssignmentRepository.save(newAssignment);
 
         TicketStatus prevStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.ASSIGNED);
@@ -477,10 +500,10 @@ public class TicketServiceImpl implements TicketService {
                 ? List.of(status)
                 : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS);
 
-        org.springframework.data.domain.Page<TicketAssignment> assignmentsPage =
-                ticketAssignmentRepository.findByDepartmentDepartmentIdAndStatusIn(deptId, targetStatuses, pageable);
+        org.springframework.data.domain.Page<TicketStep> stepsPage =
+                ticketStepRepository.findByAssigneeDepartmentDepartmentIdAndStatusIn(deptId, targetStatuses, pageable);
 
-        return assignmentsPage.map(assignment -> ticketMapper.toTicketResponse(assignment.getTicket()));
+        return stepsPage.map(step -> ticketMapper.toTicketResponse(step.getTicket()));
     }
 
     @Override
@@ -489,14 +512,8 @@ public class TicketServiceImpl implements TicketService {
         User currentUser = getCurrentUser();
         
         boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
         
-        if (!isAdmin && !isDispatcher) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-        
-        Department userDept = currentUser.getDepartment();
-        if (userDept == null && !isAdmin) {
+        if (!isAdmin) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
@@ -507,26 +524,18 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
         }
 
-        // Get the active assignment for this department
-        List<TicketAssignment> assignments = ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdAndStatusIn(
                 ticketId, List.of(AssignmentStatus.OPEN, AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
                 
-        TicketAssignment assignment = assignments.stream()
-                .filter(a -> a.getDepartment() != null && 
-                        (isAdmin || a.getDepartment().getDepartmentId().equals(userDept.getDepartmentId())))
-                .findFirst()
+        TicketStep stepToAssign = steps.stream().findFirst()
                 .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST));
 
         User assignee = userRepository.findById(request.getAssigneeId())
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
 
-        if (assignee.getDepartment() == null || !assignee.getDepartment().getDepartmentId().equals(assignment.getDepartment().getDepartmentId())) {
-            throw new AppException(ErrorCode.INVALID_REQUEST);
-        }
-
-        assignment.setAssignee(assignee);
-        assignment.setStatus(AssignmentStatus.ASSIGNED);
-        ticketAssignmentRepository.save(assignment);
+        stepToAssign.setAssignee(assignee);
+        stepToAssign.setStatus(AssignmentStatus.ASSIGNED);
+        ticketStepRepository.save(stepToAssign);
 
         TicketStatus prevStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.ASSIGNED);
@@ -540,17 +549,14 @@ public class TicketServiceImpl implements TicketService {
         return ticketMapper.toTicketResponse(ticket);
     }
 
-
-
     @Override
     @Transactional
     public TicketResponse forwardTicket(UUID ticketId, RejectTicketRequest request) {
         User currentUser = getCurrentUser();
         
         boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        boolean isDispatcher = Boolean.TRUE.equals(currentUser.getIsDispatcher());
         
-        if (!isAdmin && !isDispatcher) {
+        if (!isAdmin) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
@@ -673,16 +679,16 @@ public class TicketServiceImpl implements TicketService {
         ticket.setStatus(TicketStatus.REJECTED);
         ticket.setReviewNote(finalReason);
 
-        // Cancel assignments
-        List<TicketAssignment> activeAssignments =
-                ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
+        // Cancel active steps
+        List<TicketStep> activeSteps =
+                ticketStepRepository.findByTicketTicketIdAndStatusIn(
                         ticketId,
                         List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
                 );
 
-        for (TicketAssignment assignment : activeAssignments) {
-            assignment.setStatus(AssignmentStatus.CANCELLED);
-            ticketAssignmentRepository.save(assignment);
+        for (TicketStep step : activeSteps) {
+            step.setStatus(AssignmentStatus.CANCELLED);
+            ticketStepRepository.save(step);
         }
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(

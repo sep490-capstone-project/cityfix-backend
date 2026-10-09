@@ -17,8 +17,7 @@ public class CreateTicketRequest {
     @NotNull(message = "Category ID is required")
     private java.util.UUID categoryId;
 
-    @NotNull(message = "SubCategory ID is required")
-    private java.util.UUID subCategoryId;
+    private java.util.List<java.util.UUID> subCategoryIds;
 
     @NotNull(message = "Severity is required")
     private com.cityfix.backend.model.enums.SeverityLevel severity;
@@ -41,4 +40,5 @@ public class CreateTicketRequest {
 
     private Double confidenceScore;
 
+    private Boolean isAnonymous;
 }

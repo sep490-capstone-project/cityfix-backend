@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 public class StaffTicketServiceImpl implements StaffTicketService {
 
     private final TicketRepository ticketRepository;
-    private final TicketAssignmentRepository ticketAssignmentRepository;
+    private final TicketStepRepository ticketStepRepository;
     private final TicketHistoryRepository ticketHistoryRepository;
     private final ResolutionEvidenceRepository resolutionEvidenceRepository;
     private final UserRepository userRepository;
@@ -60,7 +60,7 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
     private void validateStatusTransition(TicketStatus currentStatus, TicketStatus targetStatus, boolean isAdmin) {
         if (currentStatus == targetStatus) return;
-        if (isAdmin) return; // Admin can jump states if needed, or keeping it strict for everyone. The prompt: "(Nếu có case đặc biệt cho ADMIN override... hãy xử lý gọn gàng)". I'll allow admin override.
+        if (isAdmin) return; // Admin can jump states if needed, or keeping it strict for everyone.
         
         java.util.Set<TicketStatus> allowed = ALLOWED_TRANSITIONS.getOrDefault(currentStatus, java.util.Collections.emptySet());
         if (!allowed.contains(targetStatus)) {
@@ -85,13 +85,12 @@ public class StaffTicketServiceImpl implements StaffTicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        boolean hasActiveAssignment = ticket.getAssignments().stream()
-                .anyMatch(a -> (a.getStatus() == AssignmentStatus.IN_PROGRESS || a.getStatus() == AssignmentStatus.ASSIGNED)
-                        && a.getDepartment() != null
-                        && currentUser.getDepartment() != null
-                        && a.getDepartment().getDepartmentId().equals(currentUser.getDepartment().getDepartmentId()));
+        boolean hasActiveStep = ticket.getSteps() != null && ticket.getSteps().stream()
+                .anyMatch(s -> (s.getStatus() == AssignmentStatus.IN_PROGRESS || s.getStatus() == AssignmentStatus.ASSIGNED || s.getStatus() == AssignmentStatus.OPEN)
+                        && ((s.getAssignee() != null && s.getAssignee().getUserId().equals(currentUser.getUserId()))
+                            || (currentUser.getDepartment() != null)));
 
-        if (!hasActiveAssignment) {
+        if (!hasActiveStep) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
     }
@@ -119,17 +118,21 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
         ticket.setStatus(targetStatus);
 
-        TicketAssignment assignment = ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(
-                ticketId, List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS)
+        TicketStep activeStep = ticketStepRepository.findByTicketTicketIdAndStatusIn(
+                ticketId, List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
         ).stream().findFirst().orElse(null);
 
-        if (assignment != null) {
+        if (activeStep != null) {
             if (targetStatus == TicketStatus.IN_PROGRESS) {
-                assignment.setStatus(AssignmentStatus.IN_PROGRESS);
-                ticketAssignmentRepository.save(assignment);
+                activeStep.setStatus(AssignmentStatus.IN_PROGRESS);
+                if (activeStep.getStartedAt() == null) {
+                    activeStep.setStartedAt(java.time.LocalDateTime.now());
+                }
+                ticketStepRepository.save(activeStep);
             } else if (targetStatus == TicketStatus.COMPLETED || targetStatus == TicketStatus.RESOLVED || targetStatus == TicketStatus.CANCELLED) {
-                assignment.setStatus(AssignmentStatus.COMPLETED);
-                ticketAssignmentRepository.save(assignment);
+                activeStep.setStatus(targetStatus == TicketStatus.CANCELLED ? AssignmentStatus.CANCELLED : AssignmentStatus.COMPLETED);
+                activeStep.setCompletedAt(java.time.LocalDateTime.now());
+                ticketStepRepository.save(activeStep);
             }
         }
 
