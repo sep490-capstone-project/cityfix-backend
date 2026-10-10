@@ -42,7 +42,7 @@ public class AdminUserController {
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Cập nhật người dùng", description = "Chỉnh sửa thông tin, Role, trạng thái tài khoản. Cờ isDispatcher chỉ cập nhật được cho role STAFF")
+    @Operation(summary = "Cập nhật người dùng", description = "Chỉnh sửa thông tin, Role, trạng thái tài khoản")
     public ResponseEntity<BaseResponse<AdminUserResponse>> updateUser(
             @PathVariable UUID id,
             @Valid @RequestBody AdminUserRequest request) {

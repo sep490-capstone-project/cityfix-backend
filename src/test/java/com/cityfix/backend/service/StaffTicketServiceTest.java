@@ -48,7 +48,7 @@ public class StaffTicketServiceTest {
     @Mock
     private TicketRepository ticketRepository;
     @Mock
-    private TicketAssignmentRepository ticketAssignmentRepository;
+    private TicketStepRepository ticketStepRepository;
     @Mock
     private TicketHistoryRepository ticketHistoryRepository;
     @Mock
@@ -99,7 +99,7 @@ public class StaffTicketServiceTest {
         ticket = new Ticket();
         ticket.setTicketId(ticketId);
         ticket.setStatus(TicketStatus.ASSIGNED);
-        ticket.setAssignments(new ArrayList<>());
+        ticket.setSteps(new ArrayList<>());
         
         User reporter = new User();
         reporter.setUserId(UUID.randomUUID());
@@ -116,12 +116,14 @@ public class StaffTicketServiceTest {
     }
 
     private void setupActiveAssignment() {
-        TicketAssignment assignment = new TicketAssignment();
-        assignment.setStatus(AssignmentStatus.ASSIGNED);
-        assignment.setDepartment(department);
-        ticket.getAssignments().add(assignment);
-        lenient().when(ticketAssignmentRepository.findByTicketTicketIdAndStatusIn(any(), any()))
-                .thenReturn(List.of(assignment));
+        TicketStep step = new TicketStep();
+        step.setStatus(AssignmentStatus.ASSIGNED);
+        step.setAssignee(staffUser);
+        ticket.getSteps().add(step);
+        lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(any(), any()))
+                .thenReturn(List.of(step));
+        lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusIn(any(), any()))
+                .thenReturn(List.of(step));
     }
 
     @Test
@@ -240,5 +242,66 @@ public class StaffTicketServiceTest {
         verify(ticketService).uploadImage(any(), eq("cityfix/evidences"));
         verify(resolutionEvidenceRepository).saveAll(anyList());
         verify(ticketHistoryRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_stepOfDifferentDepartment_throwsFORBIDDEN")
+    void updateTicketStatus_stepOfDifferentDepartment_throwsFORBIDDEN() {
+        setupSecurityContext();
+
+        Department otherDept = new Department();
+        otherDept.setDepartmentId(UUID.randomUUID());
+
+        User otherStaff = new User();
+        otherStaff.setUserId(UUID.randomUUID());
+        otherStaff.setDepartment(otherDept);
+
+        TicketStep otherStep = new TicketStep();
+        otherStep.setId(UUID.randomUUID());
+        otherStep.setStatus(AssignmentStatus.ASSIGNED);
+        otherStep.setAssignee(otherStaff);
+
+        ticket.setStatus(TicketStatus.ASSIGNED);
+        ticket.setSteps(new ArrayList<>(List.of(otherStep)));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+        request.setStepId(otherStep.getId());
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_noStepInStaffDepartment_throwsFORBIDDEN")
+    void updateTicketStatus_noStepInStaffDepartment_throwsFORBIDDEN() {
+        setupSecurityContext();
+
+        Department otherDept = new Department();
+        otherDept.setDepartmentId(UUID.randomUUID());
+
+        User otherStaff = new User();
+        otherStaff.setUserId(UUID.randomUUID());
+        otherStaff.setDepartment(otherDept);
+
+        TicketStep otherStep = new TicketStep();
+        otherStep.setId(UUID.randomUUID());
+        otherStep.setStatus(AssignmentStatus.ASSIGNED);
+        otherStep.setAssignee(otherStaff);
+
+        ticket.setStatus(TicketStatus.ASSIGNED);
+        ticket.setSteps(new ArrayList<>(List.of(otherStep)));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
     }
 }

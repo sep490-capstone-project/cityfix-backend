@@ -39,5 +39,4 @@ public class AdminUserRequest {
 
     private UUID departmentId; // Optional
     private UserStatus status; // Optional
-    private Boolean isDispatcher; // Optional
 }

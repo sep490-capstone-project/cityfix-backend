@@ -16,7 +16,6 @@ public interface UserMapper {
     @Mapping(target = "userId", ignore = true)
     @Mapping(target = "role", ignore = true)
     @Mapping(target = "department", ignore = true)
-    @Mapping(target = "isDispatcher", ignore = true)
     @Mapping(target = "passwordHash", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "emailVerified", ignore = true)
