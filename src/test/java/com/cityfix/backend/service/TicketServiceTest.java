@@ -4,7 +4,9 @@ import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.ImageMapper;
 import com.cityfix.backend.mapper.TicketMapper;
+import com.cityfix.backend.model.dto.request.AssignTicketRequest;
 import com.cityfix.backend.model.dto.request.CreateTicketRequest;
+import com.cityfix.backend.model.dto.request.ReviewTicketRequest;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
@@ -1148,4 +1150,83 @@ class TicketServiceTest {
         assertThat(mockTicket.getCategory()).isEqualTo(suggestedCategory);
         verify(categoryRepository).findById(suggestedCategoryId);
     }
+
+    @Test
+    @DisplayName("assignTicket_assigneeDifferentDepartment_throwsINVALID_REQUEST")
+    void assignTicket_assigneeDifferentDepartment_throwsINVALID_REQUEST() {
+        com.cityfix.backend.model.entity.Department deptA = new com.cityfix.backend.model.entity.Department();
+        deptA.setDepartmentId(UUID.randomUUID());
+
+        com.cityfix.backend.model.entity.Department deptB = new com.cityfix.backend.model.entity.Department();
+        deptB.setDepartmentId(UUID.randomUUID());
+
+        com.cityfix.backend.model.entity.Role staffRole = new com.cityfix.backend.model.entity.Role(UUID.randomUUID(), "STAFF");
+
+        mockUser.setRole(staffRole);
+        mockUser.setDepartment(deptA);
+
+        User currentStepAssignee = new User();
+        currentStepAssignee.setUserId(UUID.randomUUID());
+        currentStepAssignee.setDepartment(deptA);
+
+        com.cityfix.backend.model.entity.TicketStep step = new com.cityfix.backend.model.entity.TicketStep();
+        step.setId(UUID.randomUUID());
+        step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
+        step.setAssignee(currentStepAssignee);
+
+        mockTicket.setStatus(TicketStatus.OPEN);
+        mockTicket.setSteps(new ArrayList<>(List.of(step)));
+
+        User targetAssignee = new User();
+        targetAssignee.setUserId(UUID.randomUUID());
+        targetAssignee.setDepartment(deptB);
+
+        AssignTicketRequest request = AssignTicketRequest.builder()
+                .stepId(step.getId())
+                .assigneeId(targetAssignee.getUserId())
+                .build();
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
+                .thenReturn(List.of(step));
+        when(userRepository.findById(targetAssignee.getUserId())).thenReturn(Optional.of(targetAssignee));
+
+        assertThatThrownBy(() -> ticketService.assignTicket(mockTicket.getTicketId(), request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_routeSubCategoryNotBelongToTicket_throwsINVALID_REQUEST")
+    void reviewTicket_routeSubCategoryNotBelongToTicket_throwsINVALID_REQUEST() {
+        com.cityfix.backend.model.entity.Role adminRole = new com.cityfix.backend.model.entity.Role(UUID.randomUUID(), "ADMIN");
+        mockUser.setRole(adminRole);
+
+        SubCategory ticketSubCat = SubCategory.builder()
+                .subCategoryId(UUID.randomUUID())
+                .build();
+        TicketSubCategory tsc = TicketSubCategory.builder()
+                .ticket(mockTicket)
+                .subCategory(ticketSubCat)
+                .build();
+        mockTicket.setStatus(TicketStatus.INITIATED);
+        mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
+        UUID otherSubCatId = UUID.randomUUID();
+        ReviewTicketRequest.SubCategoryRouteRequest route = new ReviewTicketRequest.SubCategoryRouteRequest(
+                otherSubCatId, UUID.randomUUID()
+        );
+        ReviewTicketRequest request = ReviewTicketRequest.builder()
+                .routes(List.of(route))
+                .build();
+
+        assertThatThrownBy(() -> ticketService.reviewTicket(mockTicket.getTicketId(), request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
 }
+

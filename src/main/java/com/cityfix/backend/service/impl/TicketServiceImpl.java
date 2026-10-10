@@ -45,6 +45,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
@@ -491,10 +492,20 @@ public class TicketServiceImpl implements TicketService {
                     }
                 }
             } else {
+                Set<UUID> validSubCategoryIds = ticket.getSubCategories() != null
+                        ? ticket.getSubCategories().stream()
+                                .filter(tsc -> tsc.getSubCategory() != null)
+                                .map(tsc -> tsc.getSubCategory().getSubCategoryId())
+                                .collect(Collectors.toSet())
+                        : Collections.emptySet();
+
                 Map<UUID, User> deptStaffCache = new HashMap<>();
                 for (ReviewTicketRequest.SubCategoryRouteRequest route : routes) {
                     if (route.getSubCategoryId() == null || route.getDepartmentId() == null) {
                         throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION);
+                    }
+                    if (!validSubCategoryIds.contains(route.getSubCategoryId())) {
+                        throw new AppException(ErrorCode.INVALID_REQUEST);
                     }
                     User staff = deptStaffCache.computeIfAbsent(route.getDepartmentId(), dId ->
                             userRepository.findRepresentativeStaffByDepartmentId(dId)
@@ -636,6 +647,17 @@ public class TicketServiceImpl implements TicketService {
 
         if (assignee.getDepartment() == null) {
             throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
+
+        if (stepToAssign.getAssignee() != null && stepToAssign.getAssignee().getDepartment() != null) {
+            if (!assignee.getDepartment().getDepartmentId().equals(stepToAssign.getAssignee().getDepartment().getDepartmentId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
+        }
+        if (!isAdmin(currentUser)) {
+            if (currentUser.getDepartment() == null || !assignee.getDepartment().getDepartmentId().equals(currentUser.getDepartment().getDepartmentId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
         }
 
         stepToAssign.setAssignee(assignee);
