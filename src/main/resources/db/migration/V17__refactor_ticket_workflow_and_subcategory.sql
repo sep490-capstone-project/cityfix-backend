@@ -1,12 +1,9 @@
 -- V17: Refactor Ticket Workflow and SubCategory
 
--- 1. Add is_anonymous column to ticket table
+-- Step 1. Add is_anonymous column to ticket table
 ALTER TABLE ticket ADD COLUMN IF NOT EXISTS is_anonymous BOOLEAN NOT NULL DEFAULT FALSE;
 
--- 2. Drop is_dispatcher column from user_account table
-ALTER TABLE user_account DROP COLUMN IF EXISTS is_dispatcher;
-
--- 3. Create ticket_subcategory join table (N-N)
+-- Step 2. Create ticket_subcategory join table (N-N)
 CREATE TABLE IF NOT EXISTS ticket_subcategory (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL,
@@ -17,14 +14,14 @@ CREATE TABLE IF NOT EXISTS ticket_subcategory (
     CONSTRAINT uk_ticket_subcategory UNIQUE (ticket_id, sub_category_id)
 );
 
--- Migrate sub_category_id data from ticket to ticket_subcategory before dropping sub_category_id
+-- Step 3. Migrate sub_category_id data from ticket to ticket_subcategory before dropping sub_category_id
 INSERT INTO ticket_subcategory (ticket_id, sub_category_id)
 SELECT ticket_id, sub_category_id
 FROM ticket
 WHERE sub_category_id IS NOT NULL
 ON CONFLICT (ticket_id, sub_category_id) DO NOTHING;
 
--- 4. Create ticket_step table (including notes column)
+-- Step 4. Create ticket_step table (including notes column)
 CREATE TABLE IF NOT EXISTS ticket_step (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ticket_id UUID NOT NULL,
@@ -43,53 +40,150 @@ CREATE TABLE IF NOT EXISTS ticket_step (
     CONSTRAINT fk_ticket_step_assignee FOREIGN KEY (assignee_id) REFERENCES user_account(user_id)
 );
 
--- Migrate data from ticket_assignment to ticket_step if ticket_assignment table exists
+-- Step 5. Migrate data from ticket_assignment to ticket_step if ticket_assignment table exists
 DO $$
 DECLARE
-    legacy_subcat_id UUID;
-    legacy_step_id UUID;
+    rec RECORD;
+    resolved_step_id UUID;
+    resolved_assignee_id UUID;
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ticket_assignment') THEN
-        -- Select an existing subcategory for fallback step creation
-        SELECT sub_category_id INTO legacy_subcat_id FROM sub_category LIMIT 1;
-
-        IF legacy_subcat_id IS NOT NULL THEN
-            SELECT step_id INTO legacy_step_id FROM step WHERE step_name = 'Legacy Workflow Step' LIMIT 1;
-
-            IF legacy_step_id IS NULL THEN
-                legacy_step_id := gen_random_uuid();
-                INSERT INTO step (step_id, sub_category_id, step_name, description, duration)
-                VALUES (legacy_step_id, legacy_subcat_id, 'Legacy Workflow Step', 'Mặc định cho các phân công cũ', 1);
-            END IF;
-
-            INSERT INTO ticket_step (ticket_id, step_id, assignee_id, assignment_status, created_at, updated_at)
+        FOR rec IN
             SELECT 
+                ta.assignment_id,
                 ta.ticket_id,
-                COALESCE(
-                    (SELECT s.step_id FROM step s JOIN ticket t ON t.sub_category_id = s.sub_category_id WHERE t.ticket_id = ta.ticket_id LIMIT 1),
-                    legacy_step_id
-                ) AS step_id,
-                COALESCE(
-                    ta.assignee_id,
-                    (SELECT u.user_id 
-                     FROM user_account u 
-                     JOIN role r ON u.role_id = r.role_id 
-                     WHERE u.department_id = ta.department_id 
-                       AND UPPER(r.role_name) = 'STAFF' 
-                       AND u.status = 'ACTIVE' 
-                       AND u.is_deleted = FALSE 
-                     LIMIT 1)
-                ) AS assignee_id,
+                ta.department_id,
+                ta.assignee_id,
                 ta.assignment_status,
                 ta.created_at,
                 ta.updated_at
-            FROM ticket_assignment ta;
+            FROM ticket_assignment ta
+        LOOP
+            -- 5.1 Resolve step directly related to the ticket's subcategory
+            SELECT s.step_id INTO resolved_step_id
+            FROM step s
+            JOIN ticket_subcategory tsc ON tsc.sub_category_id = s.sub_category_id
+            WHERE tsc.ticket_id = rec.ticket_id
+              AND s.is_deleted = FALSE
+            ORDER BY s.created_at ASC
+            LIMIT 1;
+
+            -- 5.2 Handle active vs historical legacy assignments
+            IF rec.assignment_status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS') THEN
+                -- Active legacy assignment: must have matching step
+                IF resolved_step_id IS NULL THEN
+                    RAISE EXCEPTION 'Migration failed: Cannot resolve valid workflow step for active ticket assignment % (ticket %)', rec.assignment_id, rec.ticket_id;
+                END IF;
+
+                -- Resolve representative STAFF for department if assignee_id is null
+                IF rec.assignee_id IS NOT NULL THEN
+                    -- Verify existing assignee is valid active staff of that department
+                    SELECT u.user_id INTO resolved_assignee_id
+                    FROM user_account u
+                    JOIN role r ON u.role_id = r.role_id
+                    WHERE u.user_id = rec.assignee_id
+                      AND u.department_id = rec.department_id
+                      AND UPPER(r.role_name) = 'STAFF'
+                      AND u.status = 'ACTIVE'
+                      AND u.is_deleted = FALSE;
+
+                    IF resolved_assignee_id IS NULL THEN
+                        -- Fallback to the single representative STAFF of that department
+                        SELECT u.user_id INTO resolved_assignee_id
+                        FROM user_account u
+                        JOIN role r ON u.role_id = r.role_id
+                        WHERE u.department_id = rec.department_id
+                          AND UPPER(r.role_name) = 'STAFF'
+                          AND u.status = 'ACTIVE'
+                          AND u.is_deleted = FALSE;
+                    END IF;
+                ELSE
+                    SELECT u.user_id INTO resolved_assignee_id
+                    FROM user_account u
+                    JOIN role r ON u.role_id = r.role_id
+                    WHERE u.department_id = rec.department_id
+                      AND UPPER(r.role_name) = 'STAFF'
+                      AND u.status = 'ACTIVE'
+                      AND u.is_deleted = FALSE;
+                END IF;
+
+                IF resolved_assignee_id IS NULL THEN
+                    RAISE EXCEPTION 'Migration failed: No active representative STAFF found for department % in active ticket assignment %', rec.department_id, rec.assignment_id;
+                END IF;
+            ELSE
+                -- Historical/terminal assignment: preserve original assignee if user exists
+                resolved_assignee_id := NULL;
+                IF rec.assignee_id IS NOT NULL THEN
+                    SELECT u.user_id INTO resolved_assignee_id
+                    FROM user_account u
+                    WHERE u.user_id = rec.assignee_id;
+                END IF;
+            END IF;
+
+            -- Insert into ticket_step if a step was resolved
+            IF resolved_step_id IS NOT NULL THEN
+                INSERT INTO ticket_step (
+                    ticket_id,
+                    step_id,
+                    assignee_id,
+                    assignment_status,
+                    order_index,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    rec.ticket_id,
+                    resolved_step_id,
+                    resolved_assignee_id,
+                    rec.assignment_status,
+                    0,
+                    rec.created_at,
+                    rec.updated_at
+                );
+            END IF;
+        END LOOP;
+    END IF;
+END $$;
+
+-- Step 6. Migration validation assertions
+DO $$
+BEGIN
+    -- Verify no active ticket_step has invalid or null assignee
+    IF EXISTS (
+        SELECT 1
+        FROM ticket_step ts
+        LEFT JOIN user_account u ON u.user_id = ts.assignee_id
+        LEFT JOIN role r ON r.role_id = u.role_id
+        WHERE ts.assignment_status IN ('OPEN', 'ASSIGNED', 'IN_PROGRESS')
+          AND (
+              ts.assignee_id IS NULL
+              OR u.is_deleted = TRUE
+              OR u.status <> 'ACTIVE'
+              OR UPPER(r.role_name) <> 'STAFF'
+          )
+    ) THEN
+        RAISE EXCEPTION 'Migration validation failed: Active ticket steps must have valid active STAFF assignees';
+    END IF;
+
+    -- Verify all tickets with old sub_category_id have rows in ticket_subcategory
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'ticket' AND column_name = 'sub_category_id'
+    ) THEN
+        IF EXISTS (
+            SELECT 1 FROM ticket t
+            WHERE t.sub_category_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM ticket_subcategory ts 
+                  WHERE ts.ticket_id = t.ticket_id AND ts.sub_category_id = t.sub_category_id
+              )
+        ) THEN
+            RAISE EXCEPTION 'Migration validation failed: subcategories not migrated to ticket_subcategory';
         END IF;
     END IF;
 END $$;
 
--- 5. Drop sub_category_id column from ticket table
+-- Step 7. Clean up legacy columns and tables only after successful validation
 ALTER TABLE ticket DROP COLUMN IF EXISTS sub_category_id;
-
--- 6. Drop ticket_assignment table
 DROP TABLE IF EXISTS ticket_assignment CASCADE;
+ALTER TABLE user_account DROP COLUMN IF EXISTS is_dispatcher;

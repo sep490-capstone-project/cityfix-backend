@@ -4,16 +4,12 @@ import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
-import com.cityfix.backend.model.dto.response.SubCategoryResponse;
-import com.cityfix.backend.model.entity.TicketSubCategory;
 import org.mapstruct.AfterMapping;
-import org.mapstruct.Context;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Mapper(componentModel = "spring", uses = {TicketStepMapper.class, SubCategoryMapper.class})
 public interface TicketMapper {
@@ -29,23 +25,9 @@ public interface TicketMapper {
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
     @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
-    @Mapping(target = "subCategories", expression = "java(mapTicketSubCategories(ticket.getSubCategories(), subCategoryMapper))")
+    @Mapping(target = "subCategories", source = "subCategories")
     @Mapping(target = "steps", source = "steps")
-    TicketResponse toTicketResponse(Ticket ticket, @Context SubCategoryMapper subCategoryMapper);
-
-    default TicketResponse toTicketResponse(Ticket ticket) {
-        return toTicketResponse(ticket, null);
-    }
-
-    default List<SubCategoryResponse> mapTicketSubCategories(List<TicketSubCategory> ticketSubCategories, SubCategoryMapper subCategoryMapper) {
-        if (ticketSubCategories == null || ticketSubCategories.isEmpty() || subCategoryMapper == null) {
-            return java.util.Collections.emptyList();
-        }
-        return ticketSubCategories.stream()
-                .filter(tsc -> tsc != null && tsc.getSubCategory() != null)
-                .map(tsc -> subCategoryMapper.toResponse(tsc.getSubCategory()))
-                .collect(Collectors.toList());
-    }
+    TicketResponse toTicketResponse(Ticket ticket);
 
     @AfterMapping
     default void hideUserIfAnonymous(Ticket ticket, @MappingTarget TicketResponse response) {
@@ -55,11 +37,21 @@ public interface TicketMapper {
             try {
                 org.springframework.security.core.Authentication auth =
                         org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-                if (auth != null && auth.isAuthenticated()) {
-                    isAdmin = auth.getAuthorities().stream()
-                            .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ADMIN"));
+                if (auth != null && auth.isAuthenticated() && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
+                    boolean hasAdminAuthority = auth.getAuthorities() != null && auth.getAuthorities().stream()
+                            .anyMatch(a -> a.getAuthority().equalsIgnoreCase("ROLE_ADMIN") || a.getAuthority().equalsIgnoreCase("ADMIN"));
+
+                    boolean hasAdminPrincipal = false;
+                    Object principal = auth.getPrincipal();
+                    if (principal instanceof com.cityfix.backend.model.entity.User u) {
+                        hasAdminPrincipal = u.getRole() != null && "ADMIN".equalsIgnoreCase(u.getRole().getRoleName());
+                    }
+
+                    isAdmin = hasAdminAuthority || hasAdminPrincipal;
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+                isAdmin = false;
+            }
 
             if (!isAdmin) {
                 response.setCreatedBy(null);
@@ -94,4 +86,3 @@ public interface TicketMapper {
             boolean needsManualReview
     );
 }
-

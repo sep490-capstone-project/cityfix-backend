@@ -26,4 +26,7 @@ public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
     @Query("SELECT DISTINCT ts.ticket FROM TicketStep ts WHERE ts.assignee.department.departmentId = :departmentId AND ts.status IN :statuses")
     Page<Ticket> findDistinctTicketsByDepartmentAndStatusIn(@Param("departmentId") UUID departmentId, @Param("statuses") List<AssignmentStatus> statuses, Pageable pageable);
+
+    @Query("SELECT DISTINCT ts.ticket FROM TicketStep ts WHERE ts.assignee.userId = :staffId AND ts.status IN :statuses")
+    Page<Ticket> findDistinctTicketsByAssigneeUserIdAndStatusIn(@Param("staffId") UUID staffId, @Param("statuses") List<AssignmentStatus> statuses, Pageable pageable);
 }

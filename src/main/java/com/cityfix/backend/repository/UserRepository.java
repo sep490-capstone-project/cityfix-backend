@@ -23,4 +23,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE AND u.isDeleted = false")
     Optional<User> findRepresentativeStaffByDepartmentId(@Param("departmentId") UUID departmentId);
+
+    @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE AND u.isDeleted = false")
+    List<User> findActiveStaffByDepartmentId(@Param("departmentId") UUID departmentId);
 }

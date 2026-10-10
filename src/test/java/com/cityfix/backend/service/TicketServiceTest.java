@@ -8,11 +8,7 @@ import com.cityfix.backend.model.dto.request.CreateTicketRequest;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
-import com.cityfix.backend.model.entity.Category;
-import com.cityfix.backend.model.entity.Role;
-import com.cityfix.backend.model.entity.Ticket;
-import com.cityfix.backend.model.entity.TicketStep;
-import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.LocationMethod;
@@ -20,6 +16,7 @@ import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
+import com.cityfix.backend.mapper.SubCategoryMapper;
 import com.cityfix.backend.service.impl.TicketServiceImpl;
 import com.cloudinary.Cloudinary;
 import com.cloudinary.Uploader;
@@ -35,6 +32,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -66,6 +64,9 @@ class TicketServiceTest {
 
     @Mock
     private com.cityfix.backend.repository.SubCategoryRepository subCategoryRepository;
+
+    @Mock
+    private SubCategoryMapper subCategoryMapper;
 
     @Mock
     private ReportImageRepository reportImageRepository;
@@ -228,6 +229,21 @@ class TicketServiceTest {
                     .build();
         });
 
+        lenient().when(ticketStepMapper.toTicketStep(any(), any(), any(), any(), anyInt())).thenAnswer(invocation -> {
+            Ticket t = invocation.getArgument(0);
+            Step s = invocation.getArgument(1);
+            User staff = invocation.getArgument(2);
+            AssignmentStatus st = invocation.getArgument(3);
+            int idx = invocation.getArgument(4);
+            return TicketStep.builder()
+                    .ticket(t)
+                    .step(s)
+                    .assignee(staff)
+                    .status(st)
+                    .orderIndex(idx)
+                    .build();
+        });
+
         mockResponse = TicketResponse.builder()
                 .id(mockTicket.getTicketId())
                 .description(mockTicket.getDescription())
@@ -300,6 +316,141 @@ class TicketServiceTest {
                 .isEqualTo(ErrorCode.CATEGORY_NOT_FOUND);
 
         verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTicket_subCategoryIdsContainNull_throwsINVALID_REQUEST")
+    void createTicket_subCategoryIdsContainNull_throwsINVALID_REQUEST() {
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+        createRequest.setSubCategoryIds(java.util.Arrays.asList(UUID.randomUUID(), null));
+
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTicket_subCategoryIdsContainDuplicates_throwsINVALID_REQUEST")
+    void createTicket_subCategoryIdsContainDuplicates_throwsINVALID_REQUEST() {
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+        UUID dupId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(dupId, dupId));
+
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTicket_subCategoryNotFound_throwsSUBCATEGORY_NOT_FOUND")
+    void createTicket_subCategoryNotFound_throwsSUBCATEGORY_NOT_FOUND() {
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+        UUID subId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subId));
+
+        when(subCategoryRepository.findById(subId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SUBCATEGORY_NOT_FOUND);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTicket_subCategoryInactive_throwsINVALID_REQUEST")
+    void createTicket_subCategoryInactive_throwsINVALID_REQUEST() {
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+        UUID subId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subId));
+
+        SubCategory inactiveSub = SubCategory.builder()
+                .subCategoryId(subId)
+                .category(mockCategory)
+                .isActive(false)
+                .build();
+        when(subCategoryRepository.findById(subId)).thenReturn(Optional.of(inactiveSub));
+
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTicket_subCategoryCategoryMismatch_throwsINVALID_REQUEST")
+    void createTicket_subCategoryCategoryMismatch_throwsINVALID_REQUEST() {
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+        UUID subId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subId));
+
+        Category otherCat = Category.builder().categoryId(UUID.randomUUID()).build();
+        SubCategory mismatchedSub = SubCategory.builder()
+                .subCategoryId(subId)
+                .category(otherCat)
+                .isActive(true)
+                .build();
+        when(subCategoryRepository.findById(subId)).thenReturn(Optional.of(mismatchedSub));
+
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createTicket_validSubCategories_persistsTicketSubCategoriesAndStepsWhenRouted")
+    void createTicket_validSubCategories_persistsTicketSubCategoriesAndStepsWhenRouted() {
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+        UUID subId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subId));
+        createRequest.setPriority(Priority.LOW);
+        createRequest.setSeverity(SeverityLevel.LOW);
+        createRequest.setConfidenceScore(95.0);
+
+        SubCategory validSub = SubCategory.builder()
+                .subCategoryId(subId)
+                .category(mockCategory)
+                .isActive(true)
+                .build();
+        when(subCategoryRepository.findById(subId)).thenReturn(Optional.of(validSub));
+
+        UUID deptId = UUID.randomUUID();
+        com.cityfix.backend.model.entity.Department dept = new com.cityfix.backend.model.entity.Department();
+        dept.setDepartmentId(deptId);
+        com.cityfix.backend.model.entity.RoutingRule rule = com.cityfix.backend.model.entity.RoutingRule.builder()
+                .department(dept)
+                .category(mockCategory)
+                .build();
+        when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(any(), any(), any()))
+                .thenReturn(Optional.of(rule));
+
+        User repStaff = new User();
+        repStaff.setUserId(UUID.randomUUID());
+        when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(repStaff));
+
+        Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
+        when(stepRepository.findBySubCategory_SubCategoryId(subId)).thenReturn(List.of(stepEntity));
+
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketResponse response = ticketService.createTicket(createRequest);
+
+        assertThat(response).isNotNull();
+        verify(ticketSubCategoryRepository, atLeastOnce()).save(any());
+        verify(ticketStepRepository, atLeastOnce()).save(argThat(ts -> ts != null && ts.getAssignee() != null));
     }
 
     // ==========================================
@@ -570,8 +721,30 @@ class TicketServiceTest {
         mockUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
         mockTicket.setStatus(TicketStatus.INITIATED);
         
+        UUID deptId = UUID.randomUUID();
+        User staff = new User();
+        staff.setUserId(UUID.randomUUID());
+
+        SubCategory subCat = SubCategory.builder()
+                .subCategoryId(UUID.randomUUID())
+                .name("Hố ga mất nắp")
+                .build();
+        TicketSubCategory tsc = TicketSubCategory.builder()
+                .ticket(mockTicket)
+                .subCategory(subCat)
+                .build();
+        mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
+
+        Step stepDef = Step.builder()
+                .stepId(UUID.randomUUID())
+                .subCategory(subCat)
+                .stepName("Khảo sát")
+                .build();
+        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(stepDef));
+        when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(staff));
+
         com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
-        request.setDepartmentIds(List.of(UUID.randomUUID()));
+        request.setTargetDepartmentId(deptId);
         request.setIsLifeThreatening(true);
         request.setReviewNote("Khẩn cấp");
 
@@ -586,7 +759,7 @@ class TicketServiceTest {
         assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.OPEN);
         assertThat(mockTicket.getNeedsManualReview()).isFalse();
         assertThat(mockTicket.getReviewNote()).isEqualTo("Khẩn cấp");
-        assertThat(mockTicket.getSteps()).isEmpty();
+        assertThat(mockTicket.getSteps()).hasSize(1);
     }
 
     @Test
@@ -611,8 +784,6 @@ class TicketServiceTest {
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
         when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(any(), any(), any()))
                 .thenReturn(Optional.empty());
-        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(any()))
-                .thenReturn(List.of());
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
 
@@ -661,7 +832,23 @@ class TicketServiceTest {
 
         mockTicket.setStatus(TicketStatus.OPEN);
 
-        com.cityfix.backend.model.entity.Step mockStepEntity = new com.cityfix.backend.model.entity.Step();
+        SubCategory subCat = SubCategory.builder()
+                .subCategoryId(UUID.randomUUID())
+                .name("Đèn đường")
+                .build();
+        TicketSubCategory tsc = TicketSubCategory.builder()
+                .ticket(mockTicket)
+                .subCategory(subCat)
+                .build();
+        mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
+
+        Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
+        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+
+        User repStaff = new User();
+        repStaff.setUserId(UUID.randomUUID());
+        when(userRepository.findRepresentativeStaffByDepartmentId(targetDeptId)).thenReturn(Optional.of(repStaff));
+
         TicketStep activeStep = TicketStep.builder()
                 .ticket(mockTicket)
                 .step(mockStepEntity)
@@ -745,7 +932,7 @@ class TicketServiceTest {
         org.springframework.data.domain.Page<com.cityfix.backend.model.entity.Ticket> page =
                 new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
 
-        when(ticketStepRepository.findDistinctTicketsByDepartmentAndStatusIn(any(), any(), any())).thenReturn(page);
+        when(ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(any(), any(), any())).thenReturn(page);
         when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(mockResponse);
 
         org.springframework.data.domain.Page<TicketResponse> result =
@@ -780,7 +967,10 @@ class TicketServiceTest {
         assignee.setDepartment(dept);
 
         com.cityfix.backend.model.entity.TicketStep step = new com.cityfix.backend.model.entity.TicketStep();
+        step.setId(UUID.randomUUID());
+        step.setAssignee(assignee);
         step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
+        mockTicket.setSteps(new ArrayList<>(List.of(step)));
 
         when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
@@ -790,7 +980,7 @@ class TicketServiceTest {
         TicketResponse mockResponse = TicketResponse.builder().build();
         when(ticketMapper.toTicketResponse(any())).thenReturn(mockResponse);
 
-        com.cityfix.backend.model.dto.request.AssignTicketRequest req = new com.cityfix.backend.model.dto.request.AssignTicketRequest(assigneeId);
+        com.cityfix.backend.model.dto.request.AssignTicketRequest req = new com.cityfix.backend.model.dto.request.AssignTicketRequest(step.getId(), assigneeId);
 
         TicketResponse res = ticketService.assignTicket(mockTicket.getTicketId(), req);
 
@@ -811,6 +1001,23 @@ class TicketServiceTest {
         UUID suggestedDeptId = UUID.randomUUID();
         com.cityfix.backend.model.entity.Department suggestedDept = new com.cityfix.backend.model.entity.Department();
         suggestedDept.setDepartmentId(suggestedDeptId);
+
+        SubCategory subCat = SubCategory.builder()
+                .subCategoryId(UUID.randomUUID())
+                .name("Đèn đường")
+                .build();
+        TicketSubCategory tsc = TicketSubCategory.builder()
+                .ticket(mockTicket)
+                .subCategory(subCat)
+                .build();
+        mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
+
+        Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
+        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+
+        User repStaff = new User();
+        repStaff.setUserId(UUID.randomUUID());
+        when(userRepository.findRepresentativeStaffByDepartmentId(suggestedDeptId)).thenReturn(Optional.of(repStaff));
 
         com.cityfix.backend.model.entity.TicketStep step = new com.cityfix.backend.model.entity.TicketStep();
         step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
@@ -893,6 +1100,23 @@ class TicketServiceTest {
         UUID suggestedDeptId = UUID.randomUUID();
         com.cityfix.backend.model.entity.Department suggestedDept = new com.cityfix.backend.model.entity.Department();
         suggestedDept.setDepartmentId(suggestedDeptId);
+
+        SubCategory subCat = SubCategory.builder()
+                .subCategoryId(UUID.randomUUID())
+                .name("Đèn đường")
+                .build();
+        TicketSubCategory tsc = TicketSubCategory.builder()
+                .ticket(mockTicket)
+                .subCategory(subCat)
+                .build();
+        mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
+
+        Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
+        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+
+        User repStaff = new User();
+        repStaff.setUserId(UUID.randomUUID());
+        when(userRepository.findRepresentativeStaffByDepartmentId(suggestedDeptId)).thenReturn(Optional.of(repStaff));
 
         com.cityfix.backend.model.dto.response.DepartmentResponse deptResp = new com.cityfix.backend.model.dto.response.DepartmentResponse(
             suggestedDeptId, "Name", null, "email", "phone", 0, true

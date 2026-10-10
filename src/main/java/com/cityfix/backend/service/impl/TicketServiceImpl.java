@@ -2,13 +2,18 @@ package com.cityfix.backend.service.impl;
 
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
+import com.cityfix.backend.mapper.DepartmentMapper;
 import com.cityfix.backend.mapper.ImageMapper;
+import com.cityfix.backend.mapper.NotificationMapper;
+import com.cityfix.backend.mapper.SubCategoryMapper;
+import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
+import com.cityfix.backend.mapper.TicketStepMapper;
+import com.cityfix.backend.model.dto.request.AssignTicketRequest;
 import com.cityfix.backend.model.dto.request.CreateTicketRequest;
+import com.cityfix.backend.model.dto.request.RejectTicketRequest;
 import com.cityfix.backend.model.dto.request.RerouteTicketRequest;
 import com.cityfix.backend.model.dto.request.ReviewTicketRequest;
-import com.cityfix.backend.model.dto.request.AssignTicketRequest;
-import com.cityfix.backend.model.dto.request.RejectTicketRequest;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
@@ -16,16 +21,10 @@ import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
-
-import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
-
 import com.cityfix.backend.model.enums.TicketStatus;
-import com.cityfix.backend.repository.CategoryRepository;
-import com.cityfix.backend.repository.SubCategoryRepository;
-import com.cityfix.backend.repository.ReportImageRepository;
-import com.cityfix.backend.repository.TicketVoteRepository;
-import com.cityfix.backend.repository.TicketRepository;
-import com.cityfix.backend.repository.UserRepository;
+import com.cityfix.backend.repository.*;
+import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
+import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.TicketService;
 import com.cloudinary.Cloudinary;
 import lombok.RequiredArgsConstructor;
@@ -34,14 +33,22 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @Service
 @Slf4j
@@ -54,24 +61,23 @@ public class TicketServiceImpl implements TicketService {
     private final CategoryRepository categoryRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final ReportImageRepository reportImageRepository;
-    private final com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
-    private final com.cityfix.backend.repository.DepartmentRepository departmentRepository;
-    private final com.cityfix.backend.repository.TicketStepRepository ticketStepRepository;
-    private final com.cityfix.backend.repository.TicketSubCategoryRepository ticketSubCategoryRepository;
-    private final com.cityfix.backend.mapper.SubCategoryMapper subCategoryMapper;
-    private final com.cityfix.backend.repository.StepRepository stepRepository;
-    private final com.cityfix.backend.repository.TicketHistoryRepository ticketHistoryRepository;
+    private final RoutingRuleRepository routingRuleRepository;
+    private final DepartmentRepository departmentRepository;
+    private final TicketStepRepository ticketStepRepository;
+    private final TicketSubCategoryRepository ticketSubCategoryRepository;
+    private final SubCategoryMapper subCategoryMapper;
+    private final StepRepository stepRepository;
+    private final TicketHistoryRepository ticketHistoryRepository;
     private final Cloudinary cloudinary;
     private final ImageMapper imageMapper;
     private final TicketMapper ticketMapper;
-    private final com.cityfix.backend.mapper.DepartmentMapper departmentMapper;
-    private final com.cityfix.backend.mapper.TicketStepMapper ticketStepMapper;
-    private final com.cityfix.backend.mapper.TicketHistoryMapper ticketHistoryMapper;
-    private final com.cityfix.backend.repository.NotificationRepository notificationRepository;
-    private final com.cityfix.backend.mapper.NotificationMapper notificationMapper;
-    private final com.cityfix.backend.service.EmailService emailService;
-    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
-
+    private final DepartmentMapper departmentMapper;
+    private final TicketStepMapper ticketStepMapper;
+    private final TicketHistoryMapper ticketHistoryMapper;
+    private final NotificationRepository notificationRepository;
+    private final NotificationMapper notificationMapper;
+    private final EmailService emailService;
+    private final SimpMessagingTemplate messagingTemplate;
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
             "image/jpeg",
@@ -95,17 +101,14 @@ public class TicketServiceImpl implements TicketService {
     private static final long MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50MB
     private static final int MAX_FILE_COUNT = 7;
 
-    private static final java.util.concurrent.Executor uploadExecutor = java.util.concurrent.Executors.newFixedThreadPool(
+    private static final Executor uploadExecutor = Executors.newFixedThreadPool(
             Math.min(Runtime.getRuntime().availableProcessors() * 2, 8)
     );
 
-    private static final double DUPLICATE_SEARCH_RADIUS_METERS = 50.0;
-
-    // WGS84 SRID is 4326
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+
     private User getCurrentUser() {
-        org.springframework.security.core.Authentication authentication =
-                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null 
                 || !authentication.isAuthenticated() 
                 || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
@@ -122,9 +125,42 @@ public class TicketServiceImpl implements TicketService {
             email = principal.toString();
         }
 
-
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+    }
+
+    private boolean isAdmin(User user) {
+        return user != null && user.getRole() != null && "ADMIN".equalsIgnoreCase(user.getRole().getRoleName());
+    }
+
+    private boolean isStaff(User user) {
+        return user != null && user.getRole() != null && "STAFF".equalsIgnoreCase(user.getRole().getRoleName());
+    }
+
+    private void validateStaffDepartmentAccess(Ticket ticket, User currentUser) {
+        if (isAdmin(currentUser)) return;
+
+        if (!isStaff(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        if (currentUser.getDepartment() == null) {
+            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
+
+        UUID userDeptId = currentUser.getDepartment().getDepartmentId();
+
+        boolean hasSteps = ticket.getSteps() != null && !ticket.getSteps().isEmpty();
+        if (hasSteps) {
+            boolean belongsToDept = ticket.getSteps().stream()
+                    .anyMatch(step -> step.getAssignee() != null 
+                            && step.getAssignee().getDepartment() != null 
+                            && userDeptId.equals(step.getAssignee().getDepartment().getDepartmentId()));
+
+            if (!belongsToDept) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+        }
     }
 
     @Override
@@ -138,10 +174,19 @@ public class TicketServiceImpl implements TicketService {
                     .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
         }
 
-        List<com.cityfix.backend.model.entity.SubCategory> subCategories = new java.util.ArrayList<>();
+        List<SubCategory> subCategories = new ArrayList<>();
         if (request.getSubCategoryIds() != null && !request.getSubCategoryIds().isEmpty()) {
+            Set<UUID> seenSubCatIds = new HashSet<>();
             for (UUID subCatId : request.getSubCategoryIds()) {
-                com.cityfix.backend.model.entity.SubCategory subCat = subCategoryRepository.findById(subCatId)
+                if (subCatId == null) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Mã sự cố phụ không được để trống");
+                }
+                if (!seenSubCatIds.add(subCatId)) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Duplicate subcategory is not allowed");
+                }
+            }
+            for (UUID subCatId : request.getSubCategoryIds()) {
+                SubCategory subCat = subCategoryRepository.findById(subCatId)
                         .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
                 if (!subCat.isActive() || subCat.isDeleted()) {
                     throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ đã bị vô hiệu hóa hoặc bị xóa");
@@ -165,7 +210,7 @@ public class TicketServiceImpl implements TicketService {
             String userProvince = user.getProvince();
             String userWard = user.getWard();
 
-            java.util.Optional<RoutingRule> ruleOpt =
+            Optional<RoutingRule> ruleOpt =
                     routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
                             category.getCategoryId(), userProvince, userWard);
 
@@ -174,43 +219,43 @@ public class TicketServiceImpl implements TicketService {
                         category.getCategoryId(), userProvince, null);
             }
 
-            if (ruleOpt.isEmpty()) {
-                List<RoutingRule> rules =
-                        routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(category.getCategoryId());
-                if (!rules.isEmpty()) {
-                    ruleOpt = java.util.Optional.of(rules.get(0));
-                }
-            }
-
             if (ruleOpt.isPresent()) {
                 assignedDepartment = ruleOpt.get().getDepartment();
             }
         }
 
-        boolean finalNeedsReview = needsReview || (assignedDepartment == null);
+        User autoStaff = null;
+        if (assignedDepartment != null) {
+            autoStaff = userRepository.findRepresentativeStaffByDepartmentId(assignedDepartment.getDepartmentId()).orElse(null);
+        }
+
+        // If manual review is needed, or no department, or no staff found -> preserve manual review
+        boolean finalNeedsReview = needsReview || (assignedDepartment == null) || (autoStaff == null);
         TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.OPEN;
 
         Ticket ticket = ticketMapper.toTicket(request, category, user, location, initialStatus, finalNeedsReview);
+        if (request.getIsAnonymous() != null) {
+            ticket.setIsAnonymous(request.getIsAnonymous());
+        }
         ticket = ticketRepository.save(ticket);
 
-        for (com.cityfix.backend.model.entity.SubCategory subCat : subCategories) {
-            com.cityfix.backend.model.entity.TicketSubCategory tsc = com.cityfix.backend.model.entity.TicketSubCategory.builder()
+        for (SubCategory subCat : subCategories) {
+            TicketSubCategory tsc = TicketSubCategory.builder()
                     .ticket(ticket)
                     .subCategory(subCat)
                     .build();
             ticketSubCategoryRepository.save(tsc);
             ticket.getSubCategories().add(tsc);
 
-            User autoStaff = assignedDepartment != null 
-                    ? userRepository.findRepresentativeStaffByDepartmentId(assignedDepartment.getDepartmentId()).orElse(null) 
-                    : null;
-
-            List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
-            int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
-            for (Step s : steps) {
-                TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, index++);
-                ticketStepRepository.save(ts);
-                ticket.getSteps().add(ts);
+            // Persist corresponding TicketStep rows only if auto-routed with a non-null assignee
+            if (!finalNeedsReview && autoStaff != null) {
+                List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
+                int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
+                for (Step s : steps) {
+                    TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, index++);
+                    ticketStepRepository.save(ts);
+                    ticket.getSteps().add(ts);
+                }
             }
         }
 
@@ -249,7 +294,7 @@ public class TicketServiceImpl implements TicketService {
         User user = getCurrentUser();
 
         Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new RuntimeException("Ticket not found"));
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
         if (ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, user.getUserId())) {
             throw new RuntimeException("User has already upvoted this ticket");
@@ -279,15 +324,15 @@ public class TicketServiceImpl implements TicketService {
 
         String targetFolder = (folder != null && !folder.isBlank()) ? folder : "cityfix/reports";
 
-        List<java.util.concurrent.CompletableFuture<ImageUploadResponse>> futures = files.stream()
-                .map(file -> java.util.concurrent.CompletableFuture.supplyAsync(() -> uploadSingleFile(file, targetFolder), uploadExecutor))
+        List<CompletableFuture<ImageUploadResponse>> futures = files.stream()
+                .map(file -> CompletableFuture.supplyAsync(() -> uploadSingleFile(file, targetFolder), uploadExecutor))
                 .toList();
 
         try {
-            java.util.concurrent.CompletableFuture<Void> allOf = java.util.concurrent.CompletableFuture.allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0]));
+            CompletableFuture<Void> allOf = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
             allOf.join();
-            return futures.stream().map(java.util.concurrent.CompletableFuture::join).toList();
-        } catch (java.util.concurrent.CompletionException e) {
+            return futures.stream().map(CompletableFuture::join).toList();
+        } catch (CompletionException e) {
             Throwable cause = e.getCause();
             if (cause instanceof AppException appException) {
                 throw appException;
@@ -352,8 +397,8 @@ public class TicketServiceImpl implements TicketService {
     
     @Override
     @Transactional(readOnly = true)
-    public org.springframework.data.domain.Page<TicketResponse> getInitiatedTickets(org.springframework.data.domain.Pageable pageable) {
-        org.springframework.data.domain.Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
+    public Page<TicketResponse> getInitiatedTickets(Pageable pageable) {
+        Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
         return tickets.map(ticketMapper::toTicketResponse);
     }
 
@@ -365,7 +410,7 @@ public class TicketServiceImpl implements TicketService {
         
         UUID searchCategoryId = categoryId != null ? categoryId : (ticket.getCategory() != null ? ticket.getCategory().getCategoryId() : null);
         if (searchCategoryId == null) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
         
         List<RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(searchCategoryId);
@@ -384,42 +429,16 @@ public class TicketServiceImpl implements TicketService {
         return departmentMapper.toResponseList(suggestedDepts);
     }
 
-    private void validateStaffDepartmentAccess(Ticket ticket, User currentUser) {
-        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        if (isAdmin) return;
-
-        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        if (!isStaff) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-
-        if (currentUser.getDepartment() == null) {
-            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
-        }
-
-        UUID userDeptId = currentUser.getDepartment().getDepartmentId();
-
-        boolean hasSteps = ticket.getSteps() != null && !ticket.getSteps().isEmpty();
-        if (hasSteps) {
-            boolean belongsToDept = ticket.getSteps().stream()
-                    .anyMatch(step -> step.getAssignee() != null 
-                            && step.getAssignee().getDepartment() != null 
-                            && userDeptId.equals(step.getAssignee().getDepartment().getDepartmentId()));
-
-            if (!belongsToDept) {
-                throw new AppException(ErrorCode.FORBIDDEN);
-            }
-        }
-    }
-
     @Override
     @Transactional
     public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
         User currentUser = getCurrentUser();
+        if (!isAdmin(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-                
-        validateStaffDepartmentAccess(ticket, currentUser);
 
         if (ticket.getStatus() != TicketStatus.INITIATED) {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
@@ -438,48 +457,68 @@ public class TicketServiceImpl implements TicketService {
         if (request.getReviewNote() != null) {
             ticket.setReviewNote(request.getReviewNote());
         }
-        
-        ticket.setStatus(TicketStatus.OPEN);
-        ticket.setNeedsManualReview(false);
-        
-        if (request.getDepartmentIds() != null && !request.getDepartmentIds().isEmpty()) {
-            java.util.Map<UUID, User> deptStaffMap = new java.util.HashMap<>();
-            for (UUID dId : request.getDepartmentIds()) {
-                userRepository.findRepresentativeStaffByDepartmentId(dId)
-                        .ifPresent(u -> deptStaffMap.put(dId, u));
-            }
 
-            List<TicketStep> existingSteps = ticket.getSteps();
-            if (existingSteps != null && !existingSteps.isEmpty()) {
-                for (int i = 0; i < existingSteps.size(); i++) {
-                    TicketStep ts = existingSteps.get(i);
-                    UUID targetDeptId = i < request.getDepartmentIds().size() ? request.getDepartmentIds().get(i) : request.getDepartmentIds().get(0);
-                    User staff = deptStaffMap.get(targetDeptId);
-                    if (staff != null) {
-                        ts.setAssignee(staff);
-                        ticketStepRepository.save(ts);
+        // Mutual exclusion: targetDepartmentId XOR routes
+        UUID targetDeptId = request.getTargetDepartmentId();
+        List<ReviewTicketRequest.SubCategoryRouteRequest> routes = request.getRoutes();
+
+        boolean hasTargetDept = targetDeptId != null;
+        boolean hasRoutes = routes != null && !routes.isEmpty();
+
+        if (hasTargetDept == hasRoutes) {
+            throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION, "Phải cung cấp duy nhất targetDepartmentId hoặc danh sách routes");
+        }
+
+        // Do not insert duplicate TicketStep rows if steps already exist
+        boolean stepsAlreadyExist = ticket.getSteps() != null && !ticket.getSteps().isEmpty();
+
+        if (!stepsAlreadyExist) {
+            int index = 0;
+            if (hasTargetDept) {
+                User staff = userRepository.findRepresentativeStaffByDepartmentId(targetDeptId)
+                        .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
+
+                if (ticket.getSubCategories() != null) {
+                    for (TicketSubCategory tsc : ticket.getSubCategories()) {
+                        if (tsc.getSubCategory() != null) {
+                            List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
+                            for (Step s : steps) {
+                                TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
+                                ticketStepRepository.save(ts);
+                                ticket.getSteps().add(ts);
+                            }
+                        }
                     }
                 }
-            } else if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
-                int index = 0;
-                for (int i = 0; i < ticket.getSubCategories().size(); i++) {
-                    com.cityfix.backend.model.entity.TicketSubCategory tsc = ticket.getSubCategories().get(i);
-                    if (tsc.getSubCategory() != null) {
-                        UUID targetDeptId = i < request.getDepartmentIds().size() ? request.getDepartmentIds().get(i) : request.getDepartmentIds().get(0);
-                        User staff = deptStaffMap.get(targetDeptId);
+            } else {
+                Map<UUID, User> deptStaffCache = new HashMap<>();
+                for (ReviewTicketRequest.SubCategoryRouteRequest route : routes) {
+                    if (route.getSubCategoryId() == null || route.getDepartmentId() == null) {
+                        throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION);
+                    }
+                    User staff = deptStaffCache.computeIfAbsent(route.getDepartmentId(), dId ->
+                            userRepository.findRepresentativeStaffByDepartmentId(dId)
+                                    .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND)));
 
-                        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
-                        for (Step s : steps) {
-                            TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
-                            ticketStepRepository.save(ts);
-                            ticket.getSteps().add(ts);
-                        }
+                    List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(route.getSubCategoryId());
+                    for (Step s : steps) {
+                        TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
+                        ticketStepRepository.save(ts);
+                        ticket.getSteps().add(ts);
                     }
                 }
             }
         }
         
+        ticket.setStatus(TicketStatus.OPEN);
+        ticket.setNeedsManualReview(false);
         ticket = ticketRepository.save(ticket);
+
+        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                ticket, currentUser, ActionType.ROUTED, TicketStatus.INITIATED, TicketStatus.OPEN, "Duyệt thủ công vé thành công"
+        );
+        ticketHistoryRepository.save(history);
+
         return ticketMapper.toTicketResponse(ticket);
     }
 
@@ -500,6 +539,9 @@ public class TicketServiceImpl implements TicketService {
         Department targetDepartment = departmentRepository.findById(request.getTargetDepartmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
+        User targetStaff = userRepository.findRepresentativeStaffByDepartmentId(targetDepartment.getDepartmentId())
+                .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
+
         // Mark old active steps as TRANSFERRED
         List<TicketStep> activeSteps =
                 ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
@@ -512,32 +554,17 @@ public class TicketServiceImpl implements TicketService {
             ticketStepRepository.save(oldStep);
         }
 
-        User targetStaff = userRepository.findRepresentativeStaffByDepartmentId(targetDepartment.getDepartmentId()).orElse(null);
-
         int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
-        boolean createdNewStep = false;
         if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
-            for (com.cityfix.backend.model.entity.TicketSubCategory tsc : ticket.getSubCategories()) {
+            for (TicketSubCategory tsc : ticket.getSubCategories()) {
                 if (tsc.getSubCategory() != null) {
                     List<Step> targetSteps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
                     for (Step s : targetSteps) {
                         TicketStep newStep = ticketStepMapper.toTicketStep(ticket, s, targetStaff, AssignmentStatus.OPEN, index++);
                         ticketStepRepository.save(newStep);
                         ticket.getSteps().add(newStep);
-                        createdNewStep = true;
                     }
                 }
-            }
-        }
-
-        if (!createdNewStep) {
-            if (!activeSteps.isEmpty()) {
-                Step fallbackStep = activeSteps.get(0).getStep();
-                TicketStep newStep = ticketStepMapper.toTicketStep(ticket, fallbackStep, targetStaff, AssignmentStatus.OPEN, index++);
-                ticketStepRepository.save(newStep);
-                ticket.getSteps().add(newStep);
-            } else {
-                throw new AppException(ErrorCode.STEP_NOT_FOUND);
             }
         }
 
@@ -546,7 +573,6 @@ public class TicketServiceImpl implements TicketService {
         ticket.setNeedsManualReview(false);
         ticket = ticketRepository.save(ticket);
 
-        // Audit Log
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
                 ticket, currentUser, ActionType.REROUTED, prevStatus, TicketStatus.ASSIGNED, request.getReason()
         );
@@ -557,22 +583,22 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional(readOnly = true)
-    public org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(
-            AssignmentStatus status, org.springframework.data.domain.Pageable pageable) {
+    public Page<TicketResponse> getAssignedTicketsForStaff(
+            AssignmentStatus status, Pageable pageable) {
         User currentUser = getCurrentUser();
 
         if (currentUser.getDepartment() == null) {
             throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
         }
 
-        UUID deptId = currentUser.getDepartment().getDepartmentId();
-
         List<AssignmentStatus> targetStatuses = (status != null)
                 ? List.of(status)
                 : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS);
 
-        org.springframework.data.domain.Page<Ticket> ticketsPage =
-                ticketStepRepository.findDistinctTicketsByDepartmentAndStatusIn(deptId, targetStatuses, pageable);
+        Page<Ticket> ticketsPage =
+                ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(
+                        currentUser.getUserId(), targetStatuses, pageable
+                );
 
         return ticketsPage.map(ticketMapper::toTicketResponse);
     }
@@ -593,9 +619,17 @@ public class TicketServiceImpl implements TicketService {
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
                 ticketId, List.of(AssignmentStatus.OPEN, AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
-                
-        TicketStep stepToAssign = steps.stream().findFirst()
-                .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST));
+
+        TicketStep stepToAssign;
+        if (request.getStepId() != null) {
+            stepToAssign = steps.stream()
+                    .filter(s -> s.getId() != null && s.getId().equals(request.getStepId()))
+                    .findFirst()
+                    .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+        } else {
+            stepToAssign = steps.stream().findFirst()
+                    .orElseThrow(() -> new AppException(ErrorCode.INVALID_REQUEST));
+        }
 
         User assignee = userRepository.findById(request.getAssigneeId())
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
@@ -645,11 +679,10 @@ public class TicketServiceImpl implements TicketService {
         UUID targetDepartmentId = request.getSuggestedDepartmentId();
         if (targetDepartmentId == null && request.getSuggestedCategoryId() != null) {
             List<DepartmentResponse> suggestedDepts = getSuggestedDepartments(ticketId, request.getSuggestedCategoryId());
-            if (suggestedDepts != null && !suggestedDepts.isEmpty()) {
+            if (suggestedDepts != null && suggestedDepts.size() == 1) {
                 targetDepartmentId = suggestedDepts.get(0).departmentId();
             }
         }
-        
         if (targetDepartmentId == null) {
             throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
         }
@@ -667,10 +700,12 @@ public class TicketServiceImpl implements TicketService {
     public TicketResponse rejectInitiatedTicket(UUID ticketId, String reason) {
         User currentUser = getCurrentUser();
 
+        if (!isAdmin(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-
-        validateStaffDepartmentAccess(ticket, currentUser);
 
         if (ticket.getStatus() != TicketStatus.INITIATED) {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
@@ -723,13 +758,10 @@ public class TicketServiceImpl implements TicketService {
     public TicketResponse rejectAssignedTicket(UUID ticketId, String reason) {
         User currentUser = getCurrentUser();
 
-        boolean isStaff = currentUser.getRole() != null && "STAFF".equalsIgnoreCase(currentUser.getRole().getRoleName());
-        if (!isStaff) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        validateStaffDepartmentAccess(ticket, currentUser);
 
         if (ticket.getStatus() != TicketStatus.ASSIGNED && ticket.getStatus() != TicketStatus.OPEN) {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
@@ -741,7 +773,6 @@ public class TicketServiceImpl implements TicketService {
         ticket.setStatus(TicketStatus.REJECTED);
         ticket.setReviewNote(finalReason);
 
-        // Cancel active steps
         List<TicketStep> activeSteps =
                 ticketStepRepository.findByTicketTicketIdAndStatusIn(
                         ticketId,
@@ -750,6 +781,7 @@ public class TicketServiceImpl implements TicketService {
 
         for (TicketStep step : activeSteps) {
             step.setStatus(AssignmentStatus.CANCELLED);
+            step.setCompletedAt(LocalDateTime.now());
             ticketStepRepository.save(step);
         }
 
@@ -772,7 +804,3 @@ public class TicketServiceImpl implements TicketService {
         return ticketHistoryMapper.toTicketHistoryResponseList(histories);
     }
 }
-
-
-
-
