@@ -21,9 +21,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByPhoneNumberAndIsDeletedFalse(String phoneNumber);
     Optional<User> findFirstByDepartmentDepartmentIdAndIsDeletedFalse(UUID departmentId);
 
-    @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE AND u.isDeleted = false")
+    @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE AND u.isDeleted = false ORDER BY u.createdAt ASC, u.userId ASC")
     Optional<User> findRepresentativeStaffByDepartmentId(@Param("departmentId") UUID departmentId);
 
-    @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE AND u.isDeleted = false")
+    @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE AND u.isDeleted = false ORDER BY u.createdAt ASC, u.userId ASC")
     List<User> findActiveStaffByDepartmentId(@Param("departmentId") UUID departmentId);
 }

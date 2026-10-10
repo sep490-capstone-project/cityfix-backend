@@ -164,6 +164,26 @@ public class TicketServiceImpl implements TicketService {
         }
     }
 
+    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, int orderIndex) {
+        if (ticket.getSteps() == null) {
+            ticket.setSteps(new ArrayList<>());
+        }
+        TicketStep existingStep = ticket.getSteps().stream()
+                .filter(ts -> ts.getStep() != null && step.getStepId().equals(ts.getStep().getStepId()))
+                .findFirst()
+                .orElse(null);
+
+        if (existingStep != null) {
+            existingStep.setAssignee(assignee);
+            existingStep.setStatus(status);
+            ticketStepRepository.save(existingStep);
+        } else {
+            TicketStep ts = ticketStepMapper.toTicketStep(ticket, step, assignee, status, orderIndex);
+            ticketStepRepository.save(ts);
+            ticket.getSteps().add(ts);
+        }
+    }
+
     @Override
     @Transactional
     public TicketResponse createTicket(CreateTicketRequest request) {
@@ -253,9 +273,7 @@ public class TicketServiceImpl implements TicketService {
                 List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
                 int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
                 for (Step s : steps) {
-                    TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, index++);
-                    ticketStepRepository.save(ts);
-                    ticket.getSteps().add(ts);
+                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, index++);
                 }
             }
         }
@@ -470,53 +488,44 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION, "Phải cung cấp duy nhất targetDepartmentId hoặc danh sách routes");
         }
 
-        // Do not insert duplicate TicketStep rows if steps already exist
-        boolean stepsAlreadyExist = ticket.getSteps() != null && !ticket.getSteps().isEmpty();
+        int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
+        if (hasTargetDept) {
+            User staff = userRepository.findRepresentativeStaffByDepartmentId(targetDeptId)
+                    .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
 
-        if (!stepsAlreadyExist) {
-            int index = 0;
-            if (hasTargetDept) {
-                User staff = userRepository.findRepresentativeStaffByDepartmentId(targetDeptId)
-                        .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
-
-                if (ticket.getSubCategories() != null) {
-                    for (TicketSubCategory tsc : ticket.getSubCategories()) {
-                        if (tsc.getSubCategory() != null) {
-                            List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
-                            for (Step s : steps) {
-                                TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
-                                ticketStepRepository.save(ts);
-                                ticket.getSteps().add(ts);
-                            }
+            if (ticket.getSubCategories() != null) {
+                for (TicketSubCategory tsc : ticket.getSubCategories()) {
+                    if (tsc.getSubCategory() != null) {
+                        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
+                        for (Step s : steps) {
+                            createOrUpdateTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
                         }
                     }
                 }
-            } else {
-                Set<UUID> validSubCategoryIds = ticket.getSubCategories() != null
-                        ? ticket.getSubCategories().stream()
-                                .filter(tsc -> tsc.getSubCategory() != null)
-                                .map(tsc -> tsc.getSubCategory().getSubCategoryId())
-                                .collect(Collectors.toSet())
-                        : Collections.emptySet();
+            }
+        } else {
+            Set<UUID> validSubCategoryIds = ticket.getSubCategories() != null
+                    ? ticket.getSubCategories().stream()
+                            .filter(tsc -> tsc.getSubCategory() != null)
+                            .map(tsc -> tsc.getSubCategory().getSubCategoryId())
+                            .collect(Collectors.toSet())
+                    : Collections.emptySet();
 
-                Map<UUID, User> deptStaffCache = new HashMap<>();
-                for (ReviewTicketRequest.SubCategoryRouteRequest route : routes) {
-                    if (route.getSubCategoryId() == null || route.getDepartmentId() == null) {
-                        throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION);
-                    }
-                    if (!validSubCategoryIds.contains(route.getSubCategoryId())) {
-                        throw new AppException(ErrorCode.INVALID_REQUEST);
-                    }
-                    User staff = deptStaffCache.computeIfAbsent(route.getDepartmentId(), dId ->
-                            userRepository.findRepresentativeStaffByDepartmentId(dId)
-                                    .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND)));
+            Map<UUID, User> deptStaffCache = new HashMap<>();
+            for (ReviewTicketRequest.SubCategoryRouteRequest route : routes) {
+                if (route.getSubCategoryId() == null || route.getDepartmentId() == null) {
+                    throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION);
+                }
+                if (!validSubCategoryIds.contains(route.getSubCategoryId())) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST);
+                }
+                User staff = deptStaffCache.computeIfAbsent(route.getDepartmentId(), dId ->
+                        userRepository.findRepresentativeStaffByDepartmentId(dId)
+                                .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND)));
 
-                    List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(route.getSubCategoryId());
-                    for (Step s : steps) {
-                        TicketStep ts = ticketStepMapper.toTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
-                        ticketStepRepository.save(ts);
-                        ticket.getSteps().add(ts);
-                    }
+                List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(route.getSubCategoryId());
+                for (Step s : steps) {
+                    createOrUpdateTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
                 }
             }
         }
@@ -571,9 +580,7 @@ public class TicketServiceImpl implements TicketService {
                 if (tsc.getSubCategory() != null) {
                     List<Step> targetSteps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
                     for (Step s : targetSteps) {
-                        TicketStep newStep = ticketStepMapper.toTicketStep(ticket, s, targetStaff, AssignmentStatus.OPEN, index++);
-                        ticketStepRepository.save(newStep);
-                        ticket.getSteps().add(newStep);
+                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.OPEN, index++);
                     }
                 }
             }
