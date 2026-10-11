@@ -28,5 +28,10 @@ public interface TicketService {
     TicketResponse rejectInitiatedTicket(UUID ticketId, String reason);
     TicketResponse cancelTicket(UUID ticketId);
     List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> getTicketHistory(UUID ticketId);
+
+    com.cityfix.backend.model.dto.response.TicketStepResponse updateTicketStepDeadline(UUID ticketStepId, com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest request);
+    List<com.cityfix.backend.model.dto.response.TicketStepResponse> updateTicketStepDeadlines(UUID ticketId, com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlinesRequest request);
+    com.cityfix.backend.model.dto.response.TicketStepResponse updateTicketStepOrderIndex(UUID ticketStepId, com.cityfix.backend.model.dto.request.UpdateTicketStepOrderRequest request);
+    List<com.cityfix.backend.model.dto.response.TicketStepResponse> reorderTicketSteps(UUID ticketId, com.cityfix.backend.model.dto.request.ReorderTicketStepsRequest request);
 }
 

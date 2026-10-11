@@ -9,15 +9,12 @@ import com.cityfix.backend.mapper.SubCategoryMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
-import com.cityfix.backend.model.dto.request.AssignTicketRequest;
-import com.cityfix.backend.model.dto.request.CreateTicketRequest;
-import com.cityfix.backend.model.dto.request.RejectTicketRequest;
-import com.cityfix.backend.model.dto.request.RerouteTicketRequest;
-import com.cityfix.backend.model.dto.request.ReviewTicketRequest;
+import com.cityfix.backend.model.dto.request.*;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
@@ -136,6 +133,16 @@ public class TicketServiceImpl implements TicketService {
 
     private boolean isStaff(User user) {
         return user != null && user.getRole() != null && "STAFF".equalsIgnoreCase(user.getRole().getRoleName());
+    }
+
+    private boolean isManager(User user) {
+        return user != null && user.getRole() != null && "MANAGER".equalsIgnoreCase(user.getRole().getRoleName());
+    }
+
+    private boolean isManagerOrStaff(User user) {
+        if (user == null || user.getRole() == null) return false;
+        String role = user.getRole().getRoleName();
+        return "MANAGER".equalsIgnoreCase(role) || "STAFF".equalsIgnoreCase(role) || "ADMIN".equalsIgnoreCase(role);
     }
 
     private void validateStaffDepartmentAccess(Ticket ticket, User currentUser) {
@@ -452,7 +459,7 @@ public class TicketServiceImpl implements TicketService {
     @Transactional
     public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
         User currentUser = getCurrentUser();
-        if (!isAdmin(currentUser)) {
+        if (!isManagerOrStaff(currentUser)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
@@ -729,7 +736,7 @@ public class TicketServiceImpl implements TicketService {
     public TicketResponse rejectInitiatedTicket(UUID ticketId, String reason) {
         User currentUser = getCurrentUser();
 
-        if (!isAdmin(currentUser)) {
+        if (!isManagerOrStaff(currentUser)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
@@ -831,5 +838,95 @@ public class TicketServiceImpl implements TicketService {
         }
         List<TicketHistory> histories = ticketHistoryRepository.findByTicketTicketIdOrderByCreatedAtDesc(ticketId);
         return ticketHistoryMapper.toTicketHistoryResponseList(histories);
+    }
+
+    @Override
+    @Transactional
+    public TicketStepResponse updateTicketStepDeadline(UUID ticketStepId, UpdateTicketStepDeadlineRequest request) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
+                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        ticketStepMapper.updateDeadline(request, ticketStep);
+        ticketStep = ticketStepRepository.save(ticketStep);
+
+        return ticketStepMapper.toTicketStepResponse(ticketStep);
+    }
+
+    @Override
+    @Transactional
+    public List<TicketStepResponse> updateTicketStepDeadlines(UUID ticketId, UpdateTicketStepDeadlinesRequest request) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
+        Map<UUID, TicketStep> stepMap = steps.stream()
+                .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
+
+        for (StepDeadlineItem item : request.getStepDeadlines()) {
+            TicketStep step = stepMap.get(item.getTicketStepId());
+            if (step == null) {
+                throw new AppException(ErrorCode.STEP_NOT_FOUND);
+            }
+            step.setDeadline(item.getDeadline());
+            ticketStepRepository.save(step);
+        }
+
+        return ticketStepMapper.toTicketStepResponseList(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId));
+    }
+
+    @Override
+    @Transactional
+    public TicketStepResponse updateTicketStepOrderIndex(UUID ticketStepId, UpdateTicketStepOrderRequest request) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
+                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        ticketStepMapper.updateOrderIndex(request, ticketStep);
+        ticketStep = ticketStepRepository.save(ticketStep);
+
+        return ticketStepMapper.toTicketStepResponse(ticketStep);
+    }
+
+    @Override
+    @Transactional
+    public List<TicketStepResponse> reorderTicketSteps(UUID ticketId, ReorderTicketStepsRequest request) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
+        Map<UUID, TicketStep> stepMap = steps.stream()
+                .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
+
+        for (StepOrderItem item : request.getStepOrders()) {
+            TicketStep step = stepMap.get(item.getTicketStepId());
+            if (step == null) {
+                throw new AppException(ErrorCode.STEP_NOT_FOUND);
+            }
+            step.setOrderIndex(item.getOrderIndex());
+            ticketStepRepository.save(step);
+        }
+
+        return ticketStepMapper.toTicketStepResponseList(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId));
     }
 }
