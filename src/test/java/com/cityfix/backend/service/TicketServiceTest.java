@@ -1228,5 +1228,148 @@ class TicketServiceTest {
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
+
+    @Test
+    @DisplayName("updateTicketStepDeadline_manager_success")
+    void updateTicketStepDeadline_manager_success() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+        UUID stepId = UUID.randomUUID();
+        LocalDateTime deadline = LocalDateTime.now().plusDays(2);
+        TicketStep step = TicketStep.builder().id(stepId).build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenReturn(step);
+        when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId).deadline(deadline).build()
+        );
+
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest(deadline);
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse res =
+                ticketService.updateTicketStepDeadline(stepId, request);
+
+        assertThat(res).isNotNull();
+        assertThat(res.getDeadline()).isEqualTo(deadline);
+        verify(ticketStepMapper).updateDeadline(eq(request), eq(step));
+        verify(ticketStepRepository).save(step);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDeadline_notManager_throwsForbidden")
+    void updateTicketStepDeadline_notManager_throwsForbidden() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "STAFF"));
+        UUID stepId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest(LocalDateTime.now().plusDays(2));
+
+        assertThatThrownBy(() -> ticketService.updateTicketStepDeadline(stepId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepOrderIndex_manager_success")
+    void updateTicketStepOrderIndex_manager_success() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder().id(stepId).orderIndex(0).build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenReturn(step);
+        when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId).orderIndex(3).build()
+        );
+
+        com.cityfix.backend.model.dto.request.UpdateTicketStepOrderRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepOrderRequest(3);
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse res =
+                ticketService.updateTicketStepOrderIndex(stepId, request);
+
+        assertThat(res).isNotNull();
+        assertThat(res.getOrderIndex()).isEqualTo(3);
+        verify(ticketStepMapper).updateOrderIndex(eq(request), eq(step));
+        verify(ticketStepRepository).save(step);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDeadline_pastDeadline_throwsInvalidRequest")
+    void updateTicketStepDeadline_pastDeadline_throwsInvalidRequest() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+        UUID stepId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest(LocalDateTime.now().minusDays(1));
+
+        assertThatThrownBy(() -> ticketService.updateTicketStepDeadline(stepId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDeadlines_manager_success")
+    void updateTicketStepDeadlines_manager_success() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+        UUID ticketId = UUID.randomUUID();
+        UUID stepId1 = UUID.randomUUID();
+        UUID stepId2 = UUID.randomUUID();
+        TicketStep step1 = TicketStep.builder().id(stepId1).build();
+        TicketStep step2 = TicketStep.builder().id(stepId2).build();
+        LocalDateTime deadline1 = LocalDateTime.now().plusDays(2);
+        LocalDateTime deadline2 = LocalDateTime.now().plusDays(3);
+
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).deadline(deadline1).build(),
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId2).deadline(deadline2).build()
+        ));
+
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlinesRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlinesRequest(List.of(
+                        new com.cityfix.backend.model.dto.request.StepDeadlineItem(stepId1, deadline1),
+                        new com.cityfix.backend.model.dto.request.StepDeadlineItem(stepId2, deadline2)
+                ));
+
+        List<com.cityfix.backend.model.dto.response.TicketStepResponse> res =
+                ticketService.updateTicketStepDeadlines(ticketId, request);
+
+        assertThat(res).hasSize(2);
+        verify(ticketStepRepository).saveAll(anyList());
+    }
+
+    @Test
+    @DisplayName("reorderTicketSteps_manager_success")
+    void reorderTicketSteps_manager_success() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+        UUID ticketId = UUID.randomUUID();
+        UUID stepId1 = UUID.randomUUID();
+        UUID stepId2 = UUID.randomUUID();
+        TicketStep step1 = TicketStep.builder().id(stepId1).orderIndex(0).build();
+        TicketStep step2 = TicketStep.builder().id(stepId2).orderIndex(1).build();
+
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).orderIndex(1).build(),
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId2).orderIndex(0).build()
+        ));
+
+        com.cityfix.backend.model.dto.request.ReorderTicketStepsRequest request =
+                new com.cityfix.backend.model.dto.request.ReorderTicketStepsRequest(List.of(
+                        new com.cityfix.backend.model.dto.request.StepOrderItem(stepId1, 1),
+                        new com.cityfix.backend.model.dto.request.StepOrderItem(stepId2, 0)
+                ));
+
+        List<com.cityfix.backend.model.dto.response.TicketStepResponse> res =
+                ticketService.reorderTicketSteps(ticketId, request);
+
+        assertThat(res).hasSize(2);
+        verify(ticketStepRepository).saveAll(anyList());
+    }
 }
 
