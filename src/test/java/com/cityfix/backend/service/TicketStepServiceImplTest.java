@@ -252,8 +252,9 @@ class TicketStepServiceImplTest {
     }
 
     @Test
-    @DisplayName("deleteTicketStep_success_callsDeleteOnRepository")
-    void deleteTicketStep_success() {
+    @DisplayName("deleteTicketStep_whenCurrentUserIsManager_success")
+    void deleteTicketStep_whenCurrentUserIsManager_success() {
+        mockCurrentUser(managerUser);
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
 
         ticketStepService.deleteTicketStep(stepId);
@@ -262,8 +263,22 @@ class TicketStepServiceImplTest {
     }
 
     @Test
+    @DisplayName("deleteTicketStep_whenCurrentUserIsNotManager_throwsForbidden")
+    void deleteTicketStep_whenCurrentUserIsNotManager_throwsForbidden() {
+        mockCurrentUser(staffUser);
+
+        assertThatThrownBy(() -> ticketStepService.deleteTicketStep(stepId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketStepRepository, never()).delete(any());
+    }
+
+    @Test
     @DisplayName("deleteTicketStep_stepNotFound_throwsAppException")
     void deleteTicketStep_stepNotFound_throwsAppException() {
+        mockCurrentUser(managerUser);
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketStepService.deleteTicketStep(stepId))

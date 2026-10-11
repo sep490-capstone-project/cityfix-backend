@@ -114,6 +114,11 @@ public class TicketStepServiceImpl implements TicketStepService {
     @Override
     @Transactional
     public void deleteTicketStep(UUID stepId) {
+        User currentUser = getCurrentUser();
+        if (currentUser.getRole() == null || !"MANAGER".equalsIgnoreCase(currentUser.getRole().getRoleName())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
         TicketStep step = ticketStepRepository.findById(stepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 

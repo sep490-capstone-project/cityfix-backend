@@ -24,7 +24,7 @@ public class TicketStepController {
 
     @PatchMapping("/{stepId}/status")
     @PreAuthorize("hasRole('STAFF')")
-    @Operation(summary = "Cập nhật trạng thái bước xử lý (Ticket Step)", description = "Chỉ cho phép vai trò STAFF được phân công trực tiếp (assignee) cập nhật trạng thái bước xử lý của chính mình. Chặn hoàn toàn MANAGER, ADMIN và các vai trò khác.")
+    @Operation(summary = "Cập nhật trạng thái bước xử lý (Ticket Step)", description = "Chỉ cho phép vai trò STAFF được phân công trực tiếp (assignee) cập nhật trạng thái bước xử lý của chính mình.")
     public ResponseEntity<BaseResponse<TicketStepResponse>> updateTicketStepStatus(
             @PathVariable UUID stepId,
             @RequestParam("status") AssignmentStatus status) {
