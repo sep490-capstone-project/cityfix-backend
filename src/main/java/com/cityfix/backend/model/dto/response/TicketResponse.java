@@ -27,4 +27,5 @@ public class TicketResponse {
     private UUID createdBy;
     private LocalDateTime createdAt;
     private java.util.List<TicketStepResponse> steps;
+    private Integer duration;
 }

@@ -5,7 +5,7 @@ import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
-import com.cityfix.backend.service.TicketService;
+import com.cityfix.backend.service.ManagerTicketService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +32,7 @@ import static org.mockito.Mockito.when;
 class ManagerTicketControllerTest {
 
     @Mock
-    private TicketService ticketService;
+    private ManagerTicketService managerTicketService;
 
     @InjectMocks
     private ManagerTicketController managerTicketController;
@@ -43,7 +43,7 @@ class ManagerTicketControllerTest {
         TicketResponse mockResponse = TicketResponse.builder().id(UUID.randomUUID()).description("Test").build();
         Page<TicketResponse> page = new PageImpl<>(List.of(mockResponse));
         
-        when(ticketService.getInitiatedTickets(any(Pageable.class))).thenReturn(page);
+        when(managerTicketService.getInitiatedTickets(any(Pageable.class))).thenReturn(page);
 
         ResponseEntity<BaseResponse<Page<TicketResponse>>> response = managerTicketController.getInitiatedTickets(PageRequest.of(0, 20));
 
@@ -59,7 +59,7 @@ class ManagerTicketControllerTest {
         UUID ticketId = UUID.randomUUID();
         DepartmentResponse mockResponse = new DepartmentResponse(UUID.randomUUID(), "Test Dept", null, null, null, 0, true);
         
-        when(ticketService.getSuggestedDepartments(eq(ticketId), any())).thenReturn(List.of(mockResponse));
+        when(managerTicketService.getSuggestedDepartments(eq(ticketId), any())).thenReturn(List.of(mockResponse));
 
         ResponseEntity<BaseResponse<List<DepartmentResponse>>> response = managerTicketController.getSuggestedDepartments(ticketId, null);
 
@@ -80,7 +80,7 @@ class ManagerTicketControllerTest {
 
         TicketResponse mockResponse = TicketResponse.builder().id(ticketId).description("Updated").build();
         
-        when(ticketService.reviewTicket(eq(ticketId), any(ReviewTicketRequest.class))).thenReturn(mockResponse);
+        when(managerTicketService.reviewTicket(eq(ticketId), any(ReviewTicketRequest.class))).thenReturn(mockResponse);
 
         ResponseEntity<BaseResponse<TicketResponse>> response = managerTicketController.reviewTicket(ticketId, request);
 
@@ -99,7 +99,7 @@ class ManagerTicketControllerTest {
 
         TicketResponse mockResponse = TicketResponse.builder().id(ticketId).description("Rejected").build();
 
-        when(ticketService.rejectInitiatedTicket(eq(ticketId), eq("Invalid report"))).thenReturn(mockResponse);
+        when(managerTicketService.rejectInitiatedTicket(eq(ticketId), eq("Invalid report"))).thenReturn(mockResponse);
 
         ResponseEntity<BaseResponse<TicketResponse>> response = managerTicketController.rejectInitiatedTicket(ticketId, request);
 
@@ -122,7 +122,7 @@ class ManagerTicketControllerTest {
                 .deadline(deadline)
                 .build();
 
-        when(ticketService.updateTicketStepDeadline(eq(stepId), any(UpdateTicketStepDeadlineRequest.class)))
+        when(managerTicketService.updateTicketStepDeadline(eq(stepId), any(UpdateTicketStepDeadlineRequest.class)))
                 .thenReturn(mockResponse);
 
         ResponseEntity<BaseResponse<TicketStepResponse>> response = managerTicketController.updateTicketStepDeadline(stepId, request);
@@ -144,7 +144,7 @@ class ManagerTicketControllerTest {
 
         TicketStepResponse mockStep = TicketStepResponse.builder().id(stepId).deadline(deadline).build();
 
-        when(ticketService.updateTicketStepDeadlines(eq(ticketId), any(UpdateTicketStepDeadlinesRequest.class)))
+        when(managerTicketService.updateTicketStepDeadlines(eq(ticketId), any(UpdateTicketStepDeadlinesRequest.class)))
                 .thenReturn(List.of(mockStep));
 
         ResponseEntity<BaseResponse<List<TicketStepResponse>>> response = managerTicketController.updateTicketStepDeadlines(ticketId, request);
@@ -167,7 +167,7 @@ class ManagerTicketControllerTest {
                 .orderIndex(3)
                 .build();
 
-        when(ticketService.updateTicketStepOrderIndex(eq(stepId), any(UpdateTicketStepOrderRequest.class)))
+        when(managerTicketService.updateTicketStepOrderIndex(eq(stepId), any(UpdateTicketStepOrderRequest.class)))
                 .thenReturn(mockResponse);
 
         ResponseEntity<BaseResponse<TicketStepResponse>> response = managerTicketController.updateTicketStepOrderIndex(stepId, request);
@@ -190,7 +190,7 @@ class ManagerTicketControllerTest {
         TicketStepResponse mock1 = TicketStepResponse.builder().id(stepId1).orderIndex(1).build();
         TicketStepResponse mock2 = TicketStepResponse.builder().id(stepId2).orderIndex(0).build();
 
-        when(ticketService.reorderTicketSteps(eq(ticketId), any(ReorderTicketStepsRequest.class)))
+        when(managerTicketService.reorderTicketSteps(eq(ticketId), any(ReorderTicketStepsRequest.class)))
                 .thenReturn(List.of(mock2, mock1));
 
         ResponseEntity<BaseResponse<List<TicketStepResponse>>> response = managerTicketController.reorderTicketSteps(ticketId, request);

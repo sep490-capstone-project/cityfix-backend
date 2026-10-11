@@ -5,7 +5,7 @@ import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
-import com.cityfix.backend.service.TicketService;
+import com.cityfix.backend.service.ManagerTicketService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -26,14 +26,14 @@ import java.util.UUID;
 @Tag(name = "Manager Ticket Management", description = "APIs for Manual Review, Routing and Ticket Step Management")
 public class ManagerTicketController {
 
-    private final TicketService ticketService;
+    private final ManagerTicketService managerTicketService;
 
     @GetMapping("/initiated")
     @PreAuthorize("hasAnyRole('MANAGER', 'STAFF')")
     @Operation(summary = "Lấy danh sách vé chờ duyệt", description = "Trả về danh sách vé đang ở trạng thái INITIATED")
     public ResponseEntity<BaseResponse<Page<TicketResponse>>> getInitiatedTickets(
             @PageableDefault(size = 20) Pageable pageable) {
-        Page<TicketResponse> response = ticketService.getInitiatedTickets(pageable);
+        Page<TicketResponse> response = managerTicketService.getInitiatedTickets(pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé chờ duyệt thành công", response));
     }
 
@@ -43,7 +43,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<List<DepartmentResponse>>> getSuggestedDepartments(
             @PathVariable UUID id,
             @RequestParam(value = "categoryId", required = false) UUID categoryId) {
-        List<DepartmentResponse> response = ticketService.getSuggestedDepartments(id, categoryId);
+        List<DepartmentResponse> response = managerTicketService.getSuggestedDepartments(id, categoryId);
         return ResponseEntity.ok(BaseResponse.success("Lấy gợi ý phòng ban thành công", response));
     }
 
@@ -53,7 +53,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<TicketResponse>> reviewTicket(
             @PathVariable UUID id,
             @Valid @RequestBody ReviewTicketRequest request) {
-        TicketResponse response = ticketService.reviewTicket(id, request);
+        TicketResponse response = managerTicketService.reviewTicket(id, request);
         return ResponseEntity.ok(BaseResponse.success("Duyệt và định tuyến vé thành công", response));
     }
 
@@ -63,7 +63,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<TicketResponse>> rejectInitiatedTicket(
             @PathVariable UUID id,
             @Valid @RequestBody RejectTicketRequest request) {
-        TicketResponse response = ticketService.rejectInitiatedTicket(id, request.getReason());
+        TicketResponse response = managerTicketService.rejectInitiatedTicket(id, request.getReason());
         return ResponseEntity.ok(BaseResponse.success("Từ chối vé thành công", response));
     }
 
@@ -73,7 +73,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<TicketStepResponse>> updateTicketStepDeadline(
             @PathVariable UUID stepId,
             @Valid @RequestBody UpdateTicketStepDeadlineRequest request) {
-        TicketStepResponse response = ticketService.updateTicketStepDeadline(stepId, request);
+        TicketStepResponse response = managerTicketService.updateTicketStepDeadline(stepId, request);
         return ResponseEntity.ok(BaseResponse.success("Cập nhật deadline bước xử lý thành công", response));
     }
 
@@ -83,7 +83,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<List<TicketStepResponse>>> updateTicketStepDeadlines(
             @PathVariable UUID ticketId,
             @Valid @RequestBody UpdateTicketStepDeadlinesRequest request) {
-        List<TicketStepResponse> response = ticketService.updateTicketStepDeadlines(ticketId, request);
+        List<TicketStepResponse> response = managerTicketService.updateTicketStepDeadlines(ticketId, request);
         return ResponseEntity.ok(BaseResponse.success("Cập nhật deadline các bước xử lý thành công", response));
     }
 
@@ -93,7 +93,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<TicketStepResponse>> updateTicketStepOrderIndex(
             @PathVariable UUID stepId,
             @Valid @RequestBody UpdateTicketStepOrderRequest request) {
-        TicketStepResponse response = ticketService.updateTicketStepOrderIndex(stepId, request);
+        TicketStepResponse response = managerTicketService.updateTicketStepOrderIndex(stepId, request);
         return ResponseEntity.ok(BaseResponse.success("Cập nhật thứ tự bước xử lý thành công", response));
     }
 
@@ -103,7 +103,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<List<TicketStepResponse>>> reorderTicketSteps(
             @PathVariable UUID ticketId,
             @Valid @RequestBody ReorderTicketStepsRequest request) {
-        List<TicketStepResponse> response = ticketService.reorderTicketSteps(ticketId, request);
+        List<TicketStepResponse> response = managerTicketService.reorderTicketSteps(ticketId, request);
         return ResponseEntity.ok(BaseResponse.success("Sắp xếp lại thứ tự các bước thành công", response));
     }
 }

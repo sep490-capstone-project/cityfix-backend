@@ -3,12 +3,16 @@ package com.cityfix.backend.model.entity;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLDelete;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "ticket_step")
+@SQLDelete(sql = "UPDATE ticket_step SET is_deleted = true WHERE id = ?")
+@SQLRestriction("is_deleted = false")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -37,9 +41,12 @@ public class TicketStep {
     @Column(name = "assignment_status", nullable = false, length = 20)
     private AssignmentStatus status = AssignmentStatus.OPEN;
 
+    @Column(name = "order_index")
+    private Integer orderIndex;
+
     @Builder.Default
-    @Column(name = "order_index", nullable = false)
-    private Integer orderIndex = 0;
+    @Column(name = "is_deleted", nullable = false)
+    private boolean isDeleted = false;
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;

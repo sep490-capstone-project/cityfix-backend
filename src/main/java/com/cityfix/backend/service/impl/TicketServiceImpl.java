@@ -171,7 +171,7 @@ public class TicketServiceImpl implements TicketService {
         }
     }
 
-    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, int orderIndex) {
+    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex) {
         if (ticket.getSteps() == null) {
             ticket.setSteps(new ArrayList<>());
         }
@@ -183,11 +183,33 @@ public class TicketServiceImpl implements TicketService {
         if (existingStep != null) {
             existingStep.setAssignee(assignee);
             existingStep.setStatus(status);
+            if (orderIndex != null) {
+                existingStep.setOrderIndex(orderIndex);
+            }
             ticketStepRepository.save(existingStep);
         } else {
             TicketStep ts = ticketStepMapper.toTicketStep(ticket, step, assignee, status, orderIndex);
             ticketStepRepository.save(ts);
             ticket.getSteps().add(ts);
+        }
+    }
+
+    private void cascadeCancelTicketSteps(UUID ticketId) {
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketId(ticketId);
+        LocalDateTime now = LocalDateTime.now();
+        List<TicketStep> stepsToCancel = new ArrayList<>();
+        for (TicketStep step : steps) {
+            if (step.getStatus() != AssignmentStatus.CANCELLED) {
+                step.setStatus(AssignmentStatus.CANCELLED);
+                if (step.getCompletedAt() == null) {
+                    step.setCompletedAt(now);
+                }
+                step.setUpdatedAt(now);
+                stepsToCancel.add(step);
+            }
+        }
+        if (!stepsToCancel.isEmpty()) {
+            ticketStepRepository.saveAll(stepsToCancel);
         }
     }
 
@@ -278,12 +300,14 @@ public class TicketServiceImpl implements TicketService {
             // Persist corresponding TicketStep rows only if auto-routed with a non-null assignee
             if (!finalNeedsReview && autoStaff != null) {
                 List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
-                int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
                 for (Step s : steps) {
-                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, index++);
+                    createOrUpdateTicketStep(ticket, s, null, AssignmentStatus.OPEN, null);
                 }
             }
         }
+
+        // Calculate and set duration
+        ticket.setDuration(calculateTicketDuration(ticket));
 
         // Audit Log
         String historyNote;
@@ -539,6 +563,7 @@ public class TicketServiceImpl implements TicketService {
         
         ticket.setStatus(TicketStatus.OPEN);
         ticket.setNeedsManualReview(false);
+        ticket.setDuration(calculateTicketDuration(ticket));
         ticket = ticketRepository.save(ticket);
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
@@ -779,6 +804,7 @@ public class TicketServiceImpl implements TicketService {
         }
 
         ticket.setStatus(TicketStatus.CANCELLED);
+        cascadeCancelTicketSteps(ticketId);
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
                 ticket, currentUser, ActionType.CANCELLED, TicketStatus.INITIATED, TicketStatus.CANCELLED, "Người dân tự hủy vé"
@@ -809,17 +835,7 @@ public class TicketServiceImpl implements TicketService {
         ticket.setStatus(TicketStatus.REJECTED);
         ticket.setReviewNote(finalReason);
 
-        List<TicketStep> activeSteps =
-                ticketStepRepository.findByTicketTicketIdAndStatusIn(
-                        ticketId,
-                        List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
-                );
-
-        for (TicketStep step : activeSteps) {
-            step.setStatus(AssignmentStatus.CANCELLED);
-            step.setCompletedAt(LocalDateTime.now());
-            ticketStepRepository.save(step);
-        }
+        cascadeCancelTicketSteps(ticketId);
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
                 ticket, currentUser, ActionType.REJECTED, prevStatus, TicketStatus.REJECTED, finalReason
@@ -940,5 +956,56 @@ public class TicketServiceImpl implements TicketService {
         sortedSteps = ticketStepRepository.saveAll(sortedSteps);
 
         return ticketStepMapper.toTicketStepResponseList(sortedSteps);
+    }
+
+    @Override
+    public Integer calculateTicketDuration(Ticket ticket) {
+        if (ticket == null) return null;
+        List<TicketSubCategory> subCats = ticket.getSubCategories();
+        if (subCats == null || subCats.isEmpty()) {
+            return null;
+        }
+        if (subCats.size() == 1) {
+            SubCategory subCat = subCats.get(0).getSubCategory();
+            return (subCat != null) ? subCat.getSla() : null;
+        }
+
+        // Multi-SubCategory: count > 1
+        List<TicketStep> steps = ticket.getSteps();
+        if (steps == null || steps.isEmpty()) {
+            if (ticket.getTicketId() != null) {
+                steps = ticketStepRepository.findByTicketTicketId(ticket.getTicketId());
+            }
+        }
+
+        Optional<LocalDateTime> maxDeadlineOpt = Optional.empty();
+        if (steps != null && !steps.isEmpty()) {
+            maxDeadlineOpt = steps.stream()
+                    .map(TicketStep::getDeadline)
+                    .filter(Objects::nonNull)
+                    .max(LocalDateTime::compareTo);
+        }
+
+        if (maxDeadlineOpt.isPresent()) {
+            LocalDateTime createdAt = ticket.getCreatedAt() != null ? ticket.getCreatedAt() : LocalDateTime.now();
+            LocalDateTime maxDeadline = maxDeadlineOpt.get();
+            if (maxDeadline.isAfter(createdAt)) {
+                long minutes = java.time.Duration.between(createdAt, maxDeadline).toMinutes();
+                int duration = (int) Math.ceil((double) minutes / 60.0);
+                return Math.max(duration, 1);
+            } else {
+                return 1;
+            }
+        } else {
+            // Các step CHƯA CÓ deadline (deadline == null):
+            // duration = tổng(subCategory.getSla()) của toàn bộ các SubCategory liên kết với ticket đó
+            int totalSla = 0;
+            for (TicketSubCategory tsc : subCats) {
+                if (tsc.getSubCategory() != null && tsc.getSubCategory().getSla() != null) {
+                    totalSla += tsc.getSubCategory().getSla();
+                }
+            }
+            return totalSla > 0 ? totalSla : null;
+        }
     }
 }
