@@ -35,6 +35,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -231,12 +232,12 @@ class TicketServiceTest {
                     .build();
         });
 
-        lenient().when(ticketStepMapper.toTicketStep(any(), any(), any(), any(), anyInt())).thenAnswer(invocation -> {
+        lenient().when(ticketStepMapper.toTicketStep(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
             Ticket t = invocation.getArgument(0);
             Step s = invocation.getArgument(1);
             User staff = invocation.getArgument(2);
             AssignmentStatus st = invocation.getArgument(3);
-            int idx = invocation.getArgument(4);
+            Integer idx = invocation.getArgument(4);
             return TicketStep.builder()
                     .ticket(t)
                     .step(s)
@@ -452,7 +453,7 @@ class TicketServiceTest {
 
         assertThat(response).isNotNull();
         verify(ticketSubCategoryRepository, atLeastOnce()).save(any());
-        verify(ticketStepRepository, atLeastOnce()).save(argThat(ts -> ts != null && ts.getAssignee() != null));
+        verify(ticketStepRepository, atLeastOnce()).save(argThat(ts -> ts != null && ts.getAssignee() == null && ts.getOrderIndex() == null && !ts.isDeleted()));
     }
 
     // ==========================================
@@ -1370,6 +1371,75 @@ class TicketServiceTest {
 
         assertThat(res).hasSize(2);
         verify(ticketStepRepository).saveAll(anyList());
+    }
+
+    // ==========================================
+    // 6. Ticket Duration Calculation Tests
+    // ==========================================
+
+    @Test
+    @DisplayName("calculateTicketDuration_singleSubCategory_returnsSla")
+    void calculateTicketDuration_singleSubCategory_returnsSla() {
+        SubCategory subCat = SubCategory.builder().subCategoryId(UUID.randomUUID()).sla(36).build();
+        TicketSubCategory tsc = TicketSubCategory.builder().subCategory(subCat).build();
+        Ticket ticket = Ticket.builder().subCategories(List.of(tsc)).build();
+
+        Integer duration = ticketService.calculateTicketDuration(ticket);
+
+        assertThat(duration).isEqualTo(36);
+    }
+
+    @Test
+    @DisplayName("calculateTicketDuration_multiSubCategory_withDeadlines_returnsCeilHours")
+    void calculateTicketDuration_multiSubCategory_withDeadlines_returnsCeilHours() {
+        java.time.LocalDateTime created = java.time.LocalDateTime.of(2026, 10, 11, 10, 0);
+        java.time.LocalDateTime deadline1 = created.plusHours(24);
+        java.time.LocalDateTime deadline2 = created.plusHours(48).plusMinutes(15);
+
+        TicketSubCategory tsc1 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(24).build()).build();
+        TicketSubCategory tsc2 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(48).build()).build();
+
+        TicketStep step1 = TicketStep.builder().deadline(deadline1).build();
+        TicketStep step2 = TicketStep.builder().deadline(deadline2).build();
+
+        Ticket ticket = Ticket.builder()
+                .createdAt(created)
+                .subCategories(List.of(tsc1, tsc2))
+                .steps(List.of(step1, step2))
+                .build();
+
+        Integer duration = ticketService.calculateTicketDuration(ticket);
+
+        // 48h 15m -> ceil to 49h
+        assertThat(duration).isEqualTo(49);
+    }
+
+    @Test
+    @DisplayName("calculateTicketDuration_multiSubCategory_withoutDeadlines_returnsSumSla")
+    void calculateTicketDuration_multiSubCategory_withoutDeadlines_returnsSumSla() {
+        TicketSubCategory tsc1 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(24).build()).build();
+        TicketSubCategory tsc2 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(48).build()).build();
+
+        TicketStep step1 = TicketStep.builder().deadline(null).build();
+
+        Ticket ticket = Ticket.builder()
+                .subCategories(List.of(tsc1, tsc2))
+                .steps(List.of(step1))
+                .build();
+
+        Integer duration = ticketService.calculateTicketDuration(ticket);
+
+        assertThat(duration).isEqualTo(72);
+    }
+
+    @Test
+    @DisplayName("calculateTicketDuration_nullOrEmptySubCategories_returnsNull")
+    void calculateTicketDuration_nullOrEmptySubCategories_returnsNull() {
+        Ticket ticket = Ticket.builder().subCategories(Collections.emptyList()).build();
+
+        Integer duration = ticketService.calculateTicketDuration(ticket);
+
+        assertThat(duration).isNull();
     }
 }
 

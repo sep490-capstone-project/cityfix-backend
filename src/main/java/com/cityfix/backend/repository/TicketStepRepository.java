@@ -14,6 +14,10 @@ import java.util.UUID;
 
 public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
+    List<TicketStep> findByTicketTicketId(UUID ticketId);
+
+    java.util.Optional<TicketStep> findByTicketTicketIdAndStepStepId(UUID ticketId, UUID stepId);
+
     List<TicketStep> findByTicketTicketIdOrderByOrderIndexAsc(UUID ticketId);
 
     List<TicketStep> findByTicketTicketIdAndStatusIn(UUID ticketId, List<AssignmentStatus> statuses);

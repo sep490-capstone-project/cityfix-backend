@@ -33,6 +33,7 @@ public interface TicketStepMapper {
     @Mapping(target = "completedAt", ignore = true)
     @Mapping(target = "deadline", ignore = true)
     @Mapping(target = "notes", ignore = true)
+    @Mapping(target = "isDeleted", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     TicketStep toTicketStep(
