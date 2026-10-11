@@ -1295,6 +1295,53 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("updateTicketStepDeadline_pastDeadline_throwsInvalidRequest")
+    void updateTicketStepDeadline_pastDeadline_throwsInvalidRequest() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+        UUID stepId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest(LocalDateTime.now().minusDays(1));
+
+        assertThatThrownBy(() -> ticketService.updateTicketStepDeadline(stepId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDeadlines_manager_success")
+    void updateTicketStepDeadlines_manager_success() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+        UUID ticketId = UUID.randomUUID();
+        UUID stepId1 = UUID.randomUUID();
+        UUID stepId2 = UUID.randomUUID();
+        TicketStep step1 = TicketStep.builder().id(stepId1).build();
+        TicketStep step2 = TicketStep.builder().id(stepId2).build();
+        LocalDateTime deadline1 = LocalDateTime.now().plusDays(2);
+        LocalDateTime deadline2 = LocalDateTime.now().plusDays(3);
+
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).deadline(deadline1).build(),
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId2).deadline(deadline2).build()
+        ));
+
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlinesRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlinesRequest(List.of(
+                        new com.cityfix.backend.model.dto.request.StepDeadlineItem(stepId1, deadline1),
+                        new com.cityfix.backend.model.dto.request.StepDeadlineItem(stepId2, deadline2)
+                ));
+
+        List<com.cityfix.backend.model.dto.response.TicketStepResponse> res =
+                ticketService.updateTicketStepDeadlines(ticketId, request);
+
+        assertThat(res).hasSize(2);
+        verify(ticketStepRepository).saveAll(anyList());
+    }
+
+    @Test
     @DisplayName("reorderTicketSteps_manager_success")
     void reorderTicketSteps_manager_success() {
         mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
@@ -1306,6 +1353,7 @@ class TicketServiceTest {
 
         when(ticketRepository.existsById(ticketId)).thenReturn(true);
         when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).orderIndex(1).build(),
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId2).orderIndex(0).build()
@@ -1321,7 +1369,7 @@ class TicketServiceTest {
                 ticketService.reorderTicketSteps(ticketId, request);
 
         assertThat(res).hasSize(2);
-        verify(ticketStepRepository, times(2)).save(any(TicketStep.class));
+        verify(ticketStepRepository).saveAll(anyList());
     }
 }
 

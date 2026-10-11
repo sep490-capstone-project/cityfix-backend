@@ -848,6 +848,10 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
+        if (request.getDeadline() != null && request.getDeadline().isBefore(LocalDateTime.now())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
@@ -874,15 +878,19 @@ public class TicketServiceImpl implements TicketService {
                 .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
 
         for (StepDeadlineItem item : request.getStepDeadlines()) {
+            if (item.getDeadline() != null && item.getDeadline().isBefore(LocalDateTime.now())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
             TicketStep step = stepMap.get(item.getTicketStepId());
             if (step == null) {
                 throw new AppException(ErrorCode.STEP_NOT_FOUND);
             }
             step.setDeadline(item.getDeadline());
-            ticketStepRepository.save(step);
         }
 
-        return ticketStepMapper.toTicketStepResponseList(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId));
+        steps = ticketStepRepository.saveAll(steps);
+
+        return ticketStepMapper.toTicketStepResponseList(steps);
     }
 
     @Override
@@ -924,9 +932,13 @@ public class TicketServiceImpl implements TicketService {
                 throw new AppException(ErrorCode.STEP_NOT_FOUND);
             }
             step.setOrderIndex(item.getOrderIndex());
-            ticketStepRepository.save(step);
         }
 
-        return ticketStepMapper.toTicketStepResponseList(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId));
+        List<TicketStep> sortedSteps = steps.stream()
+                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+        sortedSteps = ticketStepRepository.saveAll(sortedSteps);
+
+        return ticketStepMapper.toTicketStepResponseList(sortedSteps);
     }
 }
