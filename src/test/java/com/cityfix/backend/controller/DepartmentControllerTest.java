@@ -166,4 +166,30 @@ class DepartmentControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         verify(departmentService, times(1)).deleteDepartment(departmentId);
     }
+
+    @Test
+    @DisplayName("getAllDepartments_securityAnnotation_allowsAdminStaffAndManager")
+    void getAllDepartments_securityAnnotation_allowsAdminStaffAndManager() throws NoSuchMethodException {
+        java.lang.reflect.Method method = DepartmentController.class.getMethod(
+                "getAllDepartments", Boolean.class, Pageable.class
+        );
+        org.springframework.security.access.prepost.PreAuthorize preAuthorize =
+                method.getAnnotation(org.springframework.security.access.prepost.PreAuthorize.class);
+
+        assertThat(preAuthorize).isNotNull();
+        assertThat(preAuthorize.value()).isEqualTo("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')");
+    }
+
+    @Test
+    @DisplayName("getDepartmentById_securityAnnotation_allowsAdminStaffAndManager")
+    void getDepartmentById_securityAnnotation_allowsAdminStaffAndManager() throws NoSuchMethodException {
+        java.lang.reflect.Method method = DepartmentController.class.getMethod(
+                "getDepartmentById", UUID.class
+        );
+        org.springframework.security.access.prepost.PreAuthorize preAuthorize =
+                method.getAnnotation(org.springframework.security.access.prepost.PreAuthorize.class);
+
+        assertThat(preAuthorize).isNotNull();
+        assertThat(preAuthorize.value()).isEqualTo("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')");
+    }
 }

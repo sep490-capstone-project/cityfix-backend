@@ -36,7 +36,7 @@ public class DepartmentController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
     @Operation(summary = "Lấy danh sách cơ quan phụ trách", description = "Hỗ trợ phân trang và lọc các phòng ban đang hoạt động")
     public ResponseEntity<BaseResponse<Page<DepartmentResponse>>> getAllDepartments(
             @RequestParam(value = "activeOnly", required = false, defaultValue = "false") Boolean activeOnly,
@@ -46,7 +46,7 @@ public class DepartmentController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
     @Operation(summary = "Chi tiết cơ quan phụ trách", description = "Lấy thông tin chi tiết cơ quan theo ID")
     public ResponseEntity<BaseResponse<DepartmentResponse>> getDepartmentById(@PathVariable UUID id) {
         DepartmentResponse response = departmentService.getDepartmentById(id);
