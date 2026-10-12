@@ -1,6 +1,7 @@
 package com.cityfix.backend.model.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.hibernate.validator.constraints.Range;
 import lombok.Data;
@@ -17,8 +18,8 @@ public class CreateTicketRequest {
     @NotNull(message = "Category ID is required")
     private java.util.UUID categoryId;
 
-    @NotNull(message = "SubCategory ID is required")
-    private java.util.UUID subCategoryId;
+    @NotEmpty(message = "At least one subcategory is required")
+    private java.util.List<java.util.UUID> subCategoryIds;
 
     @NotNull(message = "Severity is required")
     private com.cityfix.backend.model.enums.SeverityLevel severity;
@@ -41,4 +42,5 @@ public class CreateTicketRequest {
 
     private Double confidenceScore;
 
+    private Boolean isAnonymous;
 }

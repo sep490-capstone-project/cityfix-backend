@@ -53,6 +53,11 @@ public enum ErrorCode {
             "Không tìm thấy sự cố phụ"
     ),
 
+    STEP_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy bước"
+    ),
+
     ACCOUNT_ALREADY_VERIFIED(
             HttpStatus.CONFLICT,
             "Tài khoản đã được xác minh"
@@ -161,6 +166,21 @@ public enum ErrorCode {
     INVALID_STATUS_TRANSITION(
             HttpStatus.BAD_REQUEST,
             "Luồng chuyển trạng thái không hợp lệ"
+    ),
+
+    STAFF_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy cán bộ phụ trách hợp lệ"
+    ),
+
+    DEPARTMENT_NOT_CONFIGURED(
+            HttpStatus.BAD_REQUEST,
+            "Cơ quan phụ trách chưa có cấu hình cán bộ đại diện hợp lệ"
+    ),
+
+    INVALID_ROUTING_CONFIGURATION(
+            HttpStatus.BAD_REQUEST,
+            "Cấu hình định tuyến không hợp lệ"
     );
 
     private final HttpStatus status;

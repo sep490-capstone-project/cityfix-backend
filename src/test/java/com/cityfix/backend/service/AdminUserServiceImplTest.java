@@ -83,7 +83,6 @@ class AdminUserServiceImplTest {
                 .address("Address")
                 .role(role)
                 .status(UserStatus.ACTIVE)
-                .isDispatcher(false)
                 .build();
     }
 

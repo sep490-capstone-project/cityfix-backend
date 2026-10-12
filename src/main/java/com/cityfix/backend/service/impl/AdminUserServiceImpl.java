@@ -77,12 +77,6 @@ public class AdminUserServiceImpl implements AdminUserService {
                 .status(request.getStatus() != null ? request.getStatus() : UserStatus.ACTIVE)
                 .build();
 
-        if ("STAFF".equalsIgnoreCase(role.getRoleName())) {
-            user.setIsDispatcher(Boolean.TRUE.equals(request.getIsDispatcher()));
-        } else {
-            user.setIsDispatcher(false);
-        }
-
         User savedUser = userRepository.save(user);
         return mapToResponse(savedUser);
     }
@@ -142,12 +136,6 @@ public class AdminUserServiceImpl implements AdminUserService {
             user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         }
 
-        if ("STAFF".equalsIgnoreCase(newRole.getRoleName())) {
-            user.setIsDispatcher(Boolean.TRUE.equals(request.getIsDispatcher()));
-        } else {
-            user.setIsDispatcher(false);
-        }
-
         User updatedUser = userRepository.save(user);
         return mapToResponse(updatedUser);
     }
@@ -179,7 +167,6 @@ public class AdminUserServiceImpl implements AdminUserService {
                 .roleId(user.getRole().getRoleId())
                 .departmentId(user.getDepartment() != null ? user.getDepartment().getDepartmentId() : null)
                 .status(user.getStatus())
-                .isDispatcher(user.getIsDispatcher())
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .build();

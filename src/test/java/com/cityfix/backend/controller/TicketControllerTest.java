@@ -45,6 +45,12 @@ class TicketControllerTest {
     private TicketService ticketService;
 
     @Mock
+    private com.cityfix.backend.service.ManagerTicketService managerTicketService;
+
+    @Mock
+    private com.cityfix.backend.service.TicketStepService ticketStepService;
+
+    @Mock
     private AiService aiService;
 
     @Mock
@@ -330,5 +336,23 @@ class TicketControllerTest {
         assertThat(response.getBody().getMessage()).isEqualTo("Chuyển tuyến vé thành công.");
 
         verify(ticketService, times(1)).rerouteTicket(eq(ticketId), any());
+    }
+
+    @Test
+    @DisplayName("getTicketSteps_validTicketId_returns200WithStepList")
+    void getTicketSteps_validTicketId_returns200WithStepList() {
+        UUID ticketId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.response.TicketStepResponse stepResponse =
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(UUID.randomUUID()).build();
+
+        when(ticketStepService.getTicketStepsByTicketId(ticketId)).thenReturn(List.of(stepResponse));
+
+        ResponseEntity<BaseResponse<List<com.cityfix.backend.model.dto.response.TicketStepResponse>>> response =
+                ticketController.getTicketSteps(ticketId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData()).hasSize(1);
     }
 }

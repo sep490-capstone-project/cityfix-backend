@@ -14,8 +14,7 @@ public class TicketResponse {
     private String imageUrl;
     private java.util.UUID categoryId;
     private String categoryName;
-    private java.util.UUID subCategoryId;
-    private String subCategoryName;
+    private java.util.List<SubCategoryResponse> subCategories;
     private com.cityfix.backend.model.enums.SeverityLevel severity;
     private com.cityfix.backend.model.enums.Priority priority;
     private com.cityfix.backend.model.enums.LocationMethod locationMethod;
@@ -24,7 +23,9 @@ public class TicketResponse {
     private Double latitude;
     private Double longitude;
     private String reviewNote;
+    private Boolean isAnonymous;
     private UUID createdBy;
     private LocalDateTime createdAt;
-    private java.util.List<TicketAssignmentResponse> assignments;
+    private java.util.List<TicketStepResponse> steps;
+    private Integer duration;
 }

@@ -14,6 +14,12 @@ import java.util.UUID;
 @Builder
 public class AssignTicketRequest {
 
+    private UUID stepId;
+
     @NotNull(message = "ID nhân viên không được để trống")
     private UUID assigneeId;
+
+    public AssignTicketRequest(UUID assigneeId) {
+        this.assigneeId = assigneeId;
+    }
 }

@@ -32,13 +32,13 @@ public class Ticket {
     @JoinColumn(name = "category_id")
     private Category category;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "sub_category_id")
-    private SubCategory subCategory;
+    @Builder.Default
+    @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<TicketSubCategory> subCategories = new java.util.ArrayList<>();
 
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
-    private java.util.List<TicketAssignment> assignments = new java.util.ArrayList<>();
+    private java.util.List<TicketStep> steps = new java.util.ArrayList<>();
 
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -76,8 +76,15 @@ public class Ticket {
     @Column(name = "needs_manual_review")
     private Boolean needsManualReview;
 
+    @Builder.Default
+    @Column(name = "is_anonymous", nullable = false)
+    private Boolean isAnonymous = false;
+
     @Column(name = "review_note", columnDefinition = "TEXT")
     private String reviewNote;
+
+    @Column(name = "duration")
+    private Integer duration;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
