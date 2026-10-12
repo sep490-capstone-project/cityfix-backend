@@ -25,7 +25,10 @@ public class TicketResponse {
     private String reviewNote;
     private Boolean isAnonymous;
     private UUID createdBy;
+    private String creatorFullName;
+    private String creatorPhoneNumber;
+    private java.util.List<String> images;
     private LocalDateTime createdAt;
-    private java.util.List<TicketStepResponse> steps;
+    // private java.util.List<TicketStepResponse> steps;
     private Integer duration;
 }

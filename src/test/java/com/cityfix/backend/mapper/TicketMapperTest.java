@@ -46,6 +46,8 @@ class TicketMapperTest {
         reporter = new User();
         reporter.setUserId(UUID.randomUUID());
         reporter.setEmail("citizen@cityfix.com");
+        reporter.setFullName("Nguyen Van A");
+        reporter.setPhoneNumber("0987654321");
 
         ticket = Ticket.builder()
                 .ticketId(UUID.randomUUID())
@@ -76,6 +78,8 @@ class TicketMapperTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getCreatedBy()).isEqualTo(reporter.getUserId());
+        assertThat(response.getCreatorFullName()).isEqualTo("Nguyen Van A");
+        assertThat(response.getCreatorPhoneNumber()).isEqualTo("0987654321");
         assertThat(response.getIsAnonymous()).isTrue();
     }
 
@@ -96,6 +100,8 @@ class TicketMapperTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getCreatedBy()).isNull();
+        assertThat(response.getCreatorFullName()).isNull();
+        assertThat(response.getCreatorPhoneNumber()).isNull();
         assertThat(response.getIsAnonymous()).isTrue();
     }
 
@@ -108,6 +114,8 @@ class TicketMapperTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getCreatedBy()).isNull();
+        assertThat(response.getCreatorFullName()).isNull();
+        assertThat(response.getCreatorPhoneNumber()).isNull();
         assertThat(response.getIsAnonymous()).isTrue();
     }
 
@@ -124,6 +132,8 @@ class TicketMapperTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getCreatedBy()).isNull();
+        assertThat(response.getCreatorFullName()).isNull();
+        assertThat(response.getCreatorPhoneNumber()).isNull();
         assertThat(response.getIsAnonymous()).isTrue();
     }
 
@@ -136,6 +146,8 @@ class TicketMapperTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getCreatedBy()).isEqualTo(reporter.getUserId());
+        assertThat(response.getCreatorFullName()).isEqualTo("Nguyen Van A");
+        assertThat(response.getCreatorPhoneNumber()).isEqualTo("0987654321");
         assertThat(response.getIsAnonymous()).isFalse();
     }
 }
