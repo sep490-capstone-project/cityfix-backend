@@ -69,12 +69,6 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         return user != null && user.getRole() != null && "MANAGER".equalsIgnoreCase(user.getRole().getRoleName());
     }
 
-    private boolean isManagerOrStaff(User user) {
-        if (user == null || user.getRole() == null) return false;
-        String roleName = user.getRole().getRoleName();
-        return "MANAGER".equalsIgnoreCase(roleName) || "STAFF".equalsIgnoreCase(roleName) || "ADMIN".equalsIgnoreCase(roleName);
-    }
-
     private TicketStep createOrUpdateTicketStep(
             Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex) {
         TicketStep existingStep = ticketStepRepository
@@ -151,7 +145,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     @Transactional
     public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
         User currentUser = getCurrentUser();
-        if (!isManagerOrStaff(currentUser)) {
+        if (!isManager(currentUser)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
@@ -252,7 +246,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     public TicketResponse rejectInitiatedTicket(UUID ticketId, String reason) {
         User currentUser = getCurrentUser();
 
-        if (!isManagerOrStaff(currentUser)) {
+        if (!isManager(currentUser)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 

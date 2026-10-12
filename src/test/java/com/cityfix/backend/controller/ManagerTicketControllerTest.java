@@ -45,7 +45,7 @@ class ManagerTicketControllerTest {
         
         when(managerTicketService.getInitiatedTickets(any(Pageable.class))).thenReturn(page);
 
-        ResponseEntity<BaseResponse<Page<TicketResponse>>> response = managerTicketController.getInitiatedTickets(PageRequest.of(0, 20));
+        ResponseEntity<BaseResponse<Page<TicketResponse>>> response = managerTicketController.getInitiatedTickets(0, 20);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();

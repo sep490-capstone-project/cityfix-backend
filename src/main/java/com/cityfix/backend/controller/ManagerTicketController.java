@@ -11,8 +11,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -29,16 +30,18 @@ public class ManagerTicketController {
     private final ManagerTicketService managerTicketService;
 
     @GetMapping("/initiated")
-    @PreAuthorize("hasAnyRole('MANAGER', 'STAFF')")
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Lấy danh sách vé chờ duyệt", description = "Trả về danh sách vé đang ở trạng thái INITIATED")
     public ResponseEntity<BaseResponse<Page<TicketResponse>>> getInitiatedTickets(
-            @PageableDefault(size = 20) Pageable pageable) {
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<TicketResponse> response = managerTicketService.getInitiatedTickets(pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé chờ duyệt thành công", response));
     }
 
     @GetMapping("/{id}/suggested-departments")
-    @PreAuthorize("hasAnyRole('MANAGER', 'STAFF')")
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Gợi ý phòng ban cho vé", description = "Tìm phòng ban phù hợp dựa trên routing rule (Category và Địa chỉ)")
     public ResponseEntity<BaseResponse<List<DepartmentResponse>>> getSuggestedDepartments(
             @PathVariable UUID id,
@@ -48,7 +51,7 @@ public class ManagerTicketController {
     }
 
     @PutMapping("/{id}/review")
-    @PreAuthorize("hasAnyRole('MANAGER', 'STAFF')")
+    @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Duyệt vé và định tuyến", description = "Xác nhận category, đánh dấu SOS và giao việc cho nhiều phòng ban")
     public ResponseEntity<BaseResponse<TicketResponse>> reviewTicket(
             @PathVariable UUID id,
@@ -58,8 +61,8 @@ public class ManagerTicketController {
     }
 
     @PutMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('MANAGER', 'STAFF')")
-    @Operation(summary = "Từ chối vé (Manual Review)", description = "Manager/Staff từ chối vé, chuyển trạng thái sang REJECTED")
+    @PreAuthorize("hasRole('MANAGER')")
+    @Operation(summary = "Từ chối vé (Manual Review)", description = "Manager từ chối vé, chuyển trạng thái sang REJECTED")
     public ResponseEntity<BaseResponse<TicketResponse>> rejectInitiatedTicket(
             @PathVariable UUID id,
             @Valid @RequestBody RejectTicketRequest request) {

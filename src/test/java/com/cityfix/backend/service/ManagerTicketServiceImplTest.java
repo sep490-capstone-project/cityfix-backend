@@ -172,4 +172,28 @@ class ManagerTicketServiceImplTest {
             return steps.size() == 1 && steps.get(0).getStatus() == com.cityfix.backend.model.enums.AssignmentStatus.CANCELLED;
         }));
     }
+
+    @Test
+    @DisplayName("reviewTicket_byNonManager_throwsForbidden")
+    void reviewTicket_byNonManager_throwsForbidden() {
+        mockCurrentUser(staffUser);
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("rejectInitiatedTicket_byNonManager_throwsForbidden")
+    void rejectInitiatedTicket_byNonManager_throwsForbidden() {
+        mockCurrentUser(staffUser);
+
+        assertThatThrownBy(() -> managerTicketService.rejectInitiatedTicket(ticketId, "Lý do"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
 }

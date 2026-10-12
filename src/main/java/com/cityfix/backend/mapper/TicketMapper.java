@@ -20,13 +20,16 @@ public interface TicketMapper {
 
     @Mapping(target = "id", source = "ticketId")
     @Mapping(target = "createdBy", source = "user.userId")
+    @Mapping(target = "creatorFullName", source = "user.fullName")
+    @Mapping(target = "creatorPhoneNumber", source = "user.phoneNumber")
     @Mapping(target = "categoryId", source = "category.categoryId")
     @Mapping(target = "categoryName", source = "category.name")
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
     @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
+    @Mapping(target = "images", expression = "java(ticket.getImages() != null ? ticket.getImages().stream().map(com.cityfix.backend.model.entity.ReportImage::getImageUrl).toList() : java.util.Collections.emptyList())")
     @Mapping(target = "subCategories", source = "subCategories")
-    @Mapping(target = "steps", source = "steps")
+    // @Mapping(target = "steps", source = "steps")
     TicketResponse toTicketResponse(Ticket ticket);
 
     @AfterMapping
@@ -55,6 +58,8 @@ public interface TicketMapper {
 
             if (!isAdmin) {
                 response.setCreatedBy(null);
+                response.setCreatorFullName(null);
+                response.setCreatorPhoneNumber(null);
             }
         }
     }
