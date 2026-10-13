@@ -45,12 +45,14 @@ public class AdminSubCategoryController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Get a SubCategory by ID")
     public ResponseEntity<BaseResponse<SubCategoryResponse>> getSubCategory(@PathVariable UUID id) {
         return ResponseEntity.ok(BaseResponse.success("Success", subCategoryService.getSubCategory(id)));
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Get all SubCategories")
     public ResponseEntity<BaseResponse<List<SubCategoryResponse>>> getAllSubCategories() {
         return ResponseEntity.ok(BaseResponse.success("Success", subCategoryService.getAllSubCategories()));
