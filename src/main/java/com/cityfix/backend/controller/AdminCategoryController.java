@@ -24,7 +24,7 @@ public class AdminCategoryController {
     private final CategoryService categoryService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Lấy danh sách danh mục", description = "Lấy toàn bộ danh sách danh mục sự cố (không bao gồm đã bị xóa)")
     public ResponseEntity<BaseResponse<List<CategoryResponse>>> getAllCategories() {
         List<CategoryResponse> response = categoryService.getAllCategories();
