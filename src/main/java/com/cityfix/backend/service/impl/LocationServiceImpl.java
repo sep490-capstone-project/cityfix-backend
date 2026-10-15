@@ -29,7 +29,7 @@ public class LocationServiceImpl implements LocationService {
                             .build())
                     .orElse(null);
         } catch (Exception e) {
-            log.error("Lỗi khi truy vấn địa giới hành chính từ tọa độ GPS ({}, {}): {}", latitude, longitude, e.getMessage());
+            log.error("Lỗi khi truy vấn địa giới hành chính từ tọa độ GPS ({}, {})", latitude, longitude, e);
             return null;
         }
     }

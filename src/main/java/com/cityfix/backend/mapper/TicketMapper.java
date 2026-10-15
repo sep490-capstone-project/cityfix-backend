@@ -41,12 +41,14 @@ public interface TicketMapper {
     @AfterMapping
     default void mapCategoryFromSubCategories(Ticket ticket, @MappingTarget TicketResponse response) {
         if (ticket == null || response == null) return;
-        if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
-            com.cityfix.backend.model.entity.TicketSubCategory firstSubCat = ticket.getSubCategories().get(0);
-            if (firstSubCat != null && firstSubCat.getSubCategory() != null && firstSubCat.getSubCategory().getCategory() != null) {
-                com.cityfix.backend.model.entity.Category cat = firstSubCat.getSubCategory().getCategory();
-                response.setCategoryId(cat.getCategoryId());
-                response.setCategoryName(cat.getName());
+        if (ticket.getSubCategories() != null) {
+            for (com.cityfix.backend.model.entity.TicketSubCategory tsc : ticket.getSubCategories()) {
+                if (tsc != null && tsc.getSubCategory() != null && tsc.getSubCategory().getCategory() != null) {
+                    com.cityfix.backend.model.entity.Category cat = tsc.getSubCategory().getCategory();
+                    response.setCategoryId(cat.getCategoryId());
+                    response.setCategoryName(cat.getName());
+                    break;
+                }
             }
         }
     }

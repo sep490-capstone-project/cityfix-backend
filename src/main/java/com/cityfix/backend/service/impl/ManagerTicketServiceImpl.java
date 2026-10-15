@@ -305,70 +305,13 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         // =========================================================================
         // 3. Validation danh sách SubCategory
         // =========================================================================
-        if (request.getSubCategoryIds() == null || request.getSubCategoryIds().isEmpty()) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách sự cố phụ không được để trống");
-        }
-
-        // Kiểm tra trùng lặp subCategoryId
-        Set<UUID> uniqueSubCatIds = new HashSet<>(request.getSubCategoryIds());
-        if (uniqueSubCatIds.size() != request.getSubCategoryIds().size()) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách sự cố phụ không được chứa ID trùng lặp");
-        }
-
-        List<SubCategory> subCategories = subCategoryRepository.findAllById(request.getSubCategoryIds());
-        if (subCategories.size() != request.getSubCategoryIds().size()) {
-            throw new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND);
-        }
-        for (SubCategory sc : subCategories) {
-            if (!sc.isActive() || sc.isDeleted()) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ '" + sc.getName() + "' đã bị vô hiệu hóa hoặc bị xóa");
-            }
-        }
+        List<SubCategory> subCategories = validateAndFetchSubCategories(request.getSubCategoryIds());
 
         // =========================================================================
         // 4. Validation danh sách steps & assignees
         // =========================================================================
-        if (request.getSteps() == null || request.getSteps().isEmpty()) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách bước xử lý không được để trống");
-        }
-
-        Set<UUID> uniqueStepIds = new HashSet<>();
-        for (ReviewTicketRequest.StepAssignmentRequest stepReq : request.getSteps()) {
-            if (!uniqueStepIds.add(stepReq.getStepId())) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách bước xử lý chứa stepId trùng lặp: " + stepReq.getStepId());
-            }
-            if (stepReq.getDeadline() != null && stepReq.getDeadline().isBefore(LocalDateTime.now())) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Hạn chót của bước xử lý không được ở quá khứ");
-            }
-        }
-
-        // Xác thực các Step từ CSDL
-        List<Step> stepEntities = stepRepository.findAllById(uniqueStepIds);
-        if (stepEntities.size() != uniqueStepIds.size()) {
-            throw new AppException(ErrorCode.STEP_NOT_FOUND);
-        }
-        Map<UUID, Step> stepMap = stepEntities.stream()
-                .collect(Collectors.toMap(Step::getStepId, Function.identity()));
-
-        // Xác thực các Assignee (User)
-        Set<UUID> assigneeIds = request.getSteps().stream()
-                .map(ReviewTicketRequest.StepAssignmentRequest::getAssigneeId)
-                .collect(Collectors.toSet());
-        List<User> assignees = userRepository.findAllById(assigneeIds);
-        if (assignees.size() != assigneeIds.size()) {
-            throw new AppException(ErrorCode.ACCOUNT_NOT_FOUND, "Không tìm thấy một số nhân viên được phân công");
-        }
-        Map<UUID, User> assigneeMap = assignees.stream()
-                .collect(Collectors.toMap(User::getUserId, Function.identity()));
-
-        for (User staff : assignees) {
-            if (staff.isDeleted() || staff.getStatus() != com.cityfix.backend.model.enums.UserStatus.ACTIVE) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Nhân viên '" + staff.getFullName() + "' không còn hoạt động");
-            }
-            if (staff.getDepartment() == null) {
-                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT, "Nhân viên '" + staff.getFullName() + "' không thuộc phòng ban nào");
-            }
-        }
+        Map<UUID, Step> stepMap = validateAndFetchSteps(request.getSteps());
+        Map<UUID, User> assigneeMap = validateAndFetchAssignees(request.getSteps());
 
         // =========================================================================
         // 5. Cập nhật SOS và Review Note (KHÔNG đổi categoryId theo thiết kế mới)
@@ -383,53 +326,12 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         // =========================================================================
         // 6. Xử lý Hibernate Collection: Ticket_SubCategory (orphanRemoval = true)
         // =========================================================================
-        // [CHÚ Ý HIBERNATE]:
-        // Tuyệt đối KHÔNG gán đè tham chiếu mới (ticket.setSubCategories(newList)) vì sẽ ném lỗi:
-        // "A collection with cascade="all-delete-orphan" was no longer referenced by the owning entity instance".
-        // Dùng .clear() trên collection hiện tại để Hibernate tự động kích hoạt DELETE orphan cũ,
-        // sau đó thêm các phần tử TicketSubCategory mới vào collection ban đầu.
-        if (ticket.getSubCategories() == null) {
-            ticket.setSubCategories(new ArrayList<>());
-        } else {
-            ticket.getSubCategories().clear(); // Kích hoạt xóa an toàn các orphan cũ trong DB
-        }
-
-        for (SubCategory sc : subCategories) {
-            TicketSubCategory tsc = TicketSubCategory.builder()
-                    .ticket(ticket)
-                    .subCategory(sc)
-                    .build();
-            ticket.getSubCategories().add(tsc); // Hibernate theo dõi và tự động INSERT bản ghi mới
-        }
+        updateTicketSubCategories(ticket, subCategories);
 
         // =========================================================================
         // 7. Xử lý Hibernate Collection: Ticket_Step (orphanRemoval = true)
         // =========================================================================
-        // [CHÚ Ý HIBERNATE]:
-        // Tuyệt đối KHÔNG gán đè ticket.setSteps(newList).
-        // Gọi .clear() để Hibernate đánh dấu orphan và kích hoạt soft-delete/delete cũ,
-        // sau đó thêm các TicketStep mới vào collection với đầy đủ assigneeId, orderIndex và status = OPEN.
-        if (ticket.getSteps() == null) {
-            ticket.setSteps(new ArrayList<>());
-        } else {
-            ticket.getSteps().clear(); // Kích hoạt xóa an toàn các bước cũ nếu có
-        }
-
-        for (ReviewTicketRequest.StepAssignmentRequest stepReq : request.getSteps()) {
-            Step step = stepMap.get(stepReq.getStepId());
-            User assignee = assigneeMap.get(stepReq.getAssigneeId());
-
-            TicketStep ticketStep = TicketStep.builder()
-                    .ticket(ticket)
-                    .step(step)
-                    .assignee(assignee)                       // Map đúng nhân viên phụ trách
-                    .status(AssignmentStatus.OPEN)            // Đặt trạng thái OPEN mặc định chuẩn
-                    .orderIndex(stepReq.getOrderIndex())      // Map đúng thứ tự thực hiện
-                    .deadline(stepReq.getDeadline())
-                    .notes(stepReq.getNotes())
-                    .build();
-            ticket.getSteps().add(ticketStep); // Hibernate theo dõi và tự động INSERT bước mới
-        }
+        updateTicketSteps(ticket, request.getSteps(), stepMap, assigneeMap);
 
         // =========================================================================
         // 8. Chuyển trạng thái vé: IN_PROGRESS theo chỉ thị thiết kế
@@ -465,6 +367,103 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         sendReviewSuccessNotification(ticket);
 
         return ticketMapper.toTicketResponse(ticket);
+    }
+
+    private List<SubCategory> validateAndFetchSubCategories(List<UUID> subCategoryIds) {
+        if (subCategoryIds == null || subCategoryIds.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách sự cố phụ không được để trống");
+        }
+        Set<UUID> uniqueSubCatIds = new HashSet<>(subCategoryIds);
+        if (uniqueSubCatIds.size() != subCategoryIds.size()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách sự cố phụ không được chứa ID trùng lặp");
+        }
+        List<SubCategory> subCategories = subCategoryRepository.findAllById(subCategoryIds);
+        if (subCategories.size() != subCategoryIds.size()) {
+            throw new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND);
+        }
+        for (SubCategory sc : subCategories) {
+            if (!sc.isActive() || sc.isDeleted()) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ '" + sc.getName() + "' đã bị vô hiệu hóa hoặc bị xóa");
+            }
+        }
+        return subCategories;
+    }
+
+    private Map<UUID, Step> validateAndFetchSteps(List<ReviewTicketRequest.StepAssignmentRequest> stepRequests) {
+        if (stepRequests == null || stepRequests.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách bước xử lý không được để trống");
+        }
+        Set<UUID> uniqueStepIds = new HashSet<>();
+        for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
+            if (!uniqueStepIds.add(stepReq.getStepId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách bước xử lý chứa stepId trùng lặp: " + stepReq.getStepId());
+            }
+            if (stepReq.getDeadline() != null && stepReq.getDeadline().isBefore(LocalDateTime.now())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Hạn chót của bước xử lý không được ở quá khứ");
+            }
+        }
+        List<Step> stepEntities = stepRepository.findAllById(uniqueStepIds);
+        if (stepEntities.size() != uniqueStepIds.size()) {
+            throw new AppException(ErrorCode.STEP_NOT_FOUND);
+        }
+        return stepEntities.stream().collect(Collectors.toMap(Step::getStepId, Function.identity()));
+    }
+
+    private Map<UUID, User> validateAndFetchAssignees(List<ReviewTicketRequest.StepAssignmentRequest> stepRequests) {
+        Set<UUID> assigneeIds = stepRequests.stream()
+                .map(ReviewTicketRequest.StepAssignmentRequest::getAssigneeId)
+                .collect(Collectors.toSet());
+        List<User> assignees = userRepository.findAllById(assigneeIds);
+        if (assignees.size() != assigneeIds.size()) {
+            throw new AppException(ErrorCode.ACCOUNT_NOT_FOUND, "Không tìm thấy một số nhân viên được phân công");
+        }
+        for (User staff : assignees) {
+            if (staff.isDeleted() || staff.getStatus() != com.cityfix.backend.model.enums.UserStatus.ACTIVE) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Nhân viên '" + staff.getFullName() + "' không còn hoạt động");
+            }
+            if (staff.getDepartment() == null) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT, "Nhân viên '" + staff.getFullName() + "' không thuộc phòng ban nào");
+            }
+        }
+        return assignees.stream().collect(Collectors.toMap(User::getUserId, Function.identity()));
+    }
+
+    private void updateTicketSubCategories(Ticket ticket, List<SubCategory> subCategories) {
+        if (ticket.getSubCategories() == null) {
+            ticket.setSubCategories(new ArrayList<>());
+        } else {
+            ticket.getSubCategories().clear();
+        }
+        for (SubCategory sc : subCategories) {
+            TicketSubCategory tsc = TicketSubCategory.builder()
+                    .ticket(ticket)
+                    .subCategory(sc)
+                    .build();
+            ticket.getSubCategories().add(tsc);
+        }
+    }
+
+    private void updateTicketSteps(Ticket ticket, List<ReviewTicketRequest.StepAssignmentRequest> stepRequests,
+                                   Map<UUID, Step> stepMap, Map<UUID, User> assigneeMap) {
+        if (ticket.getSteps() == null) {
+            ticket.setSteps(new ArrayList<>());
+        } else {
+            ticket.getSteps().clear();
+        }
+        for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
+            Step step = stepMap.get(stepReq.getStepId());
+            User assignee = assigneeMap.get(stepReq.getAssigneeId());
+            TicketStep ticketStep = TicketStep.builder()
+                    .ticket(ticket)
+                    .step(step)
+                    .assignee(assignee)
+                    .status(AssignmentStatus.OPEN)
+                    .orderIndex(stepReq.getOrderIndex())
+                    .deadline(stepReq.getDeadline())
+                    .notes(stepReq.getNotes())
+                    .build();
+            ticket.getSteps().add(ticketStep);
+        }
     }
 
     private void sendReviewSuccessNotification(Ticket ticket) {

@@ -22,12 +22,11 @@ import java.util.UUID;
 @Repository
 public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
-    @Override
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     Optional<Ticket> findById(UUID id);
 
     @Query(value = """
-        SELECT DISTINCT t.ticket_id AS ticketId,
+        SELECT t.ticket_id AS ticketId,
                t.description AS description,
                t.address AS address,
                t.status AS status,
@@ -38,11 +37,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                (SELECT ri.image_url FROM report_image ri WHERE ri.ticket_id = t.ticket_id ORDER BY ri.created_at ASC LIMIT 1) AS imageUrl,
                t.created_at AS createdAt
         FROM ticket t
-        JOIN ticket_sub_category tsc ON t.ticket_id = tsc.ticket_id
-        JOIN sub_category sc ON tsc.sub_category_id = sc.sub_category_id
-        JOIN category c ON sc.category_id = c.category_id
-        WHERE c.category_id = :categoryId
-          AND t.status IN ('INITIATED', 'OPEN', 'ASSIGNED', 'IN_PROGRESS')
+        JOIN category c ON c.category_id = :categoryId
+        WHERE t.status IN ('INITIATED', 'OPEN', 'ASSIGNED', 'IN_PROGRESS')
+          AND EXISTS (
+              SELECT 1 FROM ticket_subcategory tsc
+              JOIN sub_category sc ON tsc.sub_category_id = sc.sub_category_id
+              WHERE tsc.ticket_id = t.ticket_id AND sc.category_id = :categoryId
+          )
           AND ST_DWithin(
                 t.location::geography,
                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
