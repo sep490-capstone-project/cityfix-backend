@@ -7,5 +7,6 @@ public enum AssignmentStatus {
     TRANSFERRED,
     RESOLVED,
     COMPLETED,
-    CANCELLED
+    CANCELLED,
+    PENDING_PREVIOUS
 }

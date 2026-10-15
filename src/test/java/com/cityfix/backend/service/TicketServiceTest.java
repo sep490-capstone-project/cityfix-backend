@@ -719,6 +719,19 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("getMyReportedTickets_returnsPageOfTickets")
+    void getMyReportedTickets_returnsPageOfTickets() {
+        org.springframework.data.domain.Page<Ticket> page = new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
+        when(ticketRepository.findByUserId(eq(mockUser.getUserId()), any())).thenReturn(page);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getMyReportedTickets(org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).hasSize(1);
+        verify(ticketRepository, times(1)).findByUserId(eq(mockUser.getUserId()), any());
+    }
+
+    @Test
     @DisplayName("reviewTicket_validData_returnsUpdatedTicket")
     void reviewTicket_validData_returnsUpdatedTicket() {
         mockUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
@@ -942,6 +955,37 @@ class TicketServiceTest {
                 ticketService.getAssignedTicketsForStaff(null, org.springframework.data.domain.PageRequest.of(0, 10));
 
         assertThat(result.getContent()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("getAssignedTicketsForStaff_enforcesUnsortedPageable")
+    void getAssignedTicketsForStaff_enforcesUnsortedPageable() {
+        com.cityfix.backend.model.entity.Department dept = new com.cityfix.backend.model.entity.Department();
+        dept.setDepartmentId(UUID.randomUUID());
+        dept.setName("Phòng Giao thông");
+        mockUser.setDepartment(dept);
+
+        org.springframework.data.domain.Page<com.cityfix.backend.model.entity.Ticket> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
+
+        when(ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(any(), any(), any())).thenReturn(page);
+        when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(mockResponse);
+
+        org.mockito.ArgumentCaptor<org.springframework.data.domain.Pageable> pageableCaptor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+
+        ticketService.getAssignedTicketsForStaff(
+                null,
+                org.springframework.data.domain.PageRequest.of(0, 10, org.springframework.data.domain.Sort.by("createdAt").descending())
+        );
+
+        verify(ticketStepRepository).findDistinctTicketsByAssigneeUserIdAndStatusIn(
+                eq(mockUser.getUserId()),
+                eq(List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)),
+                pageableCaptor.capture()
+        );
+
+        assertThat(pageableCaptor.getValue().getSort().isUnsorted()).isTrue();
     }
 
     @Test

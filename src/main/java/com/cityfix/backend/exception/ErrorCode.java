@@ -181,6 +181,21 @@ public enum ErrorCode {
     INVALID_ROUTING_CONFIGURATION(
             HttpStatus.BAD_REQUEST,
             "Cấu hình định tuyến không hợp lệ"
+    ),
+
+    RATING_ALREADY_EXISTS(
+            HttpStatus.CONFLICT,
+            "Người dùng đã đánh giá vé này rồi"
+    ),
+
+    TICKET_NOT_PERMITTED_TO_RATE(
+            HttpStatus.FORBIDDEN,
+            "Chỉ người tạo vé hoặc người theo dõi vé mới có quyền đánh giá"
+    ),
+
+    TICKET_NOT_COMPLETED(
+            HttpStatus.BAD_REQUEST,
+            "Chỉ có thể đánh giá vé khi vé đã hoàn tất xử lý"
     );
 
     private final HttpStatus status;

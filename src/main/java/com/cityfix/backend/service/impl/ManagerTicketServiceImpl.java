@@ -13,6 +13,8 @@ import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.model.enums.Priority;
+import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.service.ManagerTicketService;
@@ -111,6 +113,33 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     @Transactional(readOnly = true)
     public Page<TicketResponse> getInitiatedTickets(Pageable pageable) {
         Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
+        return tickets.map(ticketMapper::toTicketResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> getDepartmentTickets(
+            UUID departmentId,
+            SeverityLevel severity,
+            Priority priority,
+            TicketStatus status,
+            Pageable pageable) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        UUID targetDeptId = departmentId;
+        if (targetDeptId == null) {
+            if (currentUser.getDepartment() == null) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+            }
+            targetDeptId = currentUser.getDepartment().getDepartmentId();
+        }
+
+        Page<Ticket> tickets = ticketRepository.findTicketsByDepartmentAndCriteria(
+                targetDeptId, severity, priority, status, pageable
+        );
         return tickets.map(ticketMapper::toTicketResponse);
     }
 

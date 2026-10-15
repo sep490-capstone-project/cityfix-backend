@@ -355,4 +355,24 @@ class TicketControllerTest {
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getData()).hasSize(1);
     }
+
+    @Test
+    @DisplayName("getMyReportedTickets_returns200WithPageData")
+    void getMyReportedTickets_returns200WithPageData() {
+        org.springframework.data.domain.Page<TicketResponse> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(mockTicketResponse));
+
+        when(ticketService.getMyReportedTickets(any())).thenReturn(page);
+
+        ResponseEntity<BaseResponse<org.springframework.data.domain.Page<TicketResponse>>> response =
+                ticketController.getMyReportedTickets(org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Lấy danh sách phản ánh thành công.");
+        assertThat(response.getBody().getData().getContent()).hasSize(1);
+
+        verify(ticketService, times(1)).getMyReportedTickets(any());
+    }
 }

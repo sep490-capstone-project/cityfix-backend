@@ -31,7 +31,9 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -454,6 +456,14 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<TicketResponse> getMyReportedTickets(Pageable pageable) {
+        User currentUser = getCurrentUser();
+        Page<Ticket> tickets = ticketRepository.findByUserId(currentUser.getUserId(), pageable);
+        return tickets.map(ticketMapper::toTicketResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
@@ -645,9 +655,13 @@ public class TicketServiceImpl implements TicketService {
                 ? List.of(status)
                 : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS);
 
+        Pageable unsortedPageable = (pageable == null || pageable.isUnpaged())
+                ? Pageable.unpaged()
+                : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
+
         Page<Ticket> ticketsPage =
                 ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(
-                        currentUser.getUserId(), targetStatuses, pageable
+                        currentUser.getUserId(), targetStatuses, unsortedPageable
                 );
 
         return ticketsPage.map(ticketMapper::toTicketResponse);

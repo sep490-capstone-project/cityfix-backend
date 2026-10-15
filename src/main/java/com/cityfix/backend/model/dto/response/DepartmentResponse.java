@@ -11,5 +11,11 @@ public record DepartmentResponse(
     String contactEmail,
     String phoneNumber,
     int officerCount,
-    Boolean isActive
-) {}
+    Boolean isActive,
+    UUID managerId,
+    String managerName
+) {
+    public DepartmentResponse(UUID departmentId, String name, DepartmentLevel level, String contactEmail, String phoneNumber, int officerCount, Boolean isActive) {
+        this(departmentId, name, level, contactEmail, phoneNumber, officerCount, isActive, null, null);
+    }
+}
