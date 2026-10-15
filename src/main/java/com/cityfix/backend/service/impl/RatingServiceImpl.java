@@ -77,7 +77,7 @@ public class RatingServiceImpl implements RatingService {
             throw new AppException(ErrorCode.TICKET_NOT_PERMITTED_TO_RATE);
         }
 
-        if (ratingRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, currentUser.getUserId())) {
+        if (ratingRepository.existsByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(ticketId, currentUser.getUserId())) {
             throw new AppException(ErrorCode.RATING_ALREADY_EXISTS);
         }
 

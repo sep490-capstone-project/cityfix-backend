@@ -66,59 +66,17 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
         // Fetch all steps for this ticket ordered by orderIndex
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
 
-        int currentOrder = completedStep.getOrderIndex() != null ? completedStep.getOrderIndex() : 0;
-
-        // Find next step in sequence that is not COMPLETED/RESOLVED/CANCELLED
-        TicketStep nextStep = steps.stream()
+        // Lọc tất cả các bước chưa kết thúc (không phải COMPLETED, RESOLVED, CANCELLED)
+        List<TicketStep> remainingSteps = steps.stream()
                 .filter(s -> !s.getId().equals(completedStep.getId()))
                 .filter(s -> s.getStatus() != AssignmentStatus.COMPLETED
                         && s.getStatus() != AssignmentStatus.RESOLVED
                         && s.getStatus() != AssignmentStatus.CANCELLED)
-                .filter(s -> s.getOrderIndex() == null || s.getOrderIndex() > currentOrder)
-                .min(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
-                .orElse(null);
+                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
 
-        // If no step with orderIndex > currentOrder found, check any remaining uncompleted step
-        if (nextStep == null) {
-            nextStep = steps.stream()
-                    .filter(s -> !s.getId().equals(completedStep.getId()))
-                    .filter(s -> s.getStatus() != AssignmentStatus.COMPLETED
-                            && s.getStatus() != AssignmentStatus.RESOLVED
-                            && s.getStatus() != AssignmentStatus.CANCELLED)
-                    .min(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
-                    .orElse(null);
-        }
-
-        if (nextStep != null) {
-            // Activate next step
-            nextStep.setStatus(AssignmentStatus.IN_PROGRESS);
-            if (nextStep.getStartedAt() == null) {
-                nextStep.setStartedAt(now);
-            }
-            nextStep.setUpdatedAt(now);
-            ticketStepRepository.save(nextStep);
-
-            // Ensure ticket is IN_PROGRESS
-            TicketStatus prevStatus = ticket.getStatus();
-            if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
-                ticket.setStatus(TicketStatus.IN_PROGRESS);
-                ticketRepository.save(ticket);
-            }
-
-            // Record history
-            User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();
-            TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                    ticket, actor, ActionType.WORK_STARTED, prevStatus, TicketStatus.IN_PROGRESS,
-                    "Bước '" + (completedStep.getStep() != null ? completedStep.getStep().getStepName() : completedStep.getId())
-                            + "' hoàn thành. Tự động chuyển bước '"
-                            + (nextStep.getStep() != null ? nextStep.getStep().getStepName() : nextStep.getId())
-                            + "' sang Đang xử lý."
-            );
-            ticketHistoryRepository.save(history);
-
-            log.info("Ticket {} - Step {} completed. Activated next step {}.", ticketId, completedStep.getId(), nextStep.getId());
-        } else {
-            // All steps completed -> resolve ticket
+        if (remainingSteps.isEmpty()) {
+            // Tất cả các bước đã hoàn tất -> chuyển trạng thái vé sang RESOLVED
             TicketStatus prevStatus = ticket.getStatus();
             ticket.setStatus(TicketStatus.RESOLVED);
             ticketRepository.save(ticket);
@@ -133,6 +91,53 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             sendResolvedNotification(ticket);
 
             log.info("Ticket {} - All steps completed. Ticket marked as RESOLVED.", ticketId);
+        } else {
+            // Có ít nhất một bước chưa hoàn tất, chọn bước kế tiếp có orderIndex nhỏ nhất
+            TicketStep candidateNextStep = remainingSteps.get(0);
+            int candidateOrder = candidateNextStep.getOrderIndex() != null ? candidateNextStep.getOrderIndex() : 0;
+
+            // Tiền điều kiện nghiêm ngặt: Kiểm tra xem TẤT CẢ các bước có orderIndex < candidateOrder đều đã kết thúc
+            boolean allPriorStepsFinished = steps.stream()
+                    .filter(s -> !s.getId().equals(candidateNextStep.getId()))
+                    .filter(s -> s.getOrderIndex() != null && s.getOrderIndex() < candidateOrder)
+                    .allMatch(s -> s.getStatus() == AssignmentStatus.COMPLETED
+                            || s.getStatus() == AssignmentStatus.RESOLVED
+                            || s.getStatus() == AssignmentStatus.CANCELLED);
+
+            if (allPriorStepsFinished) {
+                // Đủ điều kiện kích hoạt: chỉ chuyển sang IN_PROGRESS nếu chưa ở trạng thái này
+                if (candidateNextStep.getStatus() != AssignmentStatus.IN_PROGRESS) {
+                    candidateNextStep.setStatus(AssignmentStatus.IN_PROGRESS);
+                    if (candidateNextStep.getStartedAt() == null) {
+                        candidateNextStep.setStartedAt(now);
+                    }
+                    candidateNextStep.setUpdatedAt(now);
+                    ticketStepRepository.save(candidateNextStep);
+
+                    // Ensure ticket is IN_PROGRESS
+                    TicketStatus prevStatus = ticket.getStatus();
+                    if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
+                        ticket.setStatus(TicketStatus.IN_PROGRESS);
+                        ticketRepository.save(ticket);
+                    }
+
+                    // Record history
+                    User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();
+                    TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                            ticket, actor, ActionType.WORK_STARTED, prevStatus, TicketStatus.IN_PROGRESS,
+                            "Bước '" + (completedStep.getStep() != null ? completedStep.getStep().getStepName() : completedStep.getId())
+                                    + "' hoàn thành. Tự động chuyển bước '"
+                                    + (candidateNextStep.getStep() != null ? candidateNextStep.getStep().getStepName() : candidateNextStep.getId())
+                                    + "' sang Đang xử lý."
+                    );
+                    ticketHistoryRepository.save(history);
+
+                    log.info("Ticket {} - Step {} completed. Activated next step {}.", ticketId, completedStep.getId(), candidateNextStep.getId());
+                }
+            } else {
+                log.warn("Ticket {} - Step {} completed, but cannot activate next step {} because prior steps are not completed yet.",
+                        ticketId, completedStep.getId(), candidateNextStep.getId());
+            }
         }
     }
 

@@ -11,9 +11,9 @@ import java.util.UUID;
 @Repository
 public interface RatingRepository extends JpaRepository<Rating, UUID> {
 
-    boolean existsByTicket_TicketIdAndUser_UserId(UUID ticketId, UUID userId);
+    boolean existsByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(UUID ticketId, UUID userId);
 
-    Optional<Rating> findByTicket_TicketIdAndUser_UserId(UUID ticketId, UUID userId);
+    Optional<Rating> findByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(UUID ticketId, UUID userId);
 
-    List<Rating> findByTicket_TicketId(UUID ticketId);
+    List<Rating> findByTicket_TicketIdAndIsDeletedFalse(UUID ticketId);
 }

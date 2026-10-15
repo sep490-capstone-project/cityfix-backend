@@ -45,7 +45,7 @@ public class ManagerTicketController {
     }
 
     @GetMapping("/department")
-    @PreAuthorize("hasRole('MANAGER')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     @Operation(summary = "Lấy danh sách vé theo phòng ban và bộ lọc", description = "Manager lọc vé theo phòng ban phụ trách (tự detect nếu null), mức độ nguy hiểm (severity), mức độ ưu tiên (priority) và trạng thái.")
     public ResponseEntity<BaseResponse<Page<TicketResponse>>> getDepartmentTickets(
             @RequestParam(value = "departmentId", required = false) UUID departmentId,

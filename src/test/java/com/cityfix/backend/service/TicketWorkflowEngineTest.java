@@ -180,4 +180,60 @@ class TicketWorkflowEngineTest {
         assertThat(mockStep3.getStatus()).isEqualTo(AssignmentStatus.IN_PROGRESS);
         verify(ticketStepRepository, atLeastOnce()).save(mockStep3);
     }
+
+    @Test
+    @DisplayName("step2CompletedWhileStep1InProgress_doesNotActivateStep3")
+    void step2CompletedWhileStep1InProgress_doesNotActivateStep3() {
+        mockStep1.setStatus(AssignmentStatus.IN_PROGRESS);
+        mockStep2.setStatus(AssignmentStatus.COMPLETED);
+
+        TicketStep mockStep3 = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(mockTicket)
+                .orderIndex(3)
+                .status(AssignmentStatus.PENDING_PREVIOUS)
+                .build();
+
+        when(ticketStepRepository.findById(mockStep2.getId())).thenReturn(Optional.of(mockStep2));
+        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(mockTicket.getTicketId()))
+                .thenReturn(List.of(mockStep1, mockStep2, mockStep3));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        workflowEngine.handleStepCompletion(mockStep2.getId());
+
+        // Step 3 MUST NOT be activated because Step 1 (orderIndex 1 < 3) is still IN_PROGRESS
+        assertThat(mockStep3.getStatus()).isEqualTo(AssignmentStatus.PENDING_PREVIOUS);
+        verify(ticketStepRepository, never()).save(mockStep3);
+        assertThat(mockTicket.getStatus()).isNotEqualTo(TicketStatus.RESOLVED);
+    }
+
+    @Test
+    @DisplayName("step1CompletedAfterStep2_activatesStep3")
+    void step1CompletedAfterStep2_activatesStep3() {
+        // Step 2 is already completed earlier
+        mockStep2.setStatus(AssignmentStatus.COMPLETED);
+
+        TicketStep mockStep3 = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(mockTicket)
+                .orderIndex(3)
+                .status(AssignmentStatus.PENDING_PREVIOUS)
+                .build();
+
+        // Now Step 1 completes
+        when(ticketStepRepository.findById(mockStep1.getId())).thenReturn(Optional.of(mockStep1));
+        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(mockTicket.getTicketId()))
+                .thenReturn(List.of(mockStep1, mockStep2, mockStep3));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TicketHistory());
+
+        workflowEngine.handleStepCompletion(mockStep1.getId());
+
+        // Now both step 1 and step 2 are completed -> Step 3 must be activated
+        assertThat(mockStep3.getStatus()).isEqualTo(AssignmentStatus.IN_PROGRESS);
+        verify(ticketStepRepository, atLeastOnce()).save(mockStep3);
+    }
 }

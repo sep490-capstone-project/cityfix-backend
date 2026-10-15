@@ -1,9 +1,12 @@
 package com.cityfix.backend.mapper;
 
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Role;
 import com.cityfix.backend.model.entity.Ticket;
+import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,9 +37,6 @@ class TicketMapperTest {
 
     @Mock
     private SubCategoryMapper subCategoryMapper;
-
-    @Mock
-    private com.cityfix.backend.repository.RoutingRuleRepository routingRuleRepository;
 
     @InjectMocks
     private TicketMapperImpl ticketMapper;
@@ -157,7 +157,7 @@ class TicketMapperTest {
     @Test
     @DisplayName("toTicketResponse_withActiveStep_mapsDepartmentFromStep")
     void toTicketResponse_withActiveStep_mapsDepartmentFromStep() {
-        com.cityfix.backend.model.entity.Department department = com.cityfix.backend.model.entity.Department.builder()
+        Department department = Department.builder()
                 .departmentId(UUID.randomUUID())
                 .name("Phòng Quản lý Đô thị")
                 .build();
@@ -167,10 +167,10 @@ class TicketMapperTest {
                 .department(department)
                 .build();
 
-        com.cityfix.backend.model.entity.TicketStep step = com.cityfix.backend.model.entity.TicketStep.builder()
+        TicketStep step = TicketStep.builder()
                 .id(UUID.randomUUID())
                 .assignee(staff)
-                .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                .status(AssignmentStatus.IN_PROGRESS)
                 .isDeleted(false)
                 .orderIndex(1)
                 .build();
@@ -185,55 +185,9 @@ class TicketMapperTest {
     }
 
     @Test
-    @DisplayName("toTicketResponse_noSteps_mapsDepartmentFromRoutingRule")
-    void toTicketResponse_noSteps_mapsDepartmentFromRoutingRule() {
-        UUID categoryId = UUID.randomUUID();
-        com.cityfix.backend.model.entity.Category category = com.cityfix.backend.model.entity.Category.builder()
-                .categoryId(categoryId)
-                .name("Giao thông")
-                .build();
-
-        ticket.setCategory(category);
-        ticket.setAddress("Số 10 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP Hồ Chí Minh");
+    @DisplayName("toTicketResponse_noSteps_departmentIsNullInPureMapper")
+    void toTicketResponse_noSteps_departmentIsNullInPureMapper() {
         ticket.setSteps(Collections.emptyList());
-
-        com.cityfix.backend.model.entity.Department department = com.cityfix.backend.model.entity.Department.builder()
-                .departmentId(UUID.randomUUID())
-                .name("Sở Giao thông Vận tải")
-                .build();
-
-        com.cityfix.backend.model.entity.RoutingRule rule = com.cityfix.backend.model.entity.RoutingRule.builder()
-                .ruleId(UUID.randomUUID())
-                .category(category)
-                .department(department)
-                .province("TP Hồ Chí Minh")
-                .ward("Bến Nghé")
-                .build();
-
-        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(categoryId))
-                .thenReturn(List.of(rule));
-
-        TicketResponse response = ticketMapper.toTicketResponse(ticket);
-
-        assertThat(response).isNotNull();
-        assertThat(response.getDepartmentId()).isEqualTo(department.getDepartmentId());
-        assertThat(response.getDepartmentName()).isEqualTo("Sở Giao thông Vận tải");
-    }
-
-    @Test
-    @DisplayName("toTicketResponse_noStepsAndNoRule_departmentIsNull")
-    void toTicketResponse_noStepsAndNoRule_departmentIsNull() {
-        UUID categoryId = UUID.randomUUID();
-        com.cityfix.backend.model.entity.Category category = com.cityfix.backend.model.entity.Category.builder()
-                .categoryId(categoryId)
-                .name("Môi trường")
-                .build();
-
-        ticket.setCategory(category);
-        ticket.setSteps(Collections.emptyList());
-
-        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(categoryId))
-                .thenReturn(Collections.emptyList());
 
         TicketResponse response = ticketMapper.toTicketResponse(ticket);
 

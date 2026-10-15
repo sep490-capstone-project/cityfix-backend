@@ -109,11 +109,10 @@ class RatingServiceImplTest {
     @Test
     @DisplayName("createRating_byCreator_success")
     void createRating_byCreator_success() {
-        // Current user is the ticket creator
         ticket.setUser(currentUser);
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(ratingRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, currentUser.getUserId())).thenReturn(false);
+        when(ratingRepository.existsByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(ticketId, currentUser.getUserId())).thenReturn(false);
 
         Rating savedRating = Rating.builder()
                 .id(UUID.randomUUID())
@@ -150,12 +149,11 @@ class RatingServiceImplTest {
     @Test
     @DisplayName("createRating_byFollower_success")
     void createRating_byFollower_success() {
-        // Current user is NOT the creator, but is a follower/voter
         ticket.setUser(creatorUser);
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, currentUser.getUserId())).thenReturn(true);
-        when(ratingRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, currentUser.getUserId())).thenReturn(false);
+        when(ratingRepository.existsByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(ticketId, currentUser.getUserId())).thenReturn(false);
 
         Rating savedRating = Rating.builder()
                 .id(UUID.randomUUID())
@@ -192,7 +190,7 @@ class RatingServiceImplTest {
         request.setIsAnonymous(true);
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(ratingRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, currentUser.getUserId())).thenReturn(false);
+        when(ratingRepository.existsByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(ticketId, currentUser.getUserId())).thenReturn(false);
 
         Rating savedRating = Rating.builder()
                 .id(UUID.randomUUID())
@@ -221,6 +219,45 @@ class RatingServiceImplTest {
         assertThat(response.getUserId()).isNull();
         assertThat(response.getUserName()).isNull();
         assertThat(response.getIsAnonymous()).isTrue();
+    }
+
+    @Test
+    @DisplayName("createRating_whenPreviousRatingSoftDeleted_allowsNewRating")
+    void createRating_whenPreviousRatingSoftDeleted_allowsNewRating() {
+        ticket.setUser(currentUser);
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        // Rating cũ đã bị soft-delete (isDeleted = true), nên method trả về false
+        when(ratingRepository.existsByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(ticketId, currentUser.getUserId())).thenReturn(false);
+
+        Rating newRating = Rating.builder()
+                .id(UUID.randomUUID())
+                .ticket(ticket)
+                .user(currentUser)
+                .rate(5)
+                .isAnonymous(false)
+                .feedback("Đánh giá lại sau khi khiếu nại")
+                .build();
+
+        when(ratingRepository.save(any(Rating.class))).thenReturn(newRating);
+
+        RatingResponse expectedResponse = RatingResponse.builder()
+                .id(newRating.getId())
+                .ticketId(ticketId)
+                .userId(currentUser.getUserId())
+                .userName(currentUser.getFullName())
+                .rate(5)
+                .isAnonymous(false)
+                .feedback("Đánh giá lại sau khi khiếu nại")
+                .build();
+
+        when(ratingMapper.toResponse(newRating)).thenReturn(expectedResponse);
+
+        RatingResponse response = ratingService.createRating(ticketId, request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getRate()).isEqualTo(5);
+        verify(ratingRepository, times(1)).save(any(Rating.class));
     }
 
     @Test
@@ -254,7 +291,6 @@ class RatingServiceImplTest {
     @Test
     @DisplayName("createRating_notPermitted_throwsForbidden")
     void createRating_notPermitted_throwsForbidden() {
-        // Not creator, and not follower
         ticket.setUser(creatorUser);
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
@@ -274,7 +310,7 @@ class RatingServiceImplTest {
         ticket.setUser(currentUser);
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(ratingRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, currentUser.getUserId())).thenReturn(true);
+        when(ratingRepository.existsByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(ticketId, currentUser.getUserId())).thenReturn(true);
 
         assertThatThrownBy(() -> ratingService.createRating(ticketId, request))
                 .isInstanceOf(AppException.class)

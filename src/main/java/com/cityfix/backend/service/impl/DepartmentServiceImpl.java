@@ -64,6 +64,8 @@ public class DepartmentServiceImpl implements DepartmentService {
             User manager = userRepository.findById(request.managerId())
                     .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
             department.setManager(manager);
+        } else {
+            department.setManager(null);
         }
 
         if (request.isActive() != null) {
