@@ -4,6 +4,7 @@ import com.cityfix.backend.model.dto.request.CreateTicketRequest;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -16,10 +17,11 @@ public interface TicketService {
     List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID categoryId);
     
     org.springframework.data.domain.Page<TicketResponse> getInitiatedTickets(org.springframework.data.domain.Pageable pageable);
+    org.springframework.data.domain.Page<TicketResponse> getMyReportedTickets(org.springframework.data.domain.Pageable pageable);
     List<com.cityfix.backend.model.dto.response.DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId);
     TicketResponse reviewTicket(UUID ticketId, com.cityfix.backend.model.dto.request.ReviewTicketRequest request);
     TicketResponse rerouteTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RerouteTicketRequest request);
-    org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(com.cityfix.backend.model.enums.AssignmentStatus status, org.springframework.data.domain.Pageable pageable);
+    org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(AssignmentStatus status, org.springframework.data.domain.Pageable pageable);
     
     TicketResponse assignTicket(UUID ticketId, com.cityfix.backend.model.dto.request.AssignTicketRequest request);
 

@@ -2,14 +2,19 @@ package com.cityfix.backend.mapper;
 
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Ticket;
+import com.cityfix.backend.model.entity.TicketStep;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 @Mapper(componentModel = "spring", uses = {TicketStepMapper.class, SubCategoryMapper.class})
 public interface TicketMapper {
@@ -29,7 +34,8 @@ public interface TicketMapper {
     @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
     @Mapping(target = "images", expression = "java(ticket.getImages() != null ? ticket.getImages().stream().map(com.cityfix.backend.model.entity.ReportImage::getImageUrl).toList() : java.util.Collections.emptyList())")
     @Mapping(target = "subCategories", source = "subCategories")
-    // @Mapping(target = "steps", source = "steps")
+    @Mapping(target = "departmentId", ignore = true)
+    @Mapping(target = "departmentName", ignore = true)
     TicketResponse toTicketResponse(Ticket ticket);
 
     @AfterMapping
@@ -64,6 +70,55 @@ public interface TicketMapper {
         }
     }
 
+    @AfterMapping
+    default void mapDepartmentFromSteps(Ticket ticket, @MappingTarget TicketResponse response) {
+        if (ticket == null || response == null) return;
+        if (ticket.getSteps() != null && !ticket.getSteps().isEmpty()) {
+            List<TicketStep> validSteps = ticket.getSteps().stream()
+                    .filter(s -> !s.isDeleted() && s.getAssignee() != null && s.getAssignee().getDepartment() != null)
+                    .toList();
+
+            if (!validSteps.isEmpty()) {
+                // Ưu tiên IN_PROGRESS
+                Optional<TicketStep> inProgress = validSteps.stream()
+                        .filter(s -> s.getStatus() == AssignmentStatus.IN_PROGRESS)
+                        .findFirst();
+                if (inProgress.isPresent()) {
+                    Department dept = inProgress.get().getAssignee().getDepartment();
+                    response.setDepartmentId(dept.getDepartmentId());
+                    response.setDepartmentName(dept.getName());
+                    return;
+                }
+
+                // Ưu tiên ASSIGNED
+                Optional<TicketStep> assigned = validSteps.stream()
+                        .filter(s -> s.getStatus() == AssignmentStatus.ASSIGNED)
+                        .findFirst();
+                if (assigned.isPresent()) {
+                    Department dept = assigned.get().getAssignee().getDepartment();
+                    response.setDepartmentId(dept.getDepartmentId());
+                    response.setDepartmentName(dept.getName());
+                    return;
+                }
+
+                // Ưu tiên step chưa bị CANCELLED theo orderIndex nhỏ nhất
+                Optional<TicketStep> notCancelled = validSteps.stream()
+                        .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
+                        .min(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())));
+                if (notCancelled.isPresent()) {
+                    Department dept = notCancelled.get().getAssignee().getDepartment();
+                    response.setDepartmentId(dept.getDepartmentId());
+                    response.setDepartmentName(dept.getName());
+                    return;
+                }
+
+                Department dept = validSteps.get(0).getAssignee().getDepartment();
+                response.setDepartmentId(dept.getDepartmentId());
+                response.setDepartmentName(dept.getName());
+            }
+        }
+    }
+
     @Mapping(target = "ticketId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
@@ -80,6 +135,7 @@ public interface TicketMapper {
     @Mapping(target = "address", source = "request.address")
     @Mapping(target = "subCategories", ignore = true)
     @Mapping(target = "steps", ignore = true)
+    @Mapping(target = "ratings", ignore = true)
     @Mapping(target = "reviewNote", ignore = true)
     @Mapping(target = "isAnonymous", expression = "java(request.getIsAnonymous() != null ? request.getIsAnonymous() : false)")
     Ticket toTicket(

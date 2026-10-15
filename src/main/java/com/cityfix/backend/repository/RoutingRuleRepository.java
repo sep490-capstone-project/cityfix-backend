@@ -29,4 +29,6 @@ public interface RoutingRuleRepository extends JpaRepository<RoutingRule, UUID>,
     Page<RoutingRule> findByDepartmentDepartmentId(UUID departmentId, Pageable pageable);
     
     List<RoutingRule> findByCategoryCategoryIdAndIsDeletedFalse(UUID categoryId);
+
+    List<RoutingRule> findByCategoryCategoryIdInAndIsDeletedFalse(java.util.Collection<UUID> categoryIds);
 }

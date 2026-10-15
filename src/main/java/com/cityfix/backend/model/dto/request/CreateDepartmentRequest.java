@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+import java.util.UUID;
+
 public record CreateDepartmentRequest(
     @NotBlank(message = "Tên phòng ban không được để trống")
     String name,
@@ -15,5 +17,11 @@ public record CreateDepartmentRequest(
     @Email(message = "Email liên hệ không hợp lệ")
     String contactEmail,
 
-    String phoneNumber
-) {}
+    String phoneNumber,
+
+    UUID managerId
+) {
+    public CreateDepartmentRequest(String name, DepartmentLevel level, String contactEmail, String phoneNumber) {
+        this(name, level, contactEmail, phoneNumber, null);
+    }
+}

@@ -14,6 +14,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import com.cityfix.backend.model.enums.Priority;
+import com.cityfix.backend.model.enums.SeverityLevel;
+import com.cityfix.backend.model.enums.TicketStatus;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -38,6 +42,19 @@ public class ManagerTicketController {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<TicketResponse> response = managerTicketService.getInitiatedTickets(pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé chờ duyệt thành công", response));
+    }
+
+    @GetMapping("/department")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @Operation(summary = "Lấy danh sách vé theo phòng ban và bộ lọc", description = "Manager lọc vé theo phòng ban phụ trách (tự detect nếu null), mức độ nguy hiểm (severity), mức độ ưu tiên (priority) và trạng thái.")
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getDepartmentTickets(
+            @RequestParam(value = "departmentId", required = false) UUID departmentId,
+            @RequestParam(value = "severity", required = false) SeverityLevel severity,
+            @RequestParam(value = "priority", required = false) Priority priority,
+            @RequestParam(value = "status", required = false) TicketStatus status,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        Page<TicketResponse> response = managerTicketService.getDepartmentTickets(departmentId, severity, priority, status, pageable);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé phòng ban thành công", response));
     }
 
     @GetMapping("/{id}/suggested-departments")

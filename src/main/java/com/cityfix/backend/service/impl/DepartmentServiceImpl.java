@@ -7,7 +7,9 @@ import com.cityfix.backend.model.dto.request.CreateDepartmentRequest;
 import com.cityfix.backend.model.dto.request.UpdateDepartmentRequest;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.entity.Department;
+import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.repository.DepartmentRepository;
+import com.cityfix.backend.repository.UserRepository;
 import com.cityfix.backend.service.DepartmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class DepartmentServiceImpl implements DepartmentService {
 
     private final DepartmentRepository departmentRepository;
+    private final UserRepository userRepository;
     private final DepartmentMapper departmentMapper;
 
     @Override
@@ -33,6 +36,11 @@ public class DepartmentServiceImpl implements DepartmentService {
         }
 
         Department department = departmentMapper.toEntity(request);
+        if (request.managerId() != null) {
+            User manager = userRepository.findById(request.managerId())
+                    .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+            department.setManager(manager);
+        }
         Department savedDepartment = departmentRepository.save(department);
 
         return departmentMapper.toResponse(savedDepartment);
@@ -51,6 +59,14 @@ public class DepartmentServiceImpl implements DepartmentService {
         }
 
         departmentMapper.updateEntityFromRequest(request, department);
+
+        if (request.managerId() != null) {
+            User manager = userRepository.findById(request.managerId())
+                    .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+            department.setManager(manager);
+        } else {
+            department.setManager(null);
+        }
 
         if (request.isActive() != null) {
             if (Boolean.FALSE.equals(request.isActive())) {

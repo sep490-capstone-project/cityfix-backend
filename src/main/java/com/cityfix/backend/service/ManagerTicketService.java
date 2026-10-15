@@ -14,6 +14,14 @@ public interface ManagerTicketService {
 
     Page<TicketResponse> getInitiatedTickets(Pageable pageable);
 
+    Page<TicketResponse> getDepartmentTickets(
+            UUID departmentId,
+            com.cityfix.backend.model.enums.SeverityLevel severity,
+            com.cityfix.backend.model.enums.Priority priority,
+            com.cityfix.backend.model.enums.TicketStatus status,
+            Pageable pageable
+    );
+
     List<DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId);
 
     TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request);

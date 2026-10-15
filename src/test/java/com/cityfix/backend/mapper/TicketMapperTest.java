@@ -1,9 +1,12 @@
 package com.cityfix.backend.mapper;
 
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Role;
 import com.cityfix.backend.model.entity.Ticket;
+import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -149,5 +152,47 @@ class TicketMapperTest {
         assertThat(response.getCreatorFullName()).isEqualTo("Nguyen Van A");
         assertThat(response.getCreatorPhoneNumber()).isEqualTo("0987654321");
         assertThat(response.getIsAnonymous()).isFalse();
+    }
+
+    @Test
+    @DisplayName("toTicketResponse_withActiveStep_mapsDepartmentFromStep")
+    void toTicketResponse_withActiveStep_mapsDepartmentFromStep() {
+        Department department = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng Quản lý Đô thị")
+                .build();
+
+        User staff = User.builder()
+                .userId(UUID.randomUUID())
+                .department(department)
+                .build();
+
+        TicketStep step = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .assignee(staff)
+                .status(AssignmentStatus.IN_PROGRESS)
+                .isDeleted(false)
+                .orderIndex(1)
+                .build();
+
+        ticket.setSteps(List.of(step));
+
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getDepartmentId()).isEqualTo(department.getDepartmentId());
+        assertThat(response.getDepartmentName()).isEqualTo("Phòng Quản lý Đô thị");
+    }
+
+    @Test
+    @DisplayName("toTicketResponse_noSteps_departmentIsNullInPureMapper")
+    void toTicketResponse_noSteps_departmentIsNullInPureMapper() {
+        ticket.setSteps(Collections.emptyList());
+
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getDepartmentId()).isNull();
+        assertThat(response.getDepartmentName()).isNull();
     }
 }

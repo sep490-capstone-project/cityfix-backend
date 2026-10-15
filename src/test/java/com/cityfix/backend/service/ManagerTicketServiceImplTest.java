@@ -8,6 +8,11 @@ import com.cityfix.backend.mapper.TicketStepMapper;
 import com.cityfix.backend.model.dto.request.UpdateTicketDurationRequest;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.*;
+import com.cityfix.backend.model.enums.Priority;
+import com.cityfix.backend.model.enums.SeverityLevel;
+import com.cityfix.backend.model.enums.TicketStatus;
+import com.cityfix.backend.repository.DepartmentRepository;
+import com.cityfix.backend.repository.RoutingRuleRepository;
 import com.cityfix.backend.repository.TicketHistoryRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
@@ -20,6 +25,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -53,6 +62,10 @@ class ManagerTicketServiceImplTest {
     private TicketHistoryMapper ticketHistoryMapper;
     @Mock
     private TicketService ticketService;
+    @Mock
+    private DepartmentRepository departmentRepository;
+    @Mock
+    private RoutingRuleRepository routingRuleRepository;
     @Mock
     private SecurityContext securityContext;
 
@@ -195,5 +208,151 @@ class ManagerTicketServiceImplTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asManager_withExplicitDepartment_success")
+    void getDepartmentTickets_asManager_withExplicitDepartment_success() {
+        UUID deptId = UUID.randomUUID();
+        Department dept = Department.builder().departmentId(deptId).name("Test Dept").build();
+        managerUser.setDepartment(dept);
+        mockCurrentUser(managerUser);
+
+        Pageable pageable = PageRequest.of(0, 10);
+        Ticket t = new Ticket();
+        t.setTicketId(UUID.randomUUID());
+        Page<Ticket> ticketPage = new PageImpl<>(List.of(t));
+
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(deptId, SeverityLevel.HIGH, Priority.HIGH, TicketStatus.IN_PROGRESS, pageable))
+                .thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(t)).thenReturn(TicketResponse.builder().id(t.getTicketId()).build());
+        when(departmentRepository.findById(deptId)).thenReturn(Optional.of(dept));
+
+        Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
+                deptId, SeverityLevel.HIGH, Priority.HIGH, TicketStatus.IN_PROGRESS, pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getId()).isEqualTo(t.getTicketId());
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asManager_withNoExplicitDepartment_usesManagerDepartment")
+    void getDepartmentTickets_asManager_withNoExplicitDepartment_usesManagerDepartment() {
+        UUID deptId = UUID.randomUUID();
+        Department dept = Department.builder().departmentId(deptId).name("Test Dept").build();
+        managerUser.setDepartment(dept);
+        mockCurrentUser(managerUser);
+
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Ticket> emptyPage = new PageImpl<>(Collections.emptyList());
+
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(deptId, null, null, null, pageable))
+                .thenReturn(emptyPage);
+
+        Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
+                null, null, null, null, pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).isEmpty();
+        verify(ticketRepository).findTicketsByDepartmentAndCriteria(deptId, null, null, null, pageable);
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asManager_noDepartmentAndNoExplicitParam_throwsUserNotInDepartment")
+    void getDepartmentTickets_asManager_noDepartmentAndNoExplicitParam_throwsUserNotInDepartment() {
+        managerUser.setDepartment(null);
+        mockCurrentUser(managerUser);
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(null, null, null, null, pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asNonManager_throwsForbidden")
+    void getDepartmentTickets_asNonManager_throwsForbidden() {
+        mockCurrentUser(staffUser);
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(UUID.randomUUID(), null, null, null, pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asManager_passingOtherDepartment_throwsForbidden")
+    void getDepartmentTickets_asManager_passingOtherDepartment_throwsForbidden() {
+        UUID myDeptId = UUID.randomUUID();
+        UUID otherDeptId = UUID.randomUUID();
+
+        Department myDept = new Department();
+        myDept.setDepartmentId(myDeptId);
+        managerUser.setDepartment(myDept);
+        mockCurrentUser(managerUser);
+
+        Pageable pageable = PageRequest.of(0, 10);
+
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(otherDeptId, null, null, null, pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asManager_passingOwnDepartment_success")
+    void getDepartmentTickets_asManager_passingOwnDepartment_success() {
+        UUID myDeptId = UUID.randomUUID();
+        Department myDept = new Department();
+        myDept.setDepartmentId(myDeptId);
+        myDept.setName("Phòng QLĐT");
+        managerUser.setDepartment(myDept);
+        mockCurrentUser(managerUser);
+
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Ticket> emptyPage = new PageImpl<>(Collections.emptyList(), pageable, 0);
+
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(myDeptId, null, null, null, pageable))
+                .thenReturn(emptyPage);
+        when(departmentRepository.findById(myDeptId)).thenReturn(Optional.of(myDept));
+
+        Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
+                myDeptId, null, null, null, pageable);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository).findTicketsByDepartmentAndCriteria(myDeptId, null, null, null, pageable);
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asAdmin_passingAnyDepartment_success")
+    void getDepartmentTickets_asAdmin_passingAnyDepartment_success() {
+        User adminUser = new User();
+        adminUser.setUserId(UUID.randomUUID());
+        adminUser.setEmail("admin@cityfix.com");
+        adminUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
+        mockCurrentUser(adminUser);
+
+        UUID anyDeptId = UUID.randomUUID();
+        Department anyDept = new Department();
+        anyDept.setDepartmentId(anyDeptId);
+        anyDept.setName("Sở GTVT");
+
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Ticket> emptyPage = new PageImpl<>(Collections.emptyList(), pageable, 0);
+
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(anyDeptId, null, null, null, pageable))
+                .thenReturn(emptyPage);
+        when(departmentRepository.findById(anyDeptId)).thenReturn(Optional.of(anyDept));
+
+        Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
+                anyDeptId, null, null, null, pageable);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository).findTicketsByDepartmentAndCriteria(anyDeptId, null, null, null, pageable);
     }
 }

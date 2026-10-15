@@ -31,4 +31,6 @@ public class TicketResponse {
     private LocalDateTime createdAt;
     // private java.util.List<TicketStepResponse> steps;
     private Integer duration;
+    private UUID departmentId;
+    private String departmentName;
 }

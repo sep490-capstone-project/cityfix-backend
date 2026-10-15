@@ -5,6 +5,7 @@ import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import org.locationtech.jts.geom.Point;
 
 import java.time.LocalDateTime;
@@ -32,17 +33,25 @@ public class Ticket {
     @JoinColumn(name = "category_id")
     private Category category;
 
+    @BatchSize(size = 20)
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<TicketSubCategory> subCategories = new java.util.ArrayList<>();
 
+    @BatchSize(size = 20)
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<TicketStep> steps = new java.util.ArrayList<>();
 
+    @BatchSize(size = 20)
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<ReportImage> images = new java.util.ArrayList<>();
+
+    @BatchSize(size = 20)
+    @Builder.Default
+    @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<Rating> ratings = new java.util.ArrayList<>();
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;

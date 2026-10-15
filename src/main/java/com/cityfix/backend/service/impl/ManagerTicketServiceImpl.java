@@ -13,6 +13,8 @@ import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.model.enums.Priority;
+import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.service.ManagerTicketService;
@@ -69,6 +71,10 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         return user != null && user.getRole() != null && "MANAGER".equalsIgnoreCase(user.getRole().getRoleName());
     }
 
+    private boolean isAdmin(User user) {
+        return user != null && user.getRole() != null && "ADMIN".equalsIgnoreCase(user.getRole().getRoleName());
+    }
+
     private TicketStep createOrUpdateTicketStep(
             Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex) {
         TicketStep existingStep = ticketStepRepository
@@ -111,7 +117,120 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     @Transactional(readOnly = true)
     public Page<TicketResponse> getInitiatedTickets(Pageable pageable) {
         Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
-        return tickets.map(ticketMapper::toTicketResponse);
+        Page<TicketResponse> responses = tickets.map(ticketMapper::toTicketResponse);
+        enrichInitiatedTicketsDepartment(tickets.getContent(), responses.getContent());
+        return responses;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> getDepartmentTickets(
+            UUID departmentId,
+            SeverityLevel severity,
+            Priority priority,
+            TicketStatus status,
+            Pageable pageable) {
+        User currentUser = getCurrentUser();
+        boolean isMgr = isManager(currentUser);
+        boolean isAdm = isAdmin(currentUser);
+
+        if (!isMgr && !isAdm) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        UUID targetDeptId;
+        if (isMgr) {
+            if (currentUser.getDepartment() == null || currentUser.getDepartment().getDepartmentId() == null) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+            }
+            UUID managerDeptId = currentUser.getDepartment().getDepartmentId();
+            if (departmentId != null && !departmentId.equals(managerDeptId)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            targetDeptId = managerDeptId;
+        } else {
+            // ADMIN
+            if (departmentId != null) {
+                targetDeptId = departmentId;
+            } else if (currentUser.getDepartment() != null) {
+                targetDeptId = currentUser.getDepartment().getDepartmentId();
+            } else {
+                throw new AppException(ErrorCode.INVALID_REQUEST);
+            }
+        }
+
+        Page<Ticket> tickets = ticketRepository.findTicketsByDepartmentAndCriteria(
+                targetDeptId, severity, priority, status, pageable
+        );
+        Page<TicketResponse> responses = tickets.map(ticketMapper::toTicketResponse);
+
+        Department targetDept = departmentRepository.findById(targetDeptId).orElse(null);
+        String targetDeptName = targetDept != null ? targetDept.getName() : (currentUser.getDepartment() != null ? currentUser.getDepartment().getName() : null);
+
+        responses.forEach(res -> {
+            if (res.getDepartmentId() == null) {
+                res.setDepartmentId(targetDeptId);
+                res.setDepartmentName(targetDeptName);
+            }
+        });
+
+        return responses;
+    }
+
+    private void enrichInitiatedTicketsDepartment(List<Ticket> tickets, List<TicketResponse> responses) {
+        if (tickets == null || responses == null || tickets.isEmpty() || responses.isEmpty()) {
+            return;
+        }
+
+        Set<UUID> categoryIdsToFetch = new HashSet<>();
+        for (int i = 0; i < tickets.size(); i++) {
+            Ticket t = tickets.get(i);
+            TicketResponse res = responses.get(i);
+            if (res.getDepartmentId() == null && t.getCategory() != null && t.getCategory().getCategoryId() != null) {
+                categoryIdsToFetch.add(t.getCategory().getCategoryId());
+            }
+        }
+
+        if (categoryIdsToFetch.isEmpty()) {
+            return;
+        }
+
+        List<RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdInAndIsDeletedFalse(categoryIdsToFetch);
+        if (rules == null || rules.isEmpty()) {
+            return;
+        }
+
+        Map<UUID, List<RoutingRule>> rulesByCategory = rules.stream()
+                .filter(r -> r.getCategory() != null && r.getCategory().getCategoryId() != null)
+                .collect(Collectors.groupingBy(r -> r.getCategory().getCategoryId()));
+
+        for (int i = 0; i < tickets.size(); i++) {
+            Ticket t = tickets.get(i);
+            TicketResponse res = responses.get(i);
+            if (res.getDepartmentId() == null && t.getCategory() != null) {
+                List<RoutingRule> categoryRules = rulesByCategory.get(t.getCategory().getCategoryId());
+                if (categoryRules != null && !categoryRules.isEmpty()) {
+                    String address = t.getAddress() != null ? t.getAddress().toLowerCase() : "";
+                    Department matchedDept = categoryRules.stream()
+                            .filter(rule -> {
+                                boolean provinceMatch = rule.getProvince() == null || rule.getProvince().isBlank()
+                                        || address.contains(rule.getProvince().toLowerCase());
+                                boolean wardMatch = rule.getWard() == null || rule.getWard().isBlank()
+                                        || address.contains(rule.getWard().toLowerCase());
+                                return provinceMatch && wardMatch;
+                            })
+                            .map(RoutingRule::getDepartment)
+                            .filter(Objects::nonNull)
+                            .findFirst()
+                            .orElse(categoryRules.get(0).getDepartment());
+
+                    if (matchedDept != null) {
+                        res.setDepartmentId(matchedDept.getDepartmentId());
+                        res.setDepartmentName(matchedDept.getName());
+                    }
+                }
+            }
+        }
     }
 
     @Override
