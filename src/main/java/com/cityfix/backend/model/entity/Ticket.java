@@ -29,9 +29,6 @@ public class Ticket {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "category_id")
-    private Category category;
 
     @BatchSize(size = 20)
     @Builder.Default

@@ -74,9 +74,16 @@ class ManagerTicketControllerTest {
     @DisplayName("reviewTicket_validRequest_returnsUpdatedTicket")
     void reviewTicket_validRequest_returnsUpdatedTicket() {
         UUID ticketId = UUID.randomUUID();
-        ReviewTicketRequest request = new ReviewTicketRequest();
-        request.setDepartmentIds(List.of(UUID.randomUUID()));
-        request.setIsLifeThreatening(true);
+        ReviewTicketRequest request = ReviewTicketRequest.builder()
+                .subCategoryIds(List.of(UUID.randomUUID()))
+                .steps(List.of(ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(UUID.randomUUID())
+                        .assigneeId(UUID.randomUUID())
+                        .orderIndex(1)
+                        .build()))
+                .isLifeThreatening(true)
+                .reviewNote("Duyệt vé khẩn cấp")
+                .build();
 
         TicketResponse mockResponse = TicketResponse.builder().id(ticketId).description("Updated").build();
         

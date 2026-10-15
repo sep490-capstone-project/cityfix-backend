@@ -3,6 +3,7 @@ package com.cityfix.backend.service.impl;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.DepartmentMapper;
+import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
@@ -17,12 +18,14 @@ import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
+import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.ManagerTicketService;
 import com.cityfix.backend.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -45,6 +49,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     private final DepartmentRepository departmentRepository;
     private final StepRepository stepRepository;
     private final CategoryRepository categoryRepository;
+    private final SubCategoryRepository subCategoryRepository;
 
     private final TicketMapper ticketMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
@@ -52,6 +57,10 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     private final DepartmentMapper departmentMapper;
 
     private final TicketService ticketService;
+    private final NotificationRepository notificationRepository;
+    private final NotificationMapper notificationMapper;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final EmailService emailService;
 
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -186,8 +195,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         for (int i = 0; i < tickets.size(); i++) {
             Ticket t = tickets.get(i);
             TicketResponse res = responses.get(i);
-            if (res.getDepartmentId() == null && t.getCategory() != null && t.getCategory().getCategoryId() != null) {
-                categoryIdsToFetch.add(t.getCategory().getCategoryId());
+            UUID catId = getTicketCategoryId(t);
+            if (res.getDepartmentId() == null && catId != null) {
+                categoryIdsToFetch.add(catId);
             }
         }
 
@@ -207,8 +217,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         for (int i = 0; i < tickets.size(); i++) {
             Ticket t = tickets.get(i);
             TicketResponse res = responses.get(i);
-            if (res.getDepartmentId() == null && t.getCategory() != null) {
-                List<RoutingRule> categoryRules = rulesByCategory.get(t.getCategory().getCategoryId());
+            UUID catId = getTicketCategoryId(t);
+            if (res.getDepartmentId() == null && catId != null) {
+                List<RoutingRule> categoryRules = rulesByCategory.get(catId);
                 if (categoryRules != null && !categoryRules.isEmpty()) {
                     String address = t.getAddress() != null ? t.getAddress().toLowerCase() : "";
                     Department matchedDept = categoryRules.stream()
@@ -233,13 +244,23 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
     }
 
+    private UUID getTicketCategoryId(Ticket ticket) {
+        if (ticket != null && ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
+            TicketSubCategory tsc = ticket.getSubCategories().get(0);
+            if (tsc != null && tsc.getSubCategory() != null && tsc.getSubCategory().getCategory() != null) {
+                return tsc.getSubCategory().getCategory().getCategoryId();
+            }
+        }
+        return null;
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        UUID searchCategoryId = categoryId != null ? categoryId : (ticket.getCategory() != null ? ticket.getCategory().getCategoryId() : null);
+        UUID searchCategoryId = categoryId != null ? categoryId : getTicketCategoryId(ticket);
         if (searchCategoryId == null) {
             return Collections.emptyList();
         }
@@ -263,11 +284,17 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     @Override
     @Transactional
     public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
+        // =========================================================================
+        // 1. Phân quyền: CHỈ cho phép role MANAGER thực hiện
+        // =========================================================================
         User currentUser = getCurrentUser();
         if (!isManager(currentUser)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
+        // =========================================================================
+        // 2. Tìm kiếm vé & kiểm tra trạng thái INITIATED
+        // =========================================================================
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
@@ -275,89 +302,234 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
         }
 
-        if (request.getCategoryId() != null) {
-            Category category = categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
-            ticket.setCategory(category);
-        }
+        // =========================================================================
+        // 3. Validation danh sách SubCategory
+        // =========================================================================
+        List<SubCategory> subCategories = validateAndFetchSubCategories(request.getSubCategoryIds());
 
+        // =========================================================================
+        // 4. Validation danh sách steps & assignees
+        // =========================================================================
+        Map<UUID, Step> stepMap = validateAndFetchSteps(request.getSteps());
+        Map<UUID, User> assigneeMap = validateAndFetchAssignees(request.getSteps());
+
+        // =========================================================================
+        // 5. Cập nhật SOS và Review Note (KHÔNG đổi categoryId theo thiết kế mới)
+        // =========================================================================
         if (request.getIsLifeThreatening() != null) {
             ticket.setIsLifeThreatening(request.getIsLifeThreatening());
         }
-
         if (request.getReviewNote() != null) {
             ticket.setReviewNote(request.getReviewNote());
         }
 
-        UUID targetDeptId = request.getTargetDepartmentId();
-        List<ReviewTicketRequest.SubCategoryRouteRequest> routes = request.getRoutes();
+        // =========================================================================
+        // 6. Xử lý Hibernate Collection: Ticket_SubCategory (orphanRemoval = true)
+        // =========================================================================
+        updateTicketSubCategories(ticket, subCategories);
 
-        boolean hasTargetDept = targetDeptId != null;
-        boolean hasRoutes = routes != null && !routes.isEmpty();
+        // =========================================================================
+        // 7. Xử lý Hibernate Collection: Ticket_Step (orphanRemoval = true)
+        // =========================================================================
+        updateTicketSteps(ticket, request.getSteps(), stepMap, assigneeMap);
 
-        if (hasTargetDept == hasRoutes) {
-            throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION, "Phải cung cấp duy nhất targetDepartmentId hoặc danh sách routes");
-        }
-
-        int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
-        List<TicketStep> createdSteps = new ArrayList<>();
-
-        if (hasTargetDept) {
-            User staff = userRepository.findRepresentativeStaffByDepartmentId(targetDeptId)
-                    .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
-
-            if (ticket.getSubCategories() != null) {
-                for (TicketSubCategory tsc : ticket.getSubCategories()) {
-                    if (tsc.getSubCategory() != null) {
-                        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
-                        for (Step s : steps) {
-                            createdSteps.add(createOrUpdateTicketStep(ticket, s, null, AssignmentStatus.OPEN, null));
-                        }
-                    }
-                }
-            }
-        } else {
-            Set<UUID> validSubCategoryIds = ticket.getSubCategories() != null
-                    ? ticket.getSubCategories().stream()
-                            .filter(tsc -> tsc.getSubCategory() != null)
-                            .map(tsc -> tsc.getSubCategory().getSubCategoryId())
-                            .collect(Collectors.toSet())
-                    : Collections.emptySet();
-
-            Map<UUID, User> deptStaffCache = new HashMap<>();
-            for (ReviewTicketRequest.SubCategoryRouteRequest route : routes) {
-                if (route.getSubCategoryId() == null || route.getDepartmentId() == null) {
-                    throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION);
-                }
-                if (!validSubCategoryIds.contains(route.getSubCategoryId())) {
-                    throw new AppException(ErrorCode.INVALID_REQUEST);
-                }
-                User staff = deptStaffCache.computeIfAbsent(route.getDepartmentId(), dId ->
-                        userRepository.findRepresentativeStaffByDepartmentId(dId)
-                                .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND)));
-
-                List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(route.getSubCategoryId());
-                for (Step s : steps) {
-                    createdSteps.add(createOrUpdateTicketStep(ticket, s, null, AssignmentStatus.OPEN, null));
-                }
-            }
-        }
-
-        ticket.setSteps(createdSteps);
-        ticket.setStatus(TicketStatus.OPEN);
+        // =========================================================================
+        // 8. Chuyển trạng thái vé: IN_PROGRESS theo chỉ thị thiết kế
+        // =========================================================================
+        TicketStatus prevStatus = ticket.getStatus();
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
         ticket.setNeedsManualReview(false);
 
-        // Calculate and set duration
+        // =========================================================================
+        // 9. Tính toán SLA Ticket Duration từ hạn chót bước hoặc SLA SubCategory
+        // =========================================================================
         ticket.setDuration(ticketService.calculateTicketDuration(ticket));
 
+        // =========================================================================
+        // 10. Lưu Ticket xuống Database (Cascade lưu TicketSubCategory & TicketStep)
+        // =========================================================================
         ticket = ticketRepository.save(ticket);
 
+        // =========================================================================
+        // 11. Ghi log lịch sử TicketHistory
+        // =========================================================================
+        String historyNote = (request.getReviewNote() != null && !request.getReviewNote().isBlank())
+                ? request.getReviewNote()
+                : "Duyệt thủ công vé thành công, chuyển sang Đang xử lý";
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.ROUTED, TicketStatus.INITIATED, TicketStatus.OPEN, "Duyệt thủ công vé thành công"
+                ticket, currentUser, ActionType.ROUTED, prevStatus, TicketStatus.IN_PROGRESS, historyNote
         );
         ticketHistoryRepository.save(history);
 
+        // =========================================================================
+        // 12. Gửi thông báo WebSocket & Email cho người tạo vé (Creator)
+        // =========================================================================
+        sendReviewSuccessNotification(ticket);
+
         return ticketMapper.toTicketResponse(ticket);
+    }
+
+    private List<SubCategory> validateAndFetchSubCategories(List<UUID> subCategoryIds) {
+        if (subCategoryIds == null || subCategoryIds.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách sự cố phụ không được để trống");
+        }
+        Set<UUID> uniqueSubCatIds = new HashSet<>(subCategoryIds);
+        if (uniqueSubCatIds.size() != subCategoryIds.size()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách sự cố phụ không được chứa ID trùng lặp");
+        }
+        List<SubCategory> subCategories = subCategoryRepository.findAllById(subCategoryIds);
+        if (subCategories.size() != subCategoryIds.size()) {
+            throw new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND);
+        }
+        for (SubCategory sc : subCategories) {
+            if (!sc.isActive() || sc.isDeleted()) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ '" + sc.getName() + "' đã bị vô hiệu hóa hoặc bị xóa");
+            }
+        }
+        return subCategories;
+    }
+
+    private Map<UUID, Step> validateAndFetchSteps(List<ReviewTicketRequest.StepAssignmentRequest> stepRequests) {
+        if (stepRequests == null || stepRequests.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách bước xử lý không được để trống");
+        }
+        Set<UUID> uniqueStepIds = new HashSet<>();
+        for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
+            if (!uniqueStepIds.add(stepReq.getStepId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Danh sách bước xử lý chứa stepId trùng lặp: " + stepReq.getStepId());
+            }
+            if (stepReq.getDeadline() != null && stepReq.getDeadline().isBefore(LocalDateTime.now())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Hạn chót của bước xử lý không được ở quá khứ");
+            }
+        }
+        List<Step> stepEntities = stepRepository.findAllById(uniqueStepIds);
+        if (stepEntities.size() != uniqueStepIds.size()) {
+            throw new AppException(ErrorCode.STEP_NOT_FOUND);
+        }
+        return stepEntities.stream().collect(Collectors.toMap(Step::getStepId, Function.identity()));
+    }
+
+    private Map<UUID, User> validateAndFetchAssignees(List<ReviewTicketRequest.StepAssignmentRequest> stepRequests) {
+        Set<UUID> assigneeIds = stepRequests.stream()
+                .map(ReviewTicketRequest.StepAssignmentRequest::getAssigneeId)
+                .collect(Collectors.toSet());
+        List<User> assignees = userRepository.findAllById(assigneeIds);
+        if (assignees.size() != assigneeIds.size()) {
+            throw new AppException(ErrorCode.ACCOUNT_NOT_FOUND, "Không tìm thấy một số nhân viên được phân công");
+        }
+        for (User staff : assignees) {
+            if (staff.isDeleted() || staff.getStatus() != com.cityfix.backend.model.enums.UserStatus.ACTIVE) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Nhân viên '" + staff.getFullName() + "' không còn hoạt động");
+            }
+            if (staff.getDepartment() == null) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT, "Nhân viên '" + staff.getFullName() + "' không thuộc phòng ban nào");
+            }
+        }
+        return assignees.stream().collect(Collectors.toMap(User::getUserId, Function.identity()));
+    }
+
+    private void updateTicketSubCategories(Ticket ticket, List<SubCategory> subCategories) {
+        if (ticket.getSubCategories() == null) {
+            ticket.setSubCategories(new ArrayList<>());
+        } else {
+            ticket.getSubCategories().clear();
+        }
+        for (SubCategory sc : subCategories) {
+            TicketSubCategory tsc = TicketSubCategory.builder()
+                    .ticket(ticket)
+                    .subCategory(sc)
+                    .build();
+            ticket.getSubCategories().add(tsc);
+        }
+    }
+
+    private void updateTicketSteps(Ticket ticket, List<ReviewTicketRequest.StepAssignmentRequest> stepRequests,
+                                   Map<UUID, Step> stepMap, Map<UUID, User> assigneeMap) {
+        if (ticket.getSteps() == null) {
+            ticket.setSteps(new ArrayList<>());
+        } else {
+            ticket.getSteps().clear();
+        }
+        for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
+            Step step = stepMap.get(stepReq.getStepId());
+            User assignee = assigneeMap.get(stepReq.getAssigneeId());
+            TicketStep ticketStep = TicketStep.builder()
+                    .ticket(ticket)
+                    .step(step)
+                    .assignee(assignee)
+                    .status(AssignmentStatus.OPEN)
+                    .orderIndex(stepReq.getOrderIndex())
+                    .deadline(stepReq.getDeadline())
+                    .notes(stepReq.getNotes())
+                    .build();
+            ticket.getSteps().add(ticketStep);
+        }
+    }
+
+    private void sendReviewSuccessNotification(Ticket ticket) {
+        User creator = ticket.getUser();
+        if (creator == null) return;
+
+        String title = "Sự cố của bạn đã được tiếp nhận và xử lý";
+        String message = "Phản ánh của bạn đã được quản lý phê duyệt và chuyển cho cán bộ chuyên trách tiến hành xử lý.";
+
+        Notification notification = Notification.builder()
+                .user(creator)
+                .title(title)
+                .content(message)
+                .isRead(false)
+                .build();
+        notification = notificationRepository.save(notification);
+
+        try {
+            messagingTemplate.convertAndSend(
+                    "/topic/notifications/" + creator.getUserId(),
+                    notificationMapper.toResponse(notification)
+            );
+        } catch (Exception e) {
+            log.error("Lỗi khi gửi WebSocket notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
+        }
+
+        if (creator.getEmail() != null && !creator.getEmail().isBlank()) {
+            try {
+                emailService.sendTicketStatusEmail(creator.getEmail(), title, message);
+            } catch (Exception e) {
+                log.error("Lỗi khi gửi email notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
+            }
+        }
+    }
+
+    private void sendRejectNotification(Ticket ticket, String reason) {
+        User creator = ticket.getUser();
+        if (creator == null) return;
+
+        String title = "Sự cố của bạn đã bị từ chối tiếp nhận";
+        String message = "Phản ánh của bạn đã bị từ chối với lý do: " + reason;
+
+        Notification notification = Notification.builder()
+                .user(creator)
+                .title(title)
+                .content(message)
+                .isRead(false)
+                .build();
+        notification = notificationRepository.save(notification);
+
+        try {
+            messagingTemplate.convertAndSend(
+                    "/topic/notifications/" + creator.getUserId(),
+                    notificationMapper.toResponse(notification)
+            );
+        } catch (Exception e) {
+            log.error("Lỗi khi gửi WebSocket notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
+        }
+
+        if (creator.getEmail() != null && !creator.getEmail().isBlank()) {
+            try {
+                emailService.sendTicketStatusEmail(creator.getEmail(), title, message);
+            } catch (Exception e) {
+                log.error("Lỗi khi gửi email notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
+            }
+        }
     }
 
     @Override
@@ -390,6 +562,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         ticketHistoryRepository.save(history);
 
         ticket = ticketRepository.save(ticket);
+        sendRejectNotification(ticket, finalReason);
         return ticketMapper.toTicketResponse(ticket);
     }
 
@@ -448,7 +621,6 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
 
         steps = ticketStepRepository.saveAll(steps);
-        ticket.setSteps(steps);
 
         // If ticket has multiple subcategories, recalculate duration
         if (ticket.getSubCategories() != null && ticket.getSubCategories().size() > 1) {

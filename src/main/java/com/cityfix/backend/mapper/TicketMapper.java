@@ -27,8 +27,8 @@ public interface TicketMapper {
     @Mapping(target = "createdBy", source = "user.userId")
     @Mapping(target = "creatorFullName", source = "user.fullName")
     @Mapping(target = "creatorPhoneNumber", source = "user.phoneNumber")
-    @Mapping(target = "categoryId", source = "category.categoryId")
-    @Mapping(target = "categoryName", source = "category.name")
+    @Mapping(target = "categoryId", ignore = true)
+    @Mapping(target = "categoryName", ignore = true)
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
     @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
@@ -37,6 +37,21 @@ public interface TicketMapper {
     @Mapping(target = "departmentId", ignore = true)
     @Mapping(target = "departmentName", ignore = true)
     TicketResponse toTicketResponse(Ticket ticket);
+
+    @AfterMapping
+    default void mapCategoryFromSubCategories(Ticket ticket, @MappingTarget TicketResponse response) {
+        if (ticket == null || response == null) return;
+        if (ticket.getSubCategories() != null) {
+            for (com.cityfix.backend.model.entity.TicketSubCategory tsc : ticket.getSubCategories()) {
+                if (tsc != null && tsc.getSubCategory() != null && tsc.getSubCategory().getCategory() != null) {
+                    com.cityfix.backend.model.entity.Category cat = tsc.getSubCategory().getCategory();
+                    response.setCategoryId(cat.getCategoryId());
+                    response.setCategoryName(cat.getName());
+                    break;
+                }
+            }
+        }
+    }
 
     @AfterMapping
     default void hideUserIfAnonymous(Ticket ticket, @MappingTarget TicketResponse response) {
@@ -121,8 +136,6 @@ public interface TicketMapper {
 
     @Mapping(target = "ticketId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "updatedAt", ignore = true)
-    @Mapping(target = "category", source = "category")
     @Mapping(target = "user", source = "user")
     @Mapping(target = "location", source = "location")
     @Mapping(target = "status", source = "status")
@@ -135,12 +148,13 @@ public interface TicketMapper {
     @Mapping(target = "address", source = "request.address")
     @Mapping(target = "subCategories", ignore = true)
     @Mapping(target = "steps", ignore = true)
+    @Mapping(target = "images", ignore = true)
     @Mapping(target = "ratings", ignore = true)
     @Mapping(target = "reviewNote", ignore = true)
+    @Mapping(target = "duration", ignore = true)
     @Mapping(target = "isAnonymous", expression = "java(request.getIsAnonymous() != null ? request.getIsAnonymous() : false)")
     Ticket toTicket(
             com.cityfix.backend.model.dto.request.CreateTicketRequest request,
-            com.cityfix.backend.model.entity.Category category,
             com.cityfix.backend.model.entity.User user,
             org.locationtech.jts.geom.Point location,
             com.cityfix.backend.model.enums.TicketStatus status,

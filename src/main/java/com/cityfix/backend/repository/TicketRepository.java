@@ -8,6 +8,7 @@ import com.cityfix.backend.model.enums.TicketStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -21,6 +22,9 @@ import java.util.UUID;
 @Repository
 public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    Optional<Ticket> findById(UUID id);
+
     @Query(value = """
         SELECT t.ticket_id AS ticketId,
                t.description AS description,
@@ -33,9 +37,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                (SELECT ri.image_url FROM report_image ri WHERE ri.ticket_id = t.ticket_id ORDER BY ri.created_at ASC LIMIT 1) AS imageUrl,
                t.created_at AS createdAt
         FROM ticket t
-        LEFT JOIN category c ON t.category_id = c.category_id
-        WHERE t.category_id = :categoryId
-          AND t.status IN ('INITIATED', 'OPEN', 'ASSIGNED', 'IN_PROGRESS')
+        JOIN category c ON c.category_id = :categoryId
+        WHERE t.status IN ('INITIATED', 'OPEN', 'ASSIGNED', 'IN_PROGRESS')
+          AND EXISTS (
+              SELECT 1 FROM ticket_subcategory tsc
+              JOIN sub_category sc ON tsc.sub_category_id = sc.sub_category_id
+              WHERE tsc.ticket_id = t.ticket_id AND sc.category_id = :categoryId
+          )
           AND ST_DWithin(
                 t.location::geography,
                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
@@ -49,19 +57,22 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             @Param("categoryId") UUID categoryId
     );
 
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     Page<Ticket> findByStatus(TicketStatus status, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     @Query("SELECT t FROM Ticket t WHERE t.ticketId = :ticketId")
     Optional<Ticket> findByIdWithPessimisticLock(@Param("ticketId") UUID ticketId);
 
-    @Query(value = "SELECT t FROM Ticket t LEFT JOIN FETCH t.category WHERE t.user.userId = :userId",
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @Query(value = "SELECT t FROM Ticket t WHERE t.user.userId = :userId",
            countQuery = "SELECT COUNT(t) FROM Ticket t WHERE t.user.userId = :userId")
     Page<Ticket> findByUserId(@Param("userId") UUID userId, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     @Query(value = """
         SELECT t FROM Ticket t
-        LEFT JOIN FETCH t.category
         WHERE (
             EXISTS (
                 SELECT 1 FROM TicketStep ts
@@ -77,8 +88,9 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                       AND ts2.isDeleted = false
                 )
                 AND EXISTS (
-                    SELECT 1 FROM RoutingRule rr
-                    WHERE rr.category = t.category
+                    SELECT 1 FROM RoutingRule rr, TicketSubCategory tsc
+                    WHERE tsc.ticket = t
+                      AND rr.category = tsc.subCategory.category
                       AND rr.department.departmentId = :departmentId
                       AND rr.isDeleted = false
                 )
@@ -105,8 +117,9 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                       AND ts2.isDeleted = false
                 )
                 AND EXISTS (
-                    SELECT 1 FROM RoutingRule rr
-                    WHERE rr.category = t.category
+                    SELECT 1 FROM RoutingRule rr, TicketSubCategory tsc
+                    WHERE tsc.ticket = t
+                      AND rr.category = tsc.subCategory.category
                       AND rr.department.departmentId = :departmentId
                       AND rr.isDeleted = false
                 )
