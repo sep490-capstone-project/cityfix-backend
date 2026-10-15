@@ -11,7 +11,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,7 +41,7 @@ public class RatingController {
     @Operation(summary = "Lấy danh sách đánh giá của vé", description = "Chỉ lấy các đánh giá chưa bị xóa mềm. Ẩn thông tin nếu là đánh giá ẩn danh.")
     public ResponseEntity<BaseResponse<Page<RatingResponse>>> getTicketRatings(
             @PathVariable UUID ticketId,
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 10) Pageable pageable) {
         Page<RatingResponse> response = ratingService.getTicketRatings(ticketId, pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách đánh giá thành công", response));
     }
