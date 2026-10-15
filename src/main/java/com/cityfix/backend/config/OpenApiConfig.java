@@ -5,9 +5,12 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
+import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
+import org.springdoc.core.customizers.GlobalOpenApiCustomizer;
+import org.springdoc.core.customizers.OperationCustomizer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -63,5 +66,59 @@ public class OpenApiConfig {
                 .scheme("bearer")
                 .bearerFormat("JWT")
                 .description("Provide a valid JWT token in the Authorization header");
+    }
+
+    @Bean
+    public GlobalOpenApiCustomizer removeSortCustomizer() {
+        return openApi -> {
+            if (openApi.getComponents() != null && openApi.getComponents().getSchemas() != null) {
+                openApi.getComponents().getSchemas().values().forEach(this::cleanSchema);
+            }
+            if (openApi.getPaths() != null) {
+                openApi.getPaths().values().forEach(pathItem -> {
+                    pathItem.readOperations().forEach(operation -> {
+                        if (operation.getParameters() != null) {
+                            operation.getParameters().removeIf(param -> "sort".equalsIgnoreCase(param.getName()));
+                            operation.getParameters().forEach(param -> {
+                                if (param.getSchema() != null) {
+                                    cleanSchema(param.getSchema());
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+        };
+    }
+
+    @Bean
+    public OperationCustomizer removeSortOperationCustomizer() {
+        return (operation, handlerMethod) -> {
+            if (operation.getParameters() != null) {
+                operation.getParameters().removeIf(param -> "sort".equalsIgnoreCase(param.getName()));
+                operation.getParameters().forEach(param -> {
+                    if (param.getSchema() != null) {
+                        cleanSchema(param.getSchema());
+                    }
+                });
+            }
+            return operation;
+        };
+    }
+
+    private void cleanSchema(Schema<?> schema) {
+        if (schema == null) return;
+        if (schema.getProperties() != null) {
+            schema.getProperties().remove("sort");
+        }
+        if (schema.getAllOf() != null) {
+            schema.getAllOf().forEach(this::cleanSchema);
+        }
+        if (schema.getAnyOf() != null) {
+            schema.getAnyOf().forEach(this::cleanSchema);
+        }
+        if (schema.getOneOf() != null) {
+            schema.getOneOf().forEach(this::cleanSchema);
+        }
     }
 }

@@ -80,7 +80,7 @@ class TicketControllerTest {
         validCreateRequest = new CreateTicketRequest();
         validCreateRequest.setDescription("Mặt đường xuất hiện ổ gà lớn");
         validCreateRequest.setImageUrl("https://cloudinary.com/test.jpg");
-        validCreateRequest.setCategoryId(categoryId);
+        validCreateRequest.setSubCategoryIds(List.of(UUID.randomUUID()));
         validCreateRequest.setSeverity(SeverityLevel.MEDIUM);
         validCreateRequest.setPriority(Priority.MEDIUM);
         validCreateRequest.setLocationMethod(LocationMethod.AUTO_GPS);

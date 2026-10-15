@@ -15,9 +15,6 @@ public class CreateTicketRequest {
     @NotBlank(message = "Image URL is required")
     private String imageUrl;
 
-    @NotNull(message = "Category ID is required")
-    private java.util.UUID categoryId;
-
     @NotEmpty(message = "At least one subcategory is required")
     private java.util.List<java.util.UUID> subCategoryIds;
 

@@ -2,6 +2,7 @@ package com.cityfix.backend.service;
 
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
+import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
@@ -11,12 +12,7 @@ import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
-import com.cityfix.backend.repository.DepartmentRepository;
-import com.cityfix.backend.repository.RoutingRuleRepository;
-import com.cityfix.backend.repository.TicketHistoryRepository;
-import com.cityfix.backend.repository.TicketRepository;
-import com.cityfix.backend.repository.TicketStepRepository;
-import com.cityfix.backend.repository.UserRepository;
+import com.cityfix.backend.repository.*;
 import com.cityfix.backend.service.impl.ManagerTicketServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +29,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -66,6 +63,20 @@ class ManagerTicketServiceImplTest {
     private DepartmentRepository departmentRepository;
     @Mock
     private RoutingRuleRepository routingRuleRepository;
+    @Mock
+    private StepRepository stepRepository;
+    @Mock
+    private CategoryRepository categoryRepository;
+    @Mock
+    private SubCategoryRepository subCategoryRepository;
+    @Mock
+    private NotificationRepository notificationRepository;
+    @Mock
+    private NotificationMapper notificationMapper;
+    @Mock
+    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    @Mock
+    private EmailService emailService;
     @Mock
     private SecurityContext securityContext;
 
@@ -197,6 +208,189 @@ class ManagerTicketServiceImplTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_byManager_validAllInOnePayload_success")
+    void reviewTicket_byManager_validAllInOnePayload_success() {
+        mockCurrentUser(managerUser);
+
+        ticket.setStatus(TicketStatus.INITIATED);
+        ticket.setNeedsManualReview(true);
+        ticket.setUser(managerUser);
+
+        UUID subCatId = UUID.randomUUID();
+        SubCategory mockSubCat = SubCategory.builder()
+                .subCategoryId(subCatId)
+                .name("Sự cố sạt lở")
+                .isActive(true)
+                .sla(24)
+                .build();
+
+        UUID stepId = UUID.randomUUID();
+        Step mockStep = Step.builder()
+                .stepId(stepId)
+                .stepName("Khảo sát hiện trường")
+                .build();
+
+        Department dept = Department.builder().departmentId(UUID.randomUUID()).name("Phòng QLĐT").build();
+        User staffInDept = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Nguyễn Văn A")
+                .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
+                .department(dept)
+                .build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
+        when(stepRepository.findAllById(any())).thenReturn(List.of(mockStep));
+        when(userRepository.findAllById(any())).thenReturn(List.of(staffInDept));
+        when(ticketService.calculateTicketDuration(any(Ticket.class))).thenReturn(24);
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.IN_PROGRESS).build();
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketHistory mockHistory = TicketHistory.builder()
+                .actionType(com.cityfix.backend.model.enums.ActionType.ROUTED)
+                .currentStatus(TicketStatus.IN_PROGRESS)
+                .build();
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any())).thenReturn(mockHistory);
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = com.cityfix.backend.model.dto.request.ReviewTicketRequest.builder()
+                .isLifeThreatening(true)
+                .reviewNote("Duyệt khẩn cấp")
+                .subCategoryIds(List.of(subCatId))
+                .steps(List.of(com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(stepId)
+                        .assigneeId(staffInDept.getUserId())
+                        .orderIndex(0)
+                        .deadline(LocalDateTime.now().plusHours(12))
+                        .notes("Giao khảo sát")
+                        .build()))
+                .build();
+
+        TicketResponse response = managerTicketService.reviewTicket(ticketId, request);
+
+        assertThat(response).isNotNull();
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getNeedsManualReview()).isFalse();
+        assertThat(ticket.getIsLifeThreatening()).isTrue();
+        assertThat(ticket.getReviewNote()).isEqualTo("Duyệt khẩn cấp");
+        assertThat(ticket.getSubCategories()).hasSize(1);
+        assertThat(ticket.getSteps()).hasSize(1);
+        assertThat(ticket.getSteps().get(0).getAssignee()).isEqualTo(staffInDept);
+        assertThat(ticket.getSteps().get(0).getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
+        assertThat(ticket.getSteps().get(0).getOrderIndex()).isEqualTo(0);
+
+        verify(notificationRepository).save(any());
+        verify(ticketHistoryRepository).save(argThat(h ->
+                h != null
+                        && h.getActionType() == com.cityfix.backend.model.enums.ActionType.ROUTED
+                        && h.getCurrentStatus() == TicketStatus.IN_PROGRESS
+        ));
+    }
+
+    @Test
+    @DisplayName("reviewTicket_ticketNotInitiated_throwsTICKET_NOT_INITIATED")
+    void reviewTicket_ticketNotInitiated_throwsTICKET_NOT_INITIATED() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.OPEN); // Not INITIATED
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = new com.cityfix.backend.model.dto.request.ReviewTicketRequest();
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TICKET_NOT_INITIATED);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_emptySubCategories_throwsINVALID_REQUEST")
+    void reviewTicket_emptySubCategories_throwsINVALID_REQUEST() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = com.cityfix.backend.model.dto.request.ReviewTicketRequest.builder()
+                .subCategoryIds(Collections.emptyList())
+                .build();
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_duplicateStepId_throwsINVALID_REQUEST")
+    void reviewTicket_duplicateStepId_throwsINVALID_REQUEST() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        UUID subCatId = UUID.randomUUID();
+        SubCategory mockSubCat = SubCategory.builder()
+                .subCategoryId(subCatId)
+                .isActive(true)
+                .build();
+
+        UUID stepId = UUID.randomUUID();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = com.cityfix.backend.model.dto.request.ReviewTicketRequest.builder()
+                .subCategoryIds(List.of(subCatId))
+                .steps(List.of(
+                        com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
+                                .stepId(stepId).assigneeId(UUID.randomUUID()).orderIndex(0).build(),
+                        com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
+                                .stepId(stepId).assigneeId(UUID.randomUUID()).orderIndex(1).build()
+                ))
+                .build();
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_pastDeadline_throwsINVALID_REQUEST")
+    void reviewTicket_pastDeadline_throwsINVALID_REQUEST() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        UUID subCatId = UUID.randomUUID();
+        SubCategory mockSubCat = SubCategory.builder()
+                .subCategoryId(subCatId)
+                .isActive(true)
+                .build();
+
+        UUID stepId = UUID.randomUUID();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = com.cityfix.backend.model.dto.request.ReviewTicketRequest.builder()
+                .subCategoryIds(List.of(subCatId))
+                .steps(List.of(
+                        com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
+                                .stepId(stepId)
+                                .assigneeId(UUID.randomUUID())
+                                .orderIndex(0)
+                                .deadline(LocalDateTime.now().minusDays(1)) // Past deadline
+                                .build()
+                ))
+                .build();
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 
     @Test

@@ -13,7 +13,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
@@ -39,7 +38,7 @@ public class ManagerTicketController {
     public ResponseEntity<BaseResponse<Page<TicketResponse>>> getInitiatedTickets(
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = PageRequest.of(page, size);
         Page<TicketResponse> response = managerTicketService.getInitiatedTickets(pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé chờ duyệt thành công", response));
     }
@@ -52,7 +51,7 @@ public class ManagerTicketController {
             @RequestParam(value = "severity", required = false) SeverityLevel severity,
             @RequestParam(value = "priority", required = false) Priority priority,
             @RequestParam(value = "status", required = false) TicketStatus status,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @PageableDefault(size = 20) Pageable pageable) {
         Page<TicketResponse> response = managerTicketService.getDepartmentTickets(departmentId, severity, priority, status, pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé phòng ban thành công", response));
     }

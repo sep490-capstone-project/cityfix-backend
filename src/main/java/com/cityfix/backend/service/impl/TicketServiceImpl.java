@@ -2,7 +2,6 @@ package com.cityfix.backend.service.impl;
 
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
-import com.cityfix.backend.mapper.DepartmentMapper;
 import com.cityfix.backend.mapper.ImageMapper;
 import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.SubCategoryMapper;
@@ -10,9 +9,9 @@ import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
 import com.cityfix.backend.model.dto.request.*;
-import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
+import com.cityfix.backend.model.dto.response.LocationBoundary;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.model.entity.*;
@@ -22,6 +21,7 @@ import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
 import com.cityfix.backend.service.EmailService;
+import com.cityfix.backend.service.LocationService;
 import com.cityfix.backend.service.TicketService;
 import com.cloudinary.Cloudinary;
 import lombok.RequiredArgsConstructor;
@@ -71,7 +71,7 @@ public class TicketServiceImpl implements TicketService {
     private final Cloudinary cloudinary;
     private final ImageMapper imageMapper;
     private final TicketMapper ticketMapper;
-    private final DepartmentMapper departmentMapper;
+    private final LocationService locationService;
     private final TicketStepMapper ticketStepMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
     private final NotificationRepository notificationRepository;
@@ -215,16 +215,52 @@ public class TicketServiceImpl implements TicketService {
         }
     }
 
+    /**
+     * Bóc tách an toàn Province hoặc Ward từ chuỗi địa chỉ sự cố theo chuẩn Việt Nam.
+     * Chuỗi địa chỉ chuẩn: "Số nhà, Đường, Phường/Xã, Quận/Huyện, Tỉnh/Thành phố"
+     *
+     * @param address Chuỗi địa chỉ sự cố từ request
+     * @param type    "PROVINCE" hoặc "WARD"
+     * @return Tên địa phương tương ứng hoặc null nếu không thể bóc tách
+     */
+    private String extractLocationFromAddress(String address, String type) {
+        if (address == null || address.isBlank()) {
+            return null;
+        }
+
+        String[] parts = address.split(",");
+        for (int i = 0; i < parts.length; i++) {
+            parts[i] = parts[i].trim();
+        }
+
+        int length = parts.length;
+        if (length == 0) {
+            return null;
+        }
+
+        if ("PROVINCE".equalsIgnoreCase(type)) {
+            // Theo chuẩn Việt Nam: Tỉnh/Thành phố luôn nằm ở thành phần cuối cùng
+            String province = parts[length - 1];
+            return province.isEmpty() ? null : province;
+        } else if ("WARD".equalsIgnoreCase(type)) {
+            // Chuẩn 4-5 thành phần: "..., Phường/Xã, Quận/Huyện, Tỉnh/Thành phố" -> (length - 3)
+            if (length >= 3) {
+                String ward = parts[length - 3];
+                return ward.isEmpty() ? null : ward;
+            } else if (length == 2) {
+                // Rút gọn: "Phường/Xã, Tỉnh/Thành phố" -> parts[0]
+                String ward = parts[0];
+                return ward.isEmpty() ? null : ward;
+            }
+        }
+
+        return null;
+    }
+
     @Override
     @Transactional
     public TicketResponse createTicket(CreateTicketRequest request) {
         User user = getCurrentUser();
-
-        Category category = null;
-        if (request.getCategoryId() != null) {
-            category = categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
-        }
 
         List<SubCategory> subCategories = new ArrayList<>();
         if (request.getSubCategoryIds() != null && !request.getSubCategoryIds().isEmpty()) {
@@ -243,9 +279,6 @@ public class TicketServiceImpl implements TicketService {
                 if (!subCat.isActive() || subCat.isDeleted()) {
                     throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ đã bị vô hiệu hóa hoặc bị xóa");
                 }
-                if (category != null && !subCat.getCategory().getCategoryId().equals(category.getCategoryId())) {
-                    throw new AppException(ErrorCode.INVALID_REQUEST, "Sự cố phụ không thuộc danh mục đã chọn");
-                }
                 subCategories.add(subCat);
             }
         }
@@ -255,42 +288,75 @@ public class TicketServiceImpl implements TicketService {
         boolean isDangerous = (request.getPriority() == com.cityfix.backend.model.enums.Priority.HIGH || request.getPriority() == com.cityfix.backend.model.enums.Priority.MEDIUM);
         boolean isAiUncertain = (request.getConfidenceScore() != null && request.getConfidenceScore() < 70.0);
         boolean needsReview = isDangerous || isAiUncertain;
+        boolean isMultiSubCategory = subCategories.size() > 1;
+        boolean finalNeedsReview = needsReview || isMultiSubCategory;
 
-        // Auto-Routing Engine lookup
+        // Auto-Routing Engine lookup: Ưu tiên Tọa độ GPS (PostGIS) -> Fallback Address
         Department assignedDepartment = null;
-        if (category != null) {
-            String userProvince = user.getProvince();
-            String userWard = user.getWard();
-
-            Optional<RoutingRule> ruleOpt =
-                    routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
-                            category.getCategoryId(), userProvince, userWard);
-
-            if (ruleOpt.isEmpty() && userProvince != null) {
-                ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
-                        category.getCategoryId(), userProvince, null);
-            }
-
-            if (ruleOpt.isPresent()) {
-                assignedDepartment = ruleOpt.get().getDepartment();
-            }
-        }
-
         User autoStaff = null;
-        if (assignedDepartment != null) {
-            autoStaff = userRepository.findRepresentativeStaffByDepartmentId(assignedDepartment.getDepartmentId()).orElse(null);
+
+        if (!finalNeedsReview && !subCategories.isEmpty()) {
+            Category singleCategory = subCategories.get(0).getCategory();
+            if (singleCategory != null) {
+                String province = null;
+                String ward = null;
+
+                // Ưu tiên 1: Tra cứu địa giới hành chính bằng PostGIS từ tọa độ GPS
+                if (request.getLatitude() != null && request.getLongitude() != null) {
+                    LocationBoundary boundary = locationService.getBoundaryFromCoordinates(
+                            request.getLatitude(), request.getLongitude()
+                    );
+                    if (boundary != null) {
+                        province = boundary.getProvince();
+                        ward = boundary.getWard();
+                    }
+                }
+
+                // Ưu tiên 2 (Fallback): Bóc tách từ chuỗi Address nếu chưa xác định được từ GPS
+                if (province == null || ward == null) {
+                    if (province == null) {
+                        province = extractLocationFromAddress(request.getAddress(), "PROVINCE");
+                    }
+                    if (ward == null) {
+                        ward = extractLocationFromAddress(request.getAddress(), "WARD");
+                    }
+                }
+
+                Optional<RoutingRule> ruleOpt = Optional.empty();
+                if (province != null && ward != null) {
+                    ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
+                            singleCategory.getCategoryId(), province, ward);
+                }
+
+                if (ruleOpt.isEmpty() && province != null) {
+                    ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
+                            singleCategory.getCategoryId(), province, null);
+                }
+
+                if (ruleOpt.isPresent()) {
+                    assignedDepartment = ruleOpt.get().getDepartment();
+                }
+            }
+
+            if (assignedDepartment != null) {
+                autoStaff = userRepository.findRepresentativeStaffByDepartmentId(assignedDepartment.getDepartmentId()).orElse(null);
+            }
+
+            // Nếu không tìm thấy department hoặc không tìm thấy staff -> chuyển sang duyệt thủ công
+            if (assignedDepartment == null || autoStaff == null) {
+                finalNeedsReview = true;
+            }
         }
 
-        // If manual review is needed, or no department, or no staff found -> preserve manual review
-        boolean finalNeedsReview = needsReview || (assignedDepartment == null) || (autoStaff == null);
         TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.OPEN;
 
-        Ticket ticket = ticketMapper.toTicket(request, category, user, location, initialStatus, finalNeedsReview);
+        Ticket ticket = ticketMapper.toTicket(request, user, location, initialStatus, finalNeedsReview);
         if (request.getIsAnonymous() != null) {
             ticket.setIsAnonymous(request.getIsAnonymous());
         }
         ticket = ticketRepository.save(ticket);
 
+        int currentOrder = 1;
         for (SubCategory subCat : subCategories) {
             TicketSubCategory tsc = TicketSubCategory.builder()
                     .ticket(ticket)
@@ -299,11 +365,11 @@ public class TicketServiceImpl implements TicketService {
             ticketSubCategoryRepository.save(tsc);
             ticket.getSubCategories().add(tsc);
 
-            // Persist corresponding TicketStep rows only if auto-routed with a non-null assignee
+            // Persist corresponding TicketStep rows with autoStaff and incrementing orderIndex
             if (!finalNeedsReview && autoStaff != null) {
                 List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
                 for (Step s : steps) {
-                    createOrUpdateTicketStep(ticket, s, null, AssignmentStatus.OPEN, null);
+                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, currentOrder++);
                 }
             }
         }
@@ -314,7 +380,9 @@ public class TicketServiceImpl implements TicketService {
         // Audit Log
         String historyNote;
         if (finalNeedsReview) {
-            if (assignedDepartment != null) {
+            if (isMultiSubCategory) {
+                historyNote = "Chuyển sang duyệt thủ công do sự cố có nhiều danh mục chi tiết";
+            } else if (assignedDepartment != null) {
                 historyNote = "Chuyển sang duyệt thủ công do tính chất nguy hiểm hoặc điểm AI thấp (Đã dự kiến gợi ý: " + assignedDepartment.getName() + ")";
             } else {
                 historyNote = "Chuyển sang duyệt thủ công do chưa có quy tắc định tuyến phù hợp";
@@ -460,128 +528,6 @@ public class TicketServiceImpl implements TicketService {
         User currentUser = getCurrentUser();
         Page<Ticket> tickets = ticketRepository.findByUserId(currentUser.getUserId(), pageable);
         return tickets.map(ticketMapper::toTicketResponse);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-        
-        UUID searchCategoryId = categoryId != null ? categoryId : (ticket.getCategory() != null ? ticket.getCategory().getCategoryId() : null);
-        if (searchCategoryId == null) {
-            return Collections.emptyList();
-        }
-        
-        List<RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(searchCategoryId);
-        String address = ticket.getAddress() != null ? ticket.getAddress().toLowerCase() : "";
-        
-        List<Department> suggestedDepts = rules.stream()
-                .filter(rule -> {
-                    boolean provinceMatch = rule.getProvince() == null || rule.getProvince().isBlank() || address.contains(rule.getProvince().toLowerCase());
-                    boolean wardMatch = rule.getWard() == null || rule.getWard().isBlank() || address.contains(rule.getWard().toLowerCase());
-                    return provinceMatch && wardMatch;
-                })
-                .map(RoutingRule::getDepartment)
-                .distinct()
-                .toList();
-                
-        return departmentMapper.toResponseList(suggestedDepts);
-    }
-
-    @Override
-    @Transactional
-    public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
-        User currentUser = getCurrentUser();
-        if (!isManagerOrStaff(currentUser)) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-
-        if (ticket.getStatus() != TicketStatus.INITIATED) {
-            throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
-        }
-                
-        if (request.getCategoryId() != null) {
-            Category category = categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
-            ticket.setCategory(category);
-        }
-        
-        if (request.getIsLifeThreatening() != null) {
-            ticket.setIsLifeThreatening(request.getIsLifeThreatening());
-        }
-        
-        if (request.getReviewNote() != null) {
-            ticket.setReviewNote(request.getReviewNote());
-        }
-
-        // Mutual exclusion: targetDepartmentId XOR routes
-        UUID targetDeptId = request.getTargetDepartmentId();
-        List<ReviewTicketRequest.SubCategoryRouteRequest> routes = request.getRoutes();
-
-        boolean hasTargetDept = targetDeptId != null;
-        boolean hasRoutes = routes != null && !routes.isEmpty();
-
-        if (hasTargetDept == hasRoutes) {
-            throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION, "Phải cung cấp duy nhất targetDepartmentId hoặc danh sách routes");
-        }
-
-        int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
-        if (hasTargetDept) {
-            User staff = userRepository.findRepresentativeStaffByDepartmentId(targetDeptId)
-                    .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
-
-            if (ticket.getSubCategories() != null) {
-                for (TicketSubCategory tsc : ticket.getSubCategories()) {
-                    if (tsc.getSubCategory() != null) {
-                        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
-                        for (Step s : steps) {
-                            createOrUpdateTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
-                        }
-                    }
-                }
-            }
-        } else {
-            Set<UUID> validSubCategoryIds = ticket.getSubCategories() != null
-                    ? ticket.getSubCategories().stream()
-                            .filter(tsc -> tsc.getSubCategory() != null)
-                            .map(tsc -> tsc.getSubCategory().getSubCategoryId())
-                            .collect(Collectors.toSet())
-                    : Collections.emptySet();
-
-            Map<UUID, User> deptStaffCache = new HashMap<>();
-            for (ReviewTicketRequest.SubCategoryRouteRequest route : routes) {
-                if (route.getSubCategoryId() == null || route.getDepartmentId() == null) {
-                    throw new AppException(ErrorCode.INVALID_ROUTING_CONFIGURATION);
-                }
-                if (!validSubCategoryIds.contains(route.getSubCategoryId())) {
-                    throw new AppException(ErrorCode.INVALID_REQUEST);
-                }
-                User staff = deptStaffCache.computeIfAbsent(route.getDepartmentId(), dId ->
-                        userRepository.findRepresentativeStaffByDepartmentId(dId)
-                                .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND)));
-
-                List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(route.getSubCategoryId());
-                for (Step s : steps) {
-                    createOrUpdateTicketStep(ticket, s, staff, AssignmentStatus.OPEN, index++);
-                }
-            }
-        }
-        
-        ticket.setStatus(TicketStatus.OPEN);
-        ticket.setNeedsManualReview(false);
-        ticket.setDuration(calculateTicketDuration(ticket));
-        ticket = ticketRepository.save(ticket);
-
-        TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.ROUTED, TicketStatus.INITIATED, TicketStatus.OPEN, "Duyệt thủ công vé thành công"
-        );
-        ticketHistoryRepository.save(history);
-
-        return ticketMapper.toTicketResponse(ticket);
     }
 
     @Override
@@ -740,10 +686,8 @@ public class TicketServiceImpl implements TicketService {
         validateStaffDepartmentAccess(ticket, currentUser);
 
         if (request.getSuggestedCategoryId() != null) {
-            Category category = categoryRepository.findById(request.getSuggestedCategoryId())
+            categoryRepository.findById(request.getSuggestedCategoryId())
                     .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
-            ticket.setCategory(category);
-            ticket = ticketRepository.save(ticket);
         }
 
         TicketHistory forwardHistory = ticketHistoryMapper.toTicketHistory(
@@ -753,9 +697,9 @@ public class TicketServiceImpl implements TicketService {
 
         UUID targetDepartmentId = request.getSuggestedDepartmentId();
         if (targetDepartmentId == null && request.getSuggestedCategoryId() != null) {
-            List<DepartmentResponse> suggestedDepts = getSuggestedDepartments(ticketId, request.getSuggestedCategoryId());
-            if (suggestedDepts != null && suggestedDepts.size() == 1) {
-                targetDepartmentId = suggestedDepts.get(0).departmentId();
+            List<RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(request.getSuggestedCategoryId());
+            if (rules != null && rules.size() == 1 && rules.get(0).getDepartment() != null) {
+                targetDepartmentId = rules.get(0).getDepartment().getDepartmentId();
             }
         }
         if (targetDepartmentId == null) {
@@ -768,37 +712,6 @@ public class TicketServiceImpl implements TicketService {
                 .build();
                 
         return this.rerouteTicket(ticketId, rerouteReq);
-    }
-
-    @Override
-    @Transactional
-    public TicketResponse rejectInitiatedTicket(UUID ticketId, String reason) {
-        User currentUser = getCurrentUser();
-
-        if (!isManagerOrStaff(currentUser)) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-
-        if (ticket.getStatus() != TicketStatus.INITIATED) {
-            throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
-        }
-
-        String finalReason = (reason == null || reason.trim().isEmpty()) ? "Không có lý do từ chối" : reason;
-
-        ticket.setStatus(TicketStatus.REJECTED);
-        ticket.setNeedsManualReview(false);
-        ticket.setReviewNote(finalReason);
-
-        TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.REJECTED, TicketStatus.INITIATED, TicketStatus.REJECTED, finalReason
-        );
-        ticketHistoryRepository.save(history);
-
-        ticket = ticketRepository.save(ticket);
-        return ticketMapper.toTicketResponse(ticket);
     }
 
     @Override
