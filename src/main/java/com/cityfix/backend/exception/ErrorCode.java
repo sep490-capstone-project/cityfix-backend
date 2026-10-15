@@ -196,6 +196,11 @@ public enum ErrorCode {
     TICKET_NOT_COMPLETED(
             HttpStatus.BAD_REQUEST,
             "Chỉ có thể đánh giá vé khi vé đã hoàn tất xử lý"
+    ),
+
+    RATING_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy đánh giá"
     );
 
     private final HttpStatus status;

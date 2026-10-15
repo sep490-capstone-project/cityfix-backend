@@ -7,6 +7,8 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
+import java.util.List;
+
 @Mapper(componentModel = "spring")
 public interface RatingMapper {
 
@@ -14,11 +16,15 @@ public interface RatingMapper {
     @Mapping(target = "ticketId", source = "ticket.ticketId")
     @Mapping(target = "userId", source = "user.userId")
     @Mapping(target = "userName", source = "user.fullName")
+    @Mapping(target = "userAvatar", ignore = true)
     @Mapping(target = "rate", source = "rate")
     @Mapping(target = "isAnonymous", source = "isAnonymous")
     @Mapping(target = "feedback", source = "feedback")
     @Mapping(target = "createdAt", source = "createdAt")
+    @Mapping(target = "updatedAt", source = "updatedAt")
     RatingResponse toResponse(Rating rating);
+
+    List<RatingResponse> toResponseList(List<Rating> ratings);
 
     @AfterMapping
     default void maskAnonymous(Rating rating, @MappingTarget RatingResponse response) {
@@ -28,6 +34,7 @@ public interface RatingMapper {
         if (Boolean.TRUE.equals(rating.getIsAnonymous())) {
             response.setUserId(null);
             response.setUserName(null);
+            response.setUserAvatar(null);
         }
     }
 }

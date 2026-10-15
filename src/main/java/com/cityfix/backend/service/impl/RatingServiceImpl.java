@@ -23,6 +23,11 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.cityfix.backend.model.dto.request.UpdateRatingRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
@@ -92,5 +97,81 @@ public class RatingServiceImpl implements RatingService {
         rating = ratingRepository.save(rating);
 
         return ratingMapper.toResponse(rating);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<RatingResponse> getTicketRatings(UUID ticketId, Pageable pageable) {
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        Page<Rating> ratings = ratingRepository.findByTicket_TicketIdAndIsDeletedFalse(ticketId, pageable);
+        return ratings.map(ratingMapper::toResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RatingResponse getMyRating(UUID ticketId) {
+        User currentUser = getCurrentUser();
+
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        return ratingRepository.findByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(ticketId, currentUser.getUserId())
+                .map(ratingMapper::toResponse)
+                .orElse(null);
+    }
+
+    @Override
+    @Transactional
+    public RatingResponse updateRating(UUID ticketId, UUID ratingId, UpdateRatingRequest request) {
+        User currentUser = getCurrentUser();
+
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        Rating rating = ratingRepository.findByIdAndTicket_TicketIdAndIsDeletedFalse(ratingId, ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.RATING_NOT_FOUND));
+
+        if (rating.getUser() == null || !rating.getUser().getUserId().equals(currentUser.getUserId())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        rating.setRate(request.getRate());
+        if (request.getIsAnonymous() != null) {
+            rating.setIsAnonymous(request.getIsAnonymous());
+        }
+        rating.setFeedback(request.getFeedback());
+        rating.setUpdatedAt(LocalDateTime.now());
+
+        rating = ratingRepository.save(rating);
+        return ratingMapper.toResponse(rating);
+    }
+
+    @Override
+    @Transactional
+    public void deleteRating(UUID ticketId, UUID ratingId) {
+        User currentUser = getCurrentUser();
+
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        Rating rating = ratingRepository.findByIdAndTicket_TicketIdAndIsDeletedFalse(ratingId, ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.RATING_NOT_FOUND));
+
+        boolean isOwner = rating.getUser() != null && rating.getUser().getUserId().equals(currentUser.getUserId());
+        boolean isAdmin = currentUser.getRole() != null && "ADMIN".equalsIgnoreCase(currentUser.getRole().getRoleName());
+
+        if (!isOwner && !isAdmin) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        rating.setDeleted(true);
+        rating.setDeletedAt(LocalDateTime.now());
+        ratingRepository.delete(rating);
     }
 }

@@ -55,6 +55,7 @@ class RatingMapperTest {
                 .feedback("Rất hài lòng")
                 .build();
         rating.setCreatedAt(LocalDateTime.now());
+        rating.setUpdatedAt(LocalDateTime.now());
 
         RatingResponse response = ratingMapper.toResponse(rating);
 
@@ -66,6 +67,7 @@ class RatingMapperTest {
         assertThat(response.getRate()).isEqualTo(5);
         assertThat(response.getIsAnonymous()).isFalse();
         assertThat(response.getFeedback()).isEqualTo("Rất hài lòng");
+        assertThat(response.getUpdatedAt()).isNotNull();
     }
 
     @Test
@@ -80,6 +82,7 @@ class RatingMapperTest {
                 .feedback("Xử lý ổn")
                 .build();
         rating.setCreatedAt(LocalDateTime.now());
+        rating.setUpdatedAt(LocalDateTime.now());
 
         RatingResponse response = ratingMapper.toResponse(rating);
 
@@ -88,8 +91,10 @@ class RatingMapperTest {
         assertThat(response.getTicketId()).isEqualTo(ticketId);
         assertThat(response.getUserId()).isNull();
         assertThat(response.getUserName()).isNull();
+        assertThat(response.getUserAvatar()).isNull();
         assertThat(response.getRate()).isEqualTo(4);
         assertThat(response.getIsAnonymous()).isTrue();
         assertThat(response.getFeedback()).isEqualTo("Xử lý ổn");
+        assertThat(response.getUpdatedAt()).isNotNull();
     }
 }
