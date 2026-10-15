@@ -35,6 +35,7 @@ public class TicketStepServiceImpl implements TicketStepService {
     private final UserRepository userRepository;
     private final TicketStepMapper ticketStepMapper;
     private final TicketService ticketService;
+    private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
 
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -96,6 +97,11 @@ public class TicketStepServiceImpl implements TicketStepService {
         if (ticket != null && ticket.getSubCategories() != null && ticket.getSubCategories().size() > 1) {
             ticket.setDuration(ticketService.calculateTicketDuration(ticket));
             ticketRepository.save(ticket);
+        }
+
+        if (status == AssignmentStatus.COMPLETED || status == AssignmentStatus.RESOLVED) {
+            ticketWorkflowEngine.handleStepCompletion(step.getId());
+            step = ticketStepRepository.findById(stepId).orElse(step);
         }
 
         return ticketStepMapper.toTicketStepResponse(step);

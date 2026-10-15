@@ -199,4 +199,23 @@ class ManagerTicketControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getData()).hasSize(2);
     }
+
+    @Test
+    @DisplayName("getDepartmentTickets_returnsPageOfTickets")
+    void getDepartmentTickets_returnsPageOfTickets() {
+        TicketResponse mockResponse = TicketResponse.builder().id(UUID.randomUUID()).description("Test").build();
+        Page<TicketResponse> page = new PageImpl<>(List.of(mockResponse));
+
+        when(managerTicketService.getDepartmentTickets(any(), any(), any(), any(), any(Pageable.class)))
+                .thenReturn(page);
+
+        ResponseEntity<BaseResponse<Page<TicketResponse>>> response = managerTicketController.getDepartmentTickets(
+                UUID.randomUUID(), null, null, null, PageRequest.of(0, 20)
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData().getContent()).hasSize(1);
+    }
 }

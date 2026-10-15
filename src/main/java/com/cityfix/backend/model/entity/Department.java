@@ -36,4 +36,8 @@ public class Department extends BaseEntity {
 
     @OneToMany(mappedBy = "department")
     private List<User> officers;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "manager_id")
+    private User manager;
 }

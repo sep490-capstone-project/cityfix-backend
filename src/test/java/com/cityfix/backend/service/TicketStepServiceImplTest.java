@@ -45,6 +45,8 @@ class TicketStepServiceImplTest {
     @Mock
     private TicketService ticketService;
     @Mock
+    private TicketWorkflowEngine ticketWorkflowEngine;
+    @Mock
     private SecurityContext securityContext;
 
     @InjectMocks
