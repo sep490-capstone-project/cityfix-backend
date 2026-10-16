@@ -319,7 +319,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             List<ManagerDepartmentResponse.StaffSummaryResponse> staffResponses = activeStaffs.stream()
                     .map(staff -> ManagerDepartmentResponse.StaffSummaryResponse.builder()
                             .userId(staff.getUserId())
-                            .username(staff.getFullName())
+                            .username(staff.getEmail())
                             .fullName(staff.getFullName())
                             .email(staff.getEmail())
                             .phoneNumber(staff.getPhoneNumber())
@@ -479,8 +479,20 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             if (staff.isDeleted() || staff.getStatus() != com.cityfix.backend.model.enums.UserStatus.ACTIVE) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Nhân viên '" + staff.getFullName() + "' không còn hoạt động");
             }
-            boolean hasDept = staff.getDepartment() != null
-                    || !userDepartmentRepository.findByUserUserId(staff.getUserId()).isEmpty();
+        }
+
+        // Batch query kiểm tra phòng ban qua bảng user_department để tránh N+1 query
+        Set<UUID> staffsToCheck = assignees.stream()
+                .filter(staff -> staff.getDepartment() == null)
+                .map(User::getUserId)
+                .collect(Collectors.toSet());
+
+        Set<UUID> userIdsWithNNDept = staffsToCheck.isEmpty()
+                ? Collections.emptySet()
+                : userDepartmentRepository.findUserIdsWithDepartment(staffsToCheck);
+
+        for (User staff : assignees) {
+            boolean hasDept = staff.getDepartment() != null || userIdsWithNNDept.contains(staff.getUserId());
             if (!hasDept) {
                 throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT, "Nhân viên '" + staff.getFullName() + "' không thuộc phòng ban nào");
             }

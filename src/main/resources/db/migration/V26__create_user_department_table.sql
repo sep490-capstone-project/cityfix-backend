@@ -1,4 +1,6 @@
 -- Migration V26: Create user_department table for N-N relationship between user_account and department
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 CREATE TABLE IF NOT EXISTS user_department (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,

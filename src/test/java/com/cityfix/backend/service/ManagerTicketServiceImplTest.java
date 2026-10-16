@@ -588,7 +588,7 @@ class ManagerTicketServiceImplTest {
         assertThat(result.get(0).getStaffs()).hasSize(1);
         assertThat(result.get(0).getStaffs().get(0).getUserId()).isEqualTo(staff.getUserId());
         assertThat(result.get(0).getStaffs().get(0).getFullName()).isEqualTo("Trần Cán Bộ");
-        assertThat(result.get(0).getStaffs().get(0).getUsername()).isEqualTo("Trần Cán Bộ");
+        assertThat(result.get(0).getStaffs().get(0).getUsername()).isEqualTo("staff@cityfix.vn");
         assertThat(result.get(0).getStaffs().get(0).getEmail()).isEqualTo("staff@cityfix.vn");
     }
 

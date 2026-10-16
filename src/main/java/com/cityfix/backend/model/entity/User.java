@@ -20,7 +20,7 @@ public class User extends BaseEntity {
     @Column(name = "user_id")
     private UUID userId;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
 
