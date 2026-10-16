@@ -5,6 +5,7 @@ import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.entity.UserDepartment;
 import com.cityfix.backend.model.enums.UserStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -23,6 +24,14 @@ public interface UserDepartmentRepository extends JpaRepository<UserDepartment, 
 
     boolean existsByUserUserIdAndDepartmentDepartmentId(UUID userId, UUID departmentId);
 
+    @Modifying
+    @Query("DELETE FROM UserDepartment ud WHERE ud.user.userId = :userId")
+    void deleteByUserUserId(@Param("userId") UUID userId);
+
+    @Modifying
+    @Query("DELETE FROM UserDepartment ud WHERE ud.user.userId = :userId AND ud.department.departmentId = :departmentId")
+    void deleteByUserUserIdAndDepartmentDepartmentId(@Param("userId") UUID userId, @Param("departmentId") UUID departmentId);
+
     @Query("SELECT ud.department FROM UserDepartment ud WHERE ud.user.userId = :userId AND ud.department.isDeleted = false")
     List<Department> findDepartmentsByUserId(@Param("userId") UUID userId);
 
@@ -35,4 +44,7 @@ public interface UserDepartmentRepository extends JpaRepository<UserDepartment, 
 
     @Query("SELECT DISTINCT ud.user.userId FROM UserDepartment ud WHERE ud.user.userId IN :userIds")
     Set<UUID> findUserIdsWithDepartment(@Param("userIds") Collection<UUID> userIds);
+
+    @Query("SELECT ud FROM UserDepartment ud JOIN FETCH ud.user u JOIN FETCH u.role WHERE ud.department.departmentId = :departmentId AND u.isDeleted = false ORDER BY ud.createdAt ASC")
+    List<UserDepartment> findDepartmentUsersWithRole(@Param("departmentId") UUID departmentId);
 }

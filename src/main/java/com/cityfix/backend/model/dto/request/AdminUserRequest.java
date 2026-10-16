@@ -37,6 +37,7 @@ public class AdminUserRequest {
     @NotNull(message = "Role ID is required")
     private UUID roleId;
 
-    private UUID departmentId; // Optional
+    private UUID departmentId; // Optional (legacy / primary department)
+    private java.util.List<UUID> departmentIds; // Optional (N-N departments)
     private UserStatus status; // Optional
 }
