@@ -26,8 +26,7 @@ public class ReviewTicketRequest {
     private List<UUID> subCategoryIds;
 
     @NotEmpty(message = "Danh sách bước xử lý không được để trống")
-    @Valid
-    private List<StepAssignmentRequest> steps;
+    private List<@Valid StepAssignmentRequest> steps;
 
     @Data
     @NoArgsConstructor

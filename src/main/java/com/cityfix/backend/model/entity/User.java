@@ -20,13 +20,17 @@ public class User extends BaseEntity {
     @Column(name = "user_id")
     private UUID userId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "department_id")
     private Department department;
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private java.util.List<UserDepartment> userDepartments = new java.util.ArrayList<>();
 
     @Column(name = "full_name", nullable = false, length = 100)
     private String fullName;

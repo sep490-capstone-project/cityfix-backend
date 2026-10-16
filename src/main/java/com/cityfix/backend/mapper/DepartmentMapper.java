@@ -13,6 +13,7 @@ public interface DepartmentMapper {
 
     @Mapping(target = "departmentId", ignore = true)
     @Mapping(target = "officers", ignore = true)
+    @Mapping(target = "userDepartments", ignore = true)
     @Mapping(target = "manager", ignore = true)
     Department toEntity(CreateDepartmentRequest request);
 
@@ -30,6 +31,7 @@ public interface DepartmentMapper {
     @Mapping(target = "deletedAt", ignore = true)
     @Mapping(target = "departmentId", ignore = true)
     @Mapping(target = "officers", ignore = true)
+    @Mapping(target = "userDepartments", ignore = true)
     @Mapping(target = "manager", ignore = true)
     void updateEntityFromRequest(UpdateDepartmentRequest request, @MappingTarget Department department);
 }

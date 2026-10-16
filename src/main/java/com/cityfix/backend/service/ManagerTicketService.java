@@ -22,7 +22,7 @@ public interface ManagerTicketService {
             Pageable pageable
     );
 
-    List<SuggestedAssigneeResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId);
+    List<com.cityfix.backend.model.dto.response.ManagerDepartmentResponse> getManagerDepartments();
 
     TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request);
 
