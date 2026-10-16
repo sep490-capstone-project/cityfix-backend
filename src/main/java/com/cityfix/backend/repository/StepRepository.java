@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface StepRepository extends JpaRepository<Step, UUID> {
     List<Step> findBySubCategory_SubCategoryId(UUID subCategoryId);
+    java.util.Optional<Step> findBySubCategory_SubCategoryIdAndStepNameAndIsDeletedFalse(UUID subCategoryId, String stepName);
 }

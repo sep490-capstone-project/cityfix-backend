@@ -20,6 +20,8 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
 
     boolean existsByNameAndDepartmentIdNotAndIsDeletedFalse(String name, UUID departmentId);
 
+    Optional<Department> findByNameAndIsDeletedFalse(String name);
+
     Optional<Department> findByDepartmentIdAndIsDeletedFalse(UUID departmentId);
 
     Page<Department> findByIsDeletedFalse(Pageable pageable);

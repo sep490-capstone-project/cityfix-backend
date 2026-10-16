@@ -25,6 +25,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     Optional<Ticket> findById(UUID id);
 
+    boolean existsByDescriptionAndStatus(String description, TicketStatus status);
+
     @Query(value = """
         SELECT t.ticket_id AS ticketId,
                t.description AS description,

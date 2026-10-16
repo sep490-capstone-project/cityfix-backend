@@ -9,6 +9,7 @@ import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
 import com.cityfix.backend.model.dto.request.*;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
+import com.cityfix.backend.model.dto.response.ManagerDepartmentResponse;
 import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
@@ -51,6 +52,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     private final StepRepository stepRepository;
     private final CategoryRepository categoryRepository;
     private final SubCategoryRepository subCategoryRepository;
+    private final UserDepartmentRepository userDepartmentRepository;
 
     private final TicketMapper ticketMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
@@ -69,20 +71,47 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
         Object principal = auth.getPrincipal();
-        if (principal instanceof User user) {
-            return user;
-        }
         String email = auth.getName();
+        if (principal instanceof User user && user.getEmail() != null) {
+            email = user.getEmail();
+        }
         return userRepository.findByEmail(email)
+                .or(() -> principal instanceof User user ? Optional.of(user) : Optional.empty())
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
     }
 
     private boolean isManager(User user) {
-        return user != null && user.getRole() != null && "MANAGER".equalsIgnoreCase(user.getRole().getRoleName());
+        if (user != null && user.getRole() != null) {
+            try {
+                if ("MANAGER".equalsIgnoreCase(user.getRole().getRoleName())) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null) {
+            return auth.getAuthorities().stream().anyMatch(a ->
+                    a.getAuthority().equalsIgnoreCase("ROLE_MANAGER") || a.getAuthority().equalsIgnoreCase("MANAGER"));
+        }
+        return false;
     }
 
     private boolean isAdmin(User user) {
-        return user != null && user.getRole() != null && "ADMIN".equalsIgnoreCase(user.getRole().getRoleName());
+        if (user != null && user.getRole() != null) {
+            try {
+                if ("ADMIN".equalsIgnoreCase(user.getRole().getRoleName())) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null) {
+            return auth.getAuthorities().stream().anyMatch(a ->
+                    a.getAuthority().equalsIgnoreCase("ROLE_ADMIN") || a.getAuthority().equalsIgnoreCase("ADMIN"));
+        }
+        return false;
     }
 
     private TicketStep createOrUpdateTicketStep(
@@ -150,14 +179,22 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         UUID targetDeptId;
         if (isMgr) {
-            if (currentUser.getDepartment() == null || currentUser.getDepartment().getDepartmentId() == null) {
+            List<Department> mgrDepts = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
+            if (mgrDepts.isEmpty() && currentUser.getDepartment() != null && currentUser.getDepartment().getDepartmentId() != null) {
+                mgrDepts = List.of(currentUser.getDepartment());
+            }
+            if (mgrDepts.isEmpty()) {
                 throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
             }
-            UUID managerDeptId = currentUser.getDepartment().getDepartmentId();
-            if (departmentId != null && !departmentId.equals(managerDeptId)) {
-                throw new AppException(ErrorCode.FORBIDDEN);
+            Set<UUID> mgrDeptIds = mgrDepts.stream().map(Department::getDepartmentId).collect(Collectors.toSet());
+            if (departmentId != null) {
+                if (!mgrDeptIds.contains(departmentId)) {
+                    throw new AppException(ErrorCode.FORBIDDEN);
+                }
+                targetDeptId = departmentId;
+            } else {
+                targetDeptId = mgrDepts.get(0).getDepartmentId();
             }
-            targetDeptId = managerDeptId;
         } else {
             // ADMIN
             if (departmentId != null) {
@@ -257,54 +294,46 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<SuggestedAssigneeResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+    public List<ManagerDepartmentResponse> getManagerDepartments() {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
 
-        UUID searchCategoryId = categoryId != null ? categoryId : getTicketCategoryId(ticket);
-        if (searchCategoryId == null) {
+        List<Department> departments = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
+        if (departments.isEmpty() && currentUser.getDepartment() != null) {
+            departments = List.of(currentUser.getDepartment());
+        }
+
+        if (departments.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(searchCategoryId);
-        String address = ticket.getAddress() != null ? ticket.getAddress().toLowerCase() : "";
-
-        List<Department> suggestedDepts = rules.stream()
-                .filter(rule -> {
-                    boolean provinceMatch = rule.getProvince() == null || rule.getProvince().isBlank() || address.contains(rule.getProvince().toLowerCase());
-                    boolean wardMatch = rule.getWard() == null || rule.getWard().isBlank() || address.contains(rule.getWard().toLowerCase());
-                    return provinceMatch && wardMatch;
-                })
-                .map(RoutingRule::getDepartment)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-
-        List<SuggestedAssigneeResponse> result = new ArrayList<>();
-        for (Department dept : suggestedDepts) {
-            List<User> activeStaff = userRepository.findActiveStaffByDepartmentId(dept.getDepartmentId());
-            if (activeStaff != null && !activeStaff.isEmpty()) {
-                for (User staff : activeStaff) {
-                    result.add(SuggestedAssigneeResponse.builder()
-                            .assigneeId(staff.getUserId())
-                            .assigneeName(staff.getFullName())
-                            .assigneePhone(staff.getPhoneNumber())
-                            .assigneeEmail(staff.getEmail())
-                            .departmentId(dept.getDepartmentId())
-                            .departmentName(dept.getName())
-                            .build());
-                }
-            } else if (dept.getManager() != null) {
-                User mgr = dept.getManager();
-                result.add(SuggestedAssigneeResponse.builder()
-                        .assigneeId(mgr.getUserId())
-                        .assigneeName(mgr.getFullName())
-                        .assigneePhone(mgr.getPhoneNumber())
-                        .assigneeEmail(mgr.getEmail())
-                        .departmentId(dept.getDepartmentId())
-                        .departmentName(dept.getName())
-                        .build());
+        List<ManagerDepartmentResponse> result = new ArrayList<>();
+        for (Department dept : departments) {
+            List<User> activeStaffs = userDepartmentRepository.findActiveStaffByDepartmentId(dept.getDepartmentId());
+            if (activeStaffs.isEmpty()) {
+                activeStaffs = userRepository.findActiveStaffByDepartmentId(dept.getDepartmentId());
             }
+
+            List<ManagerDepartmentResponse.StaffSummaryResponse> staffResponses = activeStaffs.stream()
+                    .map(staff -> ManagerDepartmentResponse.StaffSummaryResponse.builder()
+                            .userId(staff.getUserId())
+                            .username(staff.getEmail())
+                            .fullName(staff.getFullName())
+                            .email(staff.getEmail())
+                            .phoneNumber(staff.getPhoneNumber())
+                            .build())
+                    .toList();
+
+            result.add(ManagerDepartmentResponse.builder()
+                    .departmentId(dept.getDepartmentId())
+                    .departmentName(dept.getName())
+                    .level(dept.getLevel())
+                    .contactEmail(dept.getContactEmail())
+                    .phoneNumber(dept.getPhoneNumber())
+                    .staffs(staffResponses)
+                    .build());
         }
 
         return result;
@@ -450,7 +479,21 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             if (staff.isDeleted() || staff.getStatus() != com.cityfix.backend.model.enums.UserStatus.ACTIVE) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Nhân viên '" + staff.getFullName() + "' không còn hoạt động");
             }
-            if (staff.getDepartment() == null) {
+        }
+
+        // Batch query kiểm tra phòng ban qua bảng user_department để tránh N+1 query
+        Set<UUID> staffsToCheck = assignees.stream()
+                .filter(staff -> staff.getDepartment() == null)
+                .map(User::getUserId)
+                .collect(Collectors.toSet());
+
+        Set<UUID> userIdsWithNNDept = staffsToCheck.isEmpty()
+                ? Collections.emptySet()
+                : userDepartmentRepository.findUserIdsWithDepartment(staffsToCheck);
+
+        for (User staff : assignees) {
+            boolean hasDept = staff.getDepartment() != null || userIdsWithNNDept.contains(staff.getUserId());
+            if (!hasDept) {
                 throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT, "Nhân viên '" + staff.getFullName() + "' không thuộc phòng ban nào");
             }
         }
@@ -460,15 +503,31 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     private void updateTicketSubCategories(Ticket ticket, List<SubCategory> subCategories) {
         if (ticket.getSubCategories() == null) {
             ticket.setSubCategories(new ArrayList<>());
-        } else {
-            ticket.getSubCategories().clear();
         }
+
+        Set<UUID> targetSubCatIds = subCategories.stream()
+                .map(SubCategory::getSubCategoryId)
+                .collect(Collectors.toSet());
+
+        // 1. Loại bỏ các subcategory không còn nằm trong danh sách review
+        ticket.getSubCategories().removeIf(tsc ->
+                tsc.getSubCategory() == null || !targetSubCatIds.contains(tsc.getSubCategory().getSubCategoryId()));
+
+        // 2. Xác định các subcategory đã tồn tại sẵn để giữ nguyên (tránh vi phạm unique constraint uk_ticket_subcategory)
+        Set<UUID> existingSubCatIds = ticket.getSubCategories().stream()
+                .filter(tsc -> tsc.getSubCategory() != null)
+                .map(tsc -> tsc.getSubCategory().getSubCategoryId())
+                .collect(Collectors.toSet());
+
+        // 3. Chỉ thêm mới những subcategory chưa từng có
         for (SubCategory sc : subCategories) {
-            TicketSubCategory tsc = TicketSubCategory.builder()
-                    .ticket(ticket)
-                    .subCategory(sc)
-                    .build();
-            ticket.getSubCategories().add(tsc);
+            if (!existingSubCatIds.contains(sc.getSubCategoryId())) {
+                TicketSubCategory tsc = TicketSubCategory.builder()
+                        .ticket(ticket)
+                        .subCategory(sc)
+                        .build();
+                ticket.getSubCategories().add(tsc);
+            }
         }
     }
 
@@ -476,9 +535,20 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                                    Map<UUID, Step> stepMap, Map<UUID, User> assigneeMap) {
         if (ticket.getSteps() == null) {
             ticket.setSteps(new ArrayList<>());
-        } else {
-            ticket.getSteps().clear();
         }
+
+        Set<UUID> targetStepIds = stepRequests.stream()
+                .map(ReviewTicketRequest.StepAssignmentRequest::getStepId)
+                .collect(Collectors.toSet());
+
+        // 1. Loại bỏ các step không còn nằm trong danh sách review
+        ticket.getSteps().removeIf(ts -> ts.getStep() == null || !targetStepIds.contains(ts.getStep().getStepId()));
+
+        Map<UUID, TicketStep> existingStepMap = ticket.getSteps().stream()
+                .filter(ts -> ts.getStep() != null)
+                .collect(Collectors.toMap(ts -> ts.getStep().getStepId(), Function.identity(), (a, b) -> a));
+
+        // 2. Cập nhật các step đã có hoặc tạo mới nếu chưa có
         for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
             Step step = stepMap.get(stepReq.getStepId());
             User assignee = assigneeMap.get(stepReq.getAssigneeId());
@@ -486,16 +556,26 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             if (deadline == null && step != null && step.getDuration() != null && step.getDuration() > 0) {
                 deadline = LocalDateTime.now().plusHours(step.getDuration());
             }
-            TicketStep ticketStep = TicketStep.builder()
-                    .ticket(ticket)
-                    .step(step)
-                    .assignee(assignee)
-                    .status(AssignmentStatus.OPEN)
-                    .orderIndex(stepReq.getOrderIndex())
-                    .deadline(deadline)
-                    .notes(stepReq.getNotes())
-                    .build();
-            ticket.getSteps().add(ticketStep);
+
+            TicketStep ticketStep = existingStepMap.get(stepReq.getStepId());
+            if (ticketStep != null) {
+                ticketStep.setAssignee(assignee);
+                ticketStep.setStatus(AssignmentStatus.OPEN);
+                ticketStep.setOrderIndex(stepReq.getOrderIndex());
+                ticketStep.setDeadline(deadline);
+                ticketStep.setNotes(stepReq.getNotes());
+            } else {
+                ticketStep = TicketStep.builder()
+                        .ticket(ticket)
+                        .step(step)
+                        .assignee(assignee)
+                        .status(AssignmentStatus.OPEN)
+                        .orderIndex(stepReq.getOrderIndex())
+                        .deadline(deadline)
+                        .notes(stepReq.getNotes())
+                        .build();
+                ticket.getSteps().add(ticketStep);
+            }
         }
     }
 

@@ -28,6 +28,10 @@ public class User extends BaseEntity {
     @JoinColumn(name = "department_id")
     private Department department;
 
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private java.util.List<UserDepartment> userDepartments = new java.util.ArrayList<>();
+
     @Column(name = "full_name", nullable = false, length = 100)
     private String fullName;
 

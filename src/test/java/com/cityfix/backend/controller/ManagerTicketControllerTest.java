@@ -3,6 +3,7 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.model.dto.request.*;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
+import com.cityfix.backend.model.dto.response.ManagerDepartmentResponse;
 import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
@@ -55,28 +56,33 @@ class ManagerTicketControllerTest {
     }
 
     @Test
-    @DisplayName("getSuggestedDepartments_returnsListOfDepartments")
-    void getSuggestedDepartments_returnsListOfDepartments() {
-        UUID ticketId = UUID.randomUUID();
-        SuggestedAssigneeResponse mockResponse = SuggestedAssigneeResponse.builder()
-                .assigneeId(UUID.randomUUID())
-                .assigneeName("Nguyen Van A")
-                .assigneePhone("0987654321")
-                .assigneeEmail("officer@cityfix.vn")
+    @DisplayName("getManagerDepartments_returnsListOfDepartmentsWithStaff")
+    void getManagerDepartments_returnsListOfDepartmentsWithStaff() {
+        ManagerDepartmentResponse.StaffSummaryResponse staff = ManagerDepartmentResponse.StaffSummaryResponse.builder()
+                .userId(UUID.randomUUID())
+                .username("Nguyen Van A")
+                .fullName("Nguyen Van A")
+                .phoneNumber("0987654321")
+                .email("officer@cityfix.vn")
+                .build();
+
+        ManagerDepartmentResponse mockResponse = ManagerDepartmentResponse.builder()
                 .departmentId(UUID.randomUUID())
                 .departmentName("Test Dept")
+                .staffs(List.of(staff))
                 .build();
         
-        when(managerTicketService.getSuggestedDepartments(eq(ticketId), any())).thenReturn(List.of(mockResponse));
+        when(managerTicketService.getManagerDepartments()).thenReturn(List.of(mockResponse));
 
-        ResponseEntity<BaseResponse<List<SuggestedAssigneeResponse>>> response = managerTicketController.getSuggestedDepartments(ticketId, null);
+        ResponseEntity<BaseResponse<List<ManagerDepartmentResponse>>> response = managerTicketController.getManagerDepartments();
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getData()).hasSize(1);
         assertThat(response.getBody().getData().get(0).getDepartmentName()).isEqualTo("Test Dept");
-        assertThat(response.getBody().getData().get(0).getAssigneeName()).isEqualTo("Nguyen Van A");
+        assertThat(response.getBody().getData().get(0).getStaffs()).hasSize(1);
+        assertThat(response.getBody().getData().get(0).getStaffs().get(0).getUsername()).isEqualTo("Nguyen Van A");
     }
 
     @Test

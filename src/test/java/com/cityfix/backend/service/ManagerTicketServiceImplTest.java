@@ -7,6 +7,7 @@ import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
 import com.cityfix.backend.model.dto.request.UpdateTicketDurationRequest;
+import com.cityfix.backend.model.dto.response.ManagerDepartmentResponse;
 import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.*;
@@ -70,6 +71,8 @@ class ManagerTicketServiceImplTest {
     private CategoryRepository categoryRepository;
     @Mock
     private SubCategoryRepository subCategoryRepository;
+    @Mock
+    private UserDepartmentRepository userDepartmentRepository;
     @Mock
     private NotificationRepository notificationRepository;
     @Mock
@@ -552,24 +555,16 @@ class ManagerTicketServiceImplTest {
     }
 
     @Test
-    @DisplayName("getSuggestedDepartments_returnsListOfSuggestedAssignees")
-    void getSuggestedDepartments_returnsListOfSuggestedAssignees() {
-        Category cat = Category.builder().categoryId(UUID.randomUUID()).name("Môi trường").build();
-        SubCategory sub = SubCategory.builder().subCategoryId(UUID.randomUUID()).category(cat).build();
-        TicketSubCategory tsc = TicketSubCategory.builder().subCategory(sub).build();
-        ticket.setSubCategories(List.of(tsc));
-        ticket.setAddress("Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh");
+    @DisplayName("getManagerDepartments_asManager_returnsDepartmentsWithStaff")
+    void getManagerDepartments_asManager_returnsDepartmentsWithStaff() {
+        mockCurrentUser(managerUser);
 
         Department dept = Department.builder()
                 .departmentId(UUID.randomUUID())
                 .name("Phòng Quản lý Đô thị")
-                .build();
-
-        RoutingRule rule = RoutingRule.builder()
-                .category(cat)
-                .department(dept)
-                .province("Hồ Chí Minh")
-                .ward("Bến Nghé")
+                .level(com.cityfix.backend.model.enums.DepartmentLevel.WARD)
+                .contactEmail("dept@cityfix.vn")
+                .phoneNumber("0281234567")
                 .build();
 
         User staff = User.builder()
@@ -580,21 +575,31 @@ class ManagerTicketServiceImplTest {
                 .department(dept)
                 .build();
 
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(cat.getCategoryId()))
-                .thenReturn(List.of(rule));
-        when(userRepository.findActiveStaffByDepartmentId(dept.getDepartmentId()))
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(List.of(dept));
+        when(userDepartmentRepository.findActiveStaffByDepartmentId(dept.getDepartmentId()))
                 .thenReturn(List.of(staff));
 
-        List<SuggestedAssigneeResponse> result = managerTicketService.getSuggestedDepartments(ticketId, null);
+        List<ManagerDepartmentResponse> result = managerTicketService.getManagerDepartments();
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getAssigneeId()).isEqualTo(staff.getUserId());
-        assertThat(result.get(0).getAssigneeName()).isEqualTo("Trần Cán Bộ");
-        assertThat(result.get(0).getAssigneePhone()).isEqualTo("0912345678");
-        assertThat(result.get(0).getAssigneeEmail()).isEqualTo("staff@cityfix.vn");
         assertThat(result.get(0).getDepartmentId()).isEqualTo(dept.getDepartmentId());
         assertThat(result.get(0).getDepartmentName()).isEqualTo("Phòng Quản lý Đô thị");
+        assertThat(result.get(0).getStaffs()).hasSize(1);
+        assertThat(result.get(0).getStaffs().get(0).getUserId()).isEqualTo(staff.getUserId());
+        assertThat(result.get(0).getStaffs().get(0).getFullName()).isEqualTo("Trần Cán Bộ");
+        assertThat(result.get(0).getStaffs().get(0).getUsername()).isEqualTo("staff@cityfix.vn");
+        assertThat(result.get(0).getStaffs().get(0).getEmail()).isEqualTo("staff@cityfix.vn");
+    }
+
+    @Test
+    @DisplayName("getManagerDepartments_asStaff_throwsForbidden")
+    void getManagerDepartments_asStaff_throwsForbidden() {
+        mockCurrentUser(staffUser);
+
+        assertThatThrownBy(() -> managerTicketService.getManagerDepartments())
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FORBIDDEN);
     }
 
     @Test

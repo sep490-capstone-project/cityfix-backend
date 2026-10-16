@@ -37,6 +37,10 @@ public class Department extends BaseEntity {
     @OneToMany(mappedBy = "department")
     private List<User> officers;
 
+    @OneToMany(mappedBy = "department", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<UserDepartment> userDepartments = new java.util.ArrayList<>();
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "manager_id")
     private User manager;
