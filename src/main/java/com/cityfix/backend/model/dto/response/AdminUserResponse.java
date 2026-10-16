@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -23,7 +24,17 @@ public class AdminUserResponse {
     private String roleName;
     private UUID roleId;
     private UUID departmentId;
+    private List<DepartmentSummaryResponse> departments;
     private UserStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class DepartmentSummaryResponse {
+        private UUID departmentId;
+        private String departmentName;
+    }
 }
