@@ -17,7 +17,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/admin/steps")
-@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 @Tag(name = "ADMIN Step API", description = "CRUD operations for Steps")
 public class AdminStepController {
@@ -25,12 +24,14 @@ public class AdminStepController {
     private final StepService stepService;
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Create a new Step")
     public ResponseEntity<BaseResponse<StepResponse>> createStep(@Valid @RequestBody StepRequest request) {
         return ResponseEntity.ok(BaseResponse.success("Created successfully", stepService.createStep(request)));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Update an existing Step")
     public ResponseEntity<BaseResponse<StepResponse>> updateStep(
             @PathVariable UUID id, @Valid @RequestBody StepRequest request) {
@@ -38,6 +39,7 @@ public class AdminStepController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Delete a Step (Hard Delete)")
     public ResponseEntity<BaseResponse<Void>> deleteStep(@PathVariable UUID id) {
         stepService.deleteStep(id);
@@ -45,12 +47,14 @@ public class AdminStepController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Get all Steps")
     public ResponseEntity<BaseResponse<List<StepResponse>>> getAllSteps() {
         return ResponseEntity.ok(BaseResponse.success("Success", stepService.getAllSteps()));
     }
 
     @GetMapping("/sub-category/{subCategoryId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Get Steps by SubCategory ID")
     public ResponseEntity<BaseResponse<List<StepResponse>>> getStepsBySubCategory(@PathVariable UUID subCategoryId) {
         return ResponseEntity.ok(BaseResponse.success("Success", stepService.getStepsBySubCategoryId(subCategoryId)));
