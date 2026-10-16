@@ -3,6 +3,7 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.model.dto.request.*;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
+import com.cityfix.backend.model.dto.response.ManagerDepartmentResponse;
 import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
@@ -57,14 +58,12 @@ public class ManagerTicketController {
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé phòng ban thành công", response));
     }
 
-    @GetMapping("/{id}/suggested-departments")
+    @GetMapping("/departments")
     @PreAuthorize("hasRole('MANAGER')")
-    @Operation(summary = "Gợi ý cán bộ/phòng ban cho vé", description = "Tìm danh sách cán bộ phụ trách từ các phòng ban phù hợp dựa trên routing rule (Category và Địa chỉ)")
-    public ResponseEntity<BaseResponse<List<SuggestedAssigneeResponse>>> getSuggestedDepartments(
-            @PathVariable UUID id,
-            @RequestParam(value = "categoryId", required = false) UUID categoryId) {
-        List<SuggestedAssigneeResponse> response = managerTicketService.getSuggestedDepartments(id, categoryId);
-        return ResponseEntity.ok(BaseResponse.success("Lấy gợi ý phòng ban thành công", response));
+    @Operation(summary = "Lấy danh sách phòng ban liên kết với Manager", description = "Trả về danh sách các phòng ban mà Manager phụ trách cùng các cán bộ (role STAFF) thuộc phòng ban đó")
+    public ResponseEntity<BaseResponse<List<ManagerDepartmentResponse>>> getManagerDepartments() {
+        List<ManagerDepartmentResponse> response = managerTicketService.getManagerDepartments();
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách phòng ban của quản lý thành công", response));
     }
 
     @PutMapping("/{id}/review")
