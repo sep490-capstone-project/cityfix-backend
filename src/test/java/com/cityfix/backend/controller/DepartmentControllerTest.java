@@ -1,9 +1,11 @@
 package com.cityfix.backend.controller;
 
+import com.cityfix.backend.model.dto.request.AssignDepartmentUsersRequest;
 import com.cityfix.backend.model.dto.request.CreateDepartmentRequest;
 import com.cityfix.backend.model.dto.request.UpdateDepartmentRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
+import com.cityfix.backend.model.dto.response.DepartmentUserResponse;
 import com.cityfix.backend.model.enums.DepartmentLevel;
 import com.cityfix.backend.service.DepartmentService;
 import jakarta.validation.ConstraintViolation;
@@ -191,5 +193,64 @@ class DepartmentControllerTest {
 
         assertThat(preAuthorize).isNotNull();
         assertThat(preAuthorize.value()).isEqualTo("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')");
+    }
+
+    @Test
+    @DisplayName("assignUsersToDepartment_validRequest_returns200OK")
+    void assignUsersToDepartment_validRequest_returns200OK() {
+        UUID staffId = UUID.randomUUID();
+        AssignDepartmentUsersRequest request = new AssignDepartmentUsersRequest(List.of(staffId));
+        DepartmentUserResponse userResp = DepartmentUserResponse.builder()
+                .userId(staffId)
+                .email("staff@cityfix.vn")
+                .roleName("STAFF")
+                .build();
+
+        when(departmentService.assignUsersToDepartment(eq(departmentId), any(AssignDepartmentUsersRequest.class)))
+                .thenReturn(List.of(userResp));
+
+        ResponseEntity<BaseResponse<List<DepartmentUserResponse>>> response =
+                departmentController.assignUsersToDepartment(departmentId, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData()).hasSize(1);
+        assertThat(response.getBody().getData().get(0).getEmail()).isEqualTo("staff@cityfix.vn");
+        verify(departmentService).assignUsersToDepartment(departmentId, request);
+    }
+
+    @Test
+    @DisplayName("removeUserFromDepartment_validId_returns200OK")
+    void removeUserFromDepartment_validId_returns200OK() {
+        UUID staffId = UUID.randomUUID();
+        doNothing().when(departmentService).removeUserFromDepartment(departmentId, staffId);
+
+        ResponseEntity<BaseResponse<Void>> response =
+                departmentController.removeUserFromDepartment(departmentId, staffId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        verify(departmentService).removeUserFromDepartment(departmentId, staffId);
+    }
+
+    @Test
+    @DisplayName("getDepartmentUsers_validId_returns200OK")
+    void getDepartmentUsers_validId_returns200OK() {
+        UUID staffId = UUID.randomUUID();
+        DepartmentUserResponse userResp = DepartmentUserResponse.builder()
+                .userId(staffId)
+                .email("staff@cityfix.vn")
+                .roleName("STAFF")
+                .build();
+
+        when(departmentService.getDepartmentUsers(departmentId)).thenReturn(List.of(userResp));
+
+        ResponseEntity<BaseResponse<List<DepartmentUserResponse>>> response =
+                departmentController.getDepartmentUsers(departmentId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData()).hasSize(1);
+        verify(departmentService).getDepartmentUsers(departmentId);
     }
 }
