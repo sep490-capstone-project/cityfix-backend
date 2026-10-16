@@ -1,10 +1,13 @@
 package com.cityfix.backend.mapper;
 
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.entity.Category;
 import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Role;
+import com.cityfix.backend.model.entity.SubCategory;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
+import com.cityfix.backend.model.entity.TicketSubCategory;
 import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import org.junit.jupiter.api.AfterEach;
@@ -182,6 +185,7 @@ class TicketMapperTest {
         assertThat(response).isNotNull();
         assertThat(response.getDepartmentId()).isEqualTo(department.getDepartmentId());
         assertThat(response.getDepartmentName()).isEqualTo("Phòng Quản lý Đô thị");
+        assertThat(response.getAssigneeId()).isEqualTo(staff.getUserId());
     }
 
     @Test
@@ -194,5 +198,35 @@ class TicketMapperTest {
         assertThat(response).isNotNull();
         assertThat(response.getDepartmentId()).isNull();
         assertThat(response.getDepartmentName()).isNull();
+        assertThat(response.getAssigneeId()).isNull();
+        assertThat(response.getAssigneeName()).isNull();
+    }
+
+    @Test
+    @DisplayName("toTicketResponse_withMultipleSubCategories_mapsCategoriesList")
+    void toTicketResponse_withMultipleSubCategories_mapsCategoriesList() {
+        Category cat1 = Category.builder().categoryId(UUID.randomUUID()).name("Hạ tầng").build();
+        Category cat2 = Category.builder().categoryId(UUID.randomUUID()).name("Môi trường").build();
+
+        SubCategory sub1 = SubCategory.builder().subCategoryId(UUID.randomUUID()).category(cat1).name("Ổ gà").build();
+        SubCategory sub2 = SubCategory.builder().subCategoryId(UUID.randomUUID()).category(cat1).name("Cống nghẹt").build();
+        SubCategory sub3 = SubCategory.builder().subCategoryId(UUID.randomUUID()).category(cat2).name("Rác thải").build();
+
+        TicketSubCategory tsc1 = TicketSubCategory.builder().subCategory(sub1).build();
+        TicketSubCategory tsc2 = TicketSubCategory.builder().subCategory(sub2).build();
+        TicketSubCategory tsc3 = TicketSubCategory.builder().subCategory(sub3).build();
+
+        ticket.setSubCategories(List.of(tsc1, tsc2, tsc3));
+
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getCategories()).hasSize(2);
+        assertThat(response.getCategories().get(0).getCategoryId()).isEqualTo(cat1.getCategoryId());
+        assertThat(response.getCategories().get(0).getCategoryName()).isEqualTo("Hạ tầng");
+        assertThat(response.getCategories().get(1).getCategoryId()).isEqualTo(cat2.getCategoryId());
+        assertThat(response.getCategories().get(1).getCategoryName()).isEqualTo("Môi trường");
+        assertThat(response.getCategoryId()).isEqualTo(cat1.getCategoryId());
+        assertThat(response.getCategoryName()).isEqualTo("Hạ tầng");
     }
 }

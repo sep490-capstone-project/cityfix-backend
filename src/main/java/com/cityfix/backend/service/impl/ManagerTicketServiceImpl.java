@@ -9,6 +9,7 @@ import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
 import com.cityfix.backend.model.dto.request.*;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
+import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.model.entity.*;
@@ -256,7 +257,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
+    public List<SuggestedAssigneeResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
@@ -275,10 +276,38 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                     return provinceMatch && wardMatch;
                 })
                 .map(RoutingRule::getDepartment)
+                .filter(Objects::nonNull)
                 .distinct()
                 .toList();
 
-        return departmentMapper.toResponseList(suggestedDepts);
+        List<SuggestedAssigneeResponse> result = new ArrayList<>();
+        for (Department dept : suggestedDepts) {
+            List<User> activeStaff = userRepository.findActiveStaffByDepartmentId(dept.getDepartmentId());
+            if (activeStaff != null && !activeStaff.isEmpty()) {
+                for (User staff : activeStaff) {
+                    result.add(SuggestedAssigneeResponse.builder()
+                            .assigneeId(staff.getUserId())
+                            .assigneeName(staff.getFullName())
+                            .assigneePhone(staff.getPhoneNumber())
+                            .assigneeEmail(staff.getEmail())
+                            .departmentId(dept.getDepartmentId())
+                            .departmentName(dept.getName())
+                            .build());
+                }
+            } else if (dept.getManager() != null) {
+                User mgr = dept.getManager();
+                result.add(SuggestedAssigneeResponse.builder()
+                        .assigneeId(mgr.getUserId())
+                        .assigneeName(mgr.getFullName())
+                        .assigneePhone(mgr.getPhoneNumber())
+                        .assigneeEmail(mgr.getEmail())
+                        .departmentId(dept.getDepartmentId())
+                        .departmentName(dept.getName())
+                        .build());
+            }
+        }
+
+        return result;
     }
 
     @Override
@@ -453,13 +482,17 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
             Step step = stepMap.get(stepReq.getStepId());
             User assignee = assigneeMap.get(stepReq.getAssigneeId());
+            LocalDateTime deadline = stepReq.getDeadline();
+            if (deadline == null && step != null && step.getDuration() != null && step.getDuration() > 0) {
+                deadline = LocalDateTime.now().plusHours(step.getDuration());
+            }
             TicketStep ticketStep = TicketStep.builder()
                     .ticket(ticket)
                     .step(step)
                     .assignee(assignee)
                     .status(AssignmentStatus.OPEN)
                     .orderIndex(stepReq.getOrderIndex())
-                    .deadline(stepReq.getDeadline())
+                    .deadline(deadline)
                     .notes(stepReq.getNotes())
                     .build();
             ticket.getSteps().add(ticketStep);
