@@ -3,6 +3,7 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.model.dto.request.*;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
+import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.service.ManagerTicketService;
@@ -58,11 +59,11 @@ public class ManagerTicketController {
 
     @GetMapping("/{id}/suggested-departments")
     @PreAuthorize("hasRole('MANAGER')")
-    @Operation(summary = "Gợi ý phòng ban cho vé", description = "Tìm phòng ban phù hợp dựa trên routing rule (Category và Địa chỉ)")
-    public ResponseEntity<BaseResponse<List<DepartmentResponse>>> getSuggestedDepartments(
+    @Operation(summary = "Gợi ý cán bộ/phòng ban cho vé", description = "Tìm danh sách cán bộ phụ trách từ các phòng ban phù hợp dựa trên routing rule (Category và Địa chỉ)")
+    public ResponseEntity<BaseResponse<List<SuggestedAssigneeResponse>>> getSuggestedDepartments(
             @PathVariable UUID id,
             @RequestParam(value = "categoryId", required = false) UUID categoryId) {
-        List<DepartmentResponse> response = managerTicketService.getSuggestedDepartments(id, categoryId);
+        List<SuggestedAssigneeResponse> response = managerTicketService.getSuggestedDepartments(id, categoryId);
         return ResponseEntity.ok(BaseResponse.success("Lấy gợi ý phòng ban thành công", response));
     }
 

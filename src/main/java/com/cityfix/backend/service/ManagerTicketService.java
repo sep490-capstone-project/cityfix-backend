@@ -1,7 +1,7 @@
 package com.cityfix.backend.service;
 
 import com.cityfix.backend.model.dto.request.*;
-import com.cityfix.backend.model.dto.response.DepartmentResponse;
+import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import org.springframework.data.domain.Page;
@@ -22,7 +22,7 @@ public interface ManagerTicketService {
             Pageable pageable
     );
 
-    List<DepartmentResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId);
+    List<SuggestedAssigneeResponse> getSuggestedDepartments(UUID ticketId, UUID categoryId);
 
     TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request);
 

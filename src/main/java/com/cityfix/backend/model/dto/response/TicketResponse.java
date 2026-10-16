@@ -14,6 +14,7 @@ public class TicketResponse {
     private String imageUrl;
     private java.util.UUID categoryId;
     private String categoryName;
+    private java.util.List<TicketCategoryResponse> categories;
     private java.util.List<SubCategoryResponse> subCategories;
     private com.cityfix.backend.model.enums.SeverityLevel severity;
     private com.cityfix.backend.model.enums.Priority priority;
@@ -33,4 +34,6 @@ public class TicketResponse {
     private Integer duration;
     private UUID departmentId;
     private String departmentName;
+    private UUID assigneeId;
+    private String assigneeName;
 }

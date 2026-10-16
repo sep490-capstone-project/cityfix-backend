@@ -29,6 +29,9 @@ public interface TicketMapper {
     @Mapping(target = "creatorPhoneNumber", source = "user.phoneNumber")
     @Mapping(target = "categoryId", ignore = true)
     @Mapping(target = "categoryName", ignore = true)
+    @Mapping(target = "categories", ignore = true)
+    @Mapping(target = "assigneeId", ignore = true)
+    @Mapping(target = "assigneeName", ignore = true)
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
     @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
@@ -41,15 +44,23 @@ public interface TicketMapper {
     @AfterMapping
     default void mapCategoryFromSubCategories(Ticket ticket, @MappingTarget TicketResponse response) {
         if (ticket == null || response == null) return;
+        java.util.List<com.cityfix.backend.model.dto.response.TicketCategoryResponse> categories = new java.util.ArrayList<>();
+        java.util.Set<java.util.UUID> seenCategoryIds = new java.util.LinkedHashSet<>();
+
         if (ticket.getSubCategories() != null) {
             for (com.cityfix.backend.model.entity.TicketSubCategory tsc : ticket.getSubCategories()) {
                 if (tsc != null && tsc.getSubCategory() != null && tsc.getSubCategory().getCategory() != null) {
                     com.cityfix.backend.model.entity.Category cat = tsc.getSubCategory().getCategory();
-                    response.setCategoryId(cat.getCategoryId());
-                    response.setCategoryName(cat.getName());
-                    break;
+                    if (seenCategoryIds.add(cat.getCategoryId())) {
+                        categories.add(new com.cityfix.backend.model.dto.response.TicketCategoryResponse(cat.getCategoryId(), cat.getName()));
+                    }
                 }
             }
+        }
+        response.setCategories(categories);
+        if (!categories.isEmpty()) {
+            response.setCategoryId(categories.get(0).getCategoryId());
+            response.setCategoryName(categories.get(0).getCategoryName());
         }
     }
 
@@ -99,9 +110,12 @@ public interface TicketMapper {
                         .filter(s -> s.getStatus() == AssignmentStatus.IN_PROGRESS)
                         .findFirst();
                 if (inProgress.isPresent()) {
-                    Department dept = inProgress.get().getAssignee().getDepartment();
+                    TicketStep s = inProgress.get();
+                    Department dept = s.getAssignee().getDepartment();
                     response.setDepartmentId(dept.getDepartmentId());
                     response.setDepartmentName(dept.getName());
+                    response.setAssigneeId(s.getAssignee().getUserId());
+                    response.setAssigneeName(s.getAssignee().getFullName());
                     return;
                 }
 
@@ -110,9 +124,12 @@ public interface TicketMapper {
                         .filter(s -> s.getStatus() == AssignmentStatus.ASSIGNED)
                         .findFirst();
                 if (assigned.isPresent()) {
-                    Department dept = assigned.get().getAssignee().getDepartment();
+                    TicketStep s = assigned.get();
+                    Department dept = s.getAssignee().getDepartment();
                     response.setDepartmentId(dept.getDepartmentId());
                     response.setDepartmentName(dept.getName());
+                    response.setAssigneeId(s.getAssignee().getUserId());
+                    response.setAssigneeName(s.getAssignee().getFullName());
                     return;
                 }
 
@@ -121,15 +138,21 @@ public interface TicketMapper {
                         .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
                         .min(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())));
                 if (notCancelled.isPresent()) {
-                    Department dept = notCancelled.get().getAssignee().getDepartment();
+                    TicketStep s = notCancelled.get();
+                    Department dept = s.getAssignee().getDepartment();
                     response.setDepartmentId(dept.getDepartmentId());
                     response.setDepartmentName(dept.getName());
+                    response.setAssigneeId(s.getAssignee().getUserId());
+                    response.setAssigneeName(s.getAssignee().getFullName());
                     return;
                 }
 
-                Department dept = validSteps.get(0).getAssignee().getDepartment();
+                TicketStep s = validSteps.get(0);
+                Department dept = s.getAssignee().getDepartment();
                 response.setDepartmentId(dept.getDepartmentId());
                 response.setDepartmentName(dept.getName());
+                response.setAssigneeId(s.getAssignee().getUserId());
+                response.setAssigneeName(s.getAssignee().getFullName());
             }
         }
     }

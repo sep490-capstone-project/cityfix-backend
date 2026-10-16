@@ -7,6 +7,7 @@ import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
 import com.cityfix.backend.model.dto.request.UpdateTicketDurationRequest;
+import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.Priority;
@@ -548,5 +549,112 @@ class ManagerTicketServiceImplTest {
 
         assertThat(result).isNotNull();
         verify(ticketRepository).findTicketsByDepartmentAndCriteria(anyDeptId, null, null, null, pageable);
+    }
+
+    @Test
+    @DisplayName("getSuggestedDepartments_returnsListOfSuggestedAssignees")
+    void getSuggestedDepartments_returnsListOfSuggestedAssignees() {
+        Category cat = Category.builder().categoryId(UUID.randomUUID()).name("Môi trường").build();
+        SubCategory sub = SubCategory.builder().subCategoryId(UUID.randomUUID()).category(cat).build();
+        TicketSubCategory tsc = TicketSubCategory.builder().subCategory(sub).build();
+        ticket.setSubCategories(List.of(tsc));
+        ticket.setAddress("Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh");
+
+        Department dept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng Quản lý Đô thị")
+                .build();
+
+        RoutingRule rule = RoutingRule.builder()
+                .category(cat)
+                .department(dept)
+                .province("Hồ Chí Minh")
+                .ward("Bến Nghé")
+                .build();
+
+        User staff = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Trần Cán Bộ")
+                .phoneNumber("0912345678")
+                .email("staff@cityfix.vn")
+                .department(dept)
+                .build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(cat.getCategoryId()))
+                .thenReturn(List.of(rule));
+        when(userRepository.findActiveStaffByDepartmentId(dept.getDepartmentId()))
+                .thenReturn(List.of(staff));
+
+        List<SuggestedAssigneeResponse> result = managerTicketService.getSuggestedDepartments(ticketId, null);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getAssigneeId()).isEqualTo(staff.getUserId());
+        assertThat(result.get(0).getAssigneeName()).isEqualTo("Trần Cán Bộ");
+        assertThat(result.get(0).getAssigneePhone()).isEqualTo("0912345678");
+        assertThat(result.get(0).getAssigneeEmail()).isEqualTo("staff@cityfix.vn");
+        assertThat(result.get(0).getDepartmentId()).isEqualTo(dept.getDepartmentId());
+        assertThat(result.get(0).getDepartmentName()).isEqualTo("Phòng Quản lý Đô thị");
+    }
+
+    @Test
+    @DisplayName("reviewTicket_nullDeadline_setsDefaultDeadlineFromStepDuration")
+    void reviewTicket_nullDeadline_setsDefaultDeadlineFromStepDuration() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        UUID subCatId = UUID.randomUUID();
+        SubCategory mockSubCat = SubCategory.builder()
+                .subCategoryId(subCatId)
+                .isActive(true)
+                .build();
+
+        UUID stepId = UUID.randomUUID();
+        Step mockStep = Step.builder()
+                .stepId(stepId)
+                .stepName("Khảo sát")
+                .duration(6)
+                .build();
+
+        Department dept = Department.builder().departmentId(UUID.randomUUID()).build();
+        User staffInDept = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Lê Nhân Viên")
+                .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
+                .department(dept)
+                .build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
+        when(stepRepository.findAllById(any())).thenReturn(List.of(mockStep));
+        when(userRepository.findAllById(any())).thenReturn(List.of(staffInDept));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.IN_PROGRESS).build();
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketHistory mockHistory = TicketHistory.builder()
+                .actionType(com.cityfix.backend.model.enums.ActionType.ROUTED)
+                .currentStatus(TicketStatus.IN_PROGRESS)
+                .build();
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any())).thenReturn(mockHistory);
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = com.cityfix.backend.model.dto.request.ReviewTicketRequest.builder()
+                .subCategoryIds(List.of(subCatId))
+                .steps(List.of(com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(stepId)
+                        .assigneeId(staffInDept.getUserId())
+                        .orderIndex(0)
+                        .deadline(null) // Không truyền deadline
+                        .build()))
+                .build();
+
+        LocalDateTime before = LocalDateTime.now();
+        TicketResponse response = managerTicketService.reviewTicket(ticketId, request);
+
+        assertThat(response).isNotNull();
+        assertThat(ticket.getSteps()).hasSize(1);
+        assertThat(ticket.getSteps().get(0).getDeadline()).isNotNull();
+        assertThat(ticket.getSteps().get(0).getDeadline()).isAfterOrEqualTo(before.plusHours(6).minusSeconds(5));
     }
 }
