@@ -40,7 +40,7 @@ public class AdminStepController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Delete a Step (Hard Delete)")
+    @Operation(summary = "Delete a Step (Soft Delete)")
     public ResponseEntity<BaseResponse<Void>> deleteStep(@PathVariable UUID id) {
         stepService.deleteStep(id);
         return ResponseEntity.ok(BaseResponse.success("Deleted successfully", null));

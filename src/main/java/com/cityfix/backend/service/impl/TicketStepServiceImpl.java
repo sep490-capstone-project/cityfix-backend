@@ -36,6 +36,7 @@ public class TicketStepServiceImpl implements TicketStepService {
     private final TicketStepMapper ticketStepMapper;
     private final TicketService ticketService;
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
+    private final com.cityfix.backend.service.NotificationService notificationService;
 
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -75,6 +76,7 @@ public class TicketStepServiceImpl implements TicketStepService {
         User currentUser = getCurrentUser();
         validateStepPermission(step, currentUser);
 
+        AssignmentStatus prevStatus = step.getStatus();
         step.setStatus(status);
         LocalDateTime now = LocalDateTime.now();
         step.setUpdatedAt(now);
@@ -99,7 +101,9 @@ public class TicketStepServiceImpl implements TicketStepService {
             ticketRepository.save(ticket);
         }
 
-        if (status == AssignmentStatus.COMPLETED || status == AssignmentStatus.RESOLVED) {
+        if (status == AssignmentStatus.IN_PROGRESS && prevStatus != AssignmentStatus.IN_PROGRESS) {
+            notificationService.notifyStepStarted(step, currentUser);
+        } else if (status == AssignmentStatus.COMPLETED || status == AssignmentStatus.RESOLVED) {
             ticketWorkflowEngine.handleStepCompletion(step.getId());
             step = ticketStepRepository.findById(stepId).orElse(step);
         }

@@ -47,6 +47,8 @@ class TicketStepServiceImplTest {
     @Mock
     private TicketWorkflowEngine ticketWorkflowEngine;
     @Mock
+    private NotificationService notificationService;
+    @Mock
     private SecurityContext securityContext;
 
     @InjectMocks
@@ -126,6 +128,7 @@ class TicketStepServiceImplTest {
         assertThat(step.getStatus()).isEqualTo(AssignmentStatus.IN_PROGRESS);
         assertThat(step.getStartedAt()).isNotNull();
         assertThat(step.getUpdatedAt()).isNotNull();
+        verify(notificationService).notifyStepStarted(step, staffUser);
     }
 
     @Test

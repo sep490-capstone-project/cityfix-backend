@@ -34,10 +34,7 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
     private final TicketStepRepository ticketStepRepository;
     private final TicketHistoryRepository ticketHistoryRepository;
     private final TicketHistoryMapper ticketHistoryMapper;
-    private final NotificationRepository notificationRepository;
-    private final NotificationMapper notificationMapper;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final EmailService emailService;
+    private final com.cityfix.backend.service.NotificationService notificationService;
 
     @Override
     @Transactional
@@ -51,6 +48,7 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
         Ticket ticket = ticketRepository.findByIdWithPessimisticLock(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        completedStep.setTicket(ticket);
         LocalDateTime now = LocalDateTime.now();
 
         // Ensure completedStep is marked COMPLETED
@@ -88,7 +86,7 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             );
             ticketHistoryRepository.save(history);
 
-            sendResolvedNotification(ticket);
+            notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
 
             log.info("Ticket {} - All steps completed. Ticket marked as RESOLVED.", ticketId);
         } else {
@@ -138,36 +136,8 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
                 log.warn("Ticket {} - Step {} completed, but cannot activate next step {} because prior steps are not completed yet.",
                         ticketId, completedStep.getId(), candidateNextStep.getId());
             }
-        }
-    }
 
-    private void sendResolvedNotification(Ticket ticket) {
-        User ticketUser = ticket.getUser();
-        if (ticketUser != null) {
-            String title = "Sự cố đã được giải quyết";
-            String message = "Toàn bộ các bước xử lý của sự cố đã được đơn vị hoàn tất. Vui lòng kiểm tra và đánh giá kết quả.";
-
-            Notification notification = Notification.builder()
-                    .user(ticketUser)
-                    .title(title)
-                    .content(message)
-                    .isRead(false)
-                    .build();
-            notification = notificationRepository.save(notification);
-
-            try {
-                messagingTemplate.convertAndSend("/topic/notifications/" + ticketUser.getUserId(), notificationMapper.toResponse(notification));
-            } catch (Exception e) {
-                log.error("Lỗi khi gửi websocket notification: {}", e.getMessage());
-            }
-
-            if (ticketUser.getEmail() != null) {
-                try {
-                    emailService.sendTicketStatusEmail(ticketUser.getEmail(), title, message);
-                } catch (Exception e) {
-                    log.error("Lỗi khi gửi email notification: {}", e.getMessage());
-                }
-            }
+            notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), false);
         }
     }
 }

@@ -35,4 +35,12 @@ public class Notification {
     @CreationTimestamp
     @Column(updatable = false)
     private ZonedDateTime createdAt;
+
+    public boolean isRead() {
+        return isRead;
+    }
+
+    public boolean getIsRead() {
+        return isRead;
+    }
 }
