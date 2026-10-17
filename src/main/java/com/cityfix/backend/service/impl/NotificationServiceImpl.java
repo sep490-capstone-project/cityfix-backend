@@ -56,20 +56,34 @@ public class NotificationServiceImpl implements NotificationService {
         if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
+
         Object principal = auth.getPrincipal();
         if (principal instanceof User user && user.getUserId() != null) {
             return user;
         }
-        String email;
-        if (principal instanceof User user && user.getEmail() != null) {
-            email = user.getEmail();
-        } else if (principal instanceof UserDetails userDetails) {
-            email = userDetails.getUsername();
-        } else {
-            email = auth.getName();
+
+        String email = resolvePrincipalEmail(auth, principal);
+        if (email == null || email.isBlank() || "anonymousUser".equalsIgnoreCase(email)) {
+            log.warn("Unable to resolve current user email from principal of type: {}",
+                    principal != null ? principal.getClass().getName() : "null");
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
+
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+    }
+
+    private String resolvePrincipalEmail(Authentication auth, Object principal) {
+        if (principal instanceof User user && user.getEmail() != null) {
+            return user.getEmail();
+        }
+        if (principal instanceof UserDetails userDetails) {
+            return userDetails.getUsername();
+        }
+        if (principal instanceof String str && !str.isBlank()) {
+            return str;
+        }
+        return auth.getName();
     }
 
     private boolean isEligibleRecipient(User user, UUID actorId) {
@@ -139,6 +153,7 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     private void saveAndSendNotification(User recipient, String title, String content) {
+        UUID recipientId = recipient.getUserId();
         Notification notification = Notification.builder()
                 .user(recipient)
                 .title(title)
@@ -149,9 +164,12 @@ public class NotificationServiceImpl implements NotificationService {
 
         try {
             NotificationResponse response = notificationMapper.toResponse(notification);
-            messagingTemplate.convertAndSend("/topic/notifications/" + recipient.getUserId(), response);
+            if (response != null && response.getUserId() == null) {
+                response.setUserId(recipientId);
+            }
+            messagingTemplate.convertAndSend("/topic/notifications/" + recipientId, response);
         } catch (Exception e) {
-            log.error("Lỗi khi gửi WebSocket notification cho user {}: {}", recipient.getUserId(), e.getMessage());
+            log.error("Lỗi khi gửi WebSocket notification cho user {}: {}", recipientId, e.getMessage());
         }
     }
 
@@ -212,6 +230,9 @@ public class NotificationServiceImpl implements NotificationService {
                 }
             }
         }
+
+        log.info("Sent step-started notifications for ticketId={}, stepId={}, actorId={}, recipientCount={}",
+                ticket.getTicketId(), step.getId(), actorId, notifiedUserIds.size());
     }
 
     @Override
@@ -285,6 +306,9 @@ public class NotificationServiceImpl implements NotificationService {
                 }
             }
         }
+
+        log.info("Sent step-completed notifications for ticketId={}, stepId={}, actorId={}, isTicketResolved={}, recipientCount={}",
+                ticket.getTicketId(), step.getId(), actorId, isTicketResolved, notifiedUserIds.size());
     }
 
     @Override

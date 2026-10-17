@@ -354,4 +354,27 @@ class NotificationServiceTest {
         assertThat(res.isRead()).isTrue();
         verify(notificationRepository).save(n);
     }
+
+    @Test
+    @DisplayName("markAllAsRead_invokesRepositoryMarkAllAsReadByUserId")
+    void markAllAsRead_invokesRepositoryMarkAllAsReadByUserId() {
+        mockCurrentUser(reporter);
+        when(notificationRepository.markAllAsReadByUserId(reporter.getUserId())).thenReturn(3);
+
+        notificationService.markAllAsRead();
+
+        verify(notificationRepository).markAllAsReadByUserId(reporter.getUserId());
+    }
+
+    @Test
+    @DisplayName("getUnreadCount_returnsUnreadCountFromRepository")
+    void getUnreadCount_returnsUnreadCountFromRepository() {
+        mockCurrentUser(manager1);
+        when(notificationRepository.countByUser_UserIdAndIsReadFalse(manager1.getUserId())).thenReturn(4L);
+
+        long count = notificationService.getUnreadCount();
+
+        assertThat(count).isEqualTo(4L);
+        verify(notificationRepository).countByUser_UserIdAndIsReadFalse(manager1.getUserId());
+    }
 }
