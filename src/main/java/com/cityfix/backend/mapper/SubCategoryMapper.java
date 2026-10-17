@@ -17,8 +17,15 @@ public interface SubCategoryMapper {
     
     @Mapping(target = "category", ignore = true)
     @Mapping(target = "subCategoryId", ignore = true)
+    @Mapping(target = "sla", ignore = true)
     @Mapping(target = "isActive", source = "isActive")
     SubCategory toEntity(SubCategoryRequest request);
+
+    @Mapping(target = "category", ignore = true)
+    @Mapping(target = "subCategoryId", ignore = true)
+    @Mapping(target = "sla", ignore = true)
+    @Mapping(target = "active", source = "isActive")
+    void updateEntityFromRequest(SubCategoryRequest request, @org.mapstruct.MappingTarget SubCategory subCategory);
 
     default SubCategoryResponse toResponse(TicketSubCategory ticketSubCategory) {
         if (ticketSubCategory == null || ticketSubCategory.getSubCategory() == null) {

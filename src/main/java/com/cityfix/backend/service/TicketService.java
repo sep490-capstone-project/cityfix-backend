@@ -33,6 +33,6 @@ public interface TicketService {
     com.cityfix.backend.model.dto.response.TicketStepResponse updateTicketStepOrderIndex(UUID ticketStepId, com.cityfix.backend.model.dto.request.UpdateTicketStepOrderRequest request);
     List<com.cityfix.backend.model.dto.response.TicketStepResponse> reorderTicketSteps(UUID ticketId, com.cityfix.backend.model.dto.request.ReorderTicketStepsRequest request);
 
-    Integer calculateTicketDuration(com.cityfix.backend.model.entity.Ticket ticket);
+    java.time.LocalDateTime calculateTicketDeadline(com.cityfix.backend.model.entity.Ticket ticket);
 }
 

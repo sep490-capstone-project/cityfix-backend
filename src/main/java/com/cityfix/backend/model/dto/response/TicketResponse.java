@@ -31,7 +31,7 @@ public class TicketResponse {
     private java.util.List<String> images;
     private LocalDateTime createdAt;
     // private java.util.List<TicketStepResponse> steps;
-    private Integer duration;
+    private LocalDateTime deadline;
     private UUID departmentId;
     private String departmentName;
     private UUID assigneeId;

@@ -35,6 +35,9 @@ class SubCategoryServiceTest {
     private CategoryRepository categoryRepository;
 
     @Mock
+    private com.cityfix.backend.repository.StepRepository stepRepository;
+
+    @Mock
     private SubCategoryMapper subCategoryMapper;
 
     @InjectMocks
@@ -86,7 +89,27 @@ class SubCategoryServiceTest {
 
         assertNotNull(result);
         assertEquals("Test", result.getName());
+        assertEquals(0, subCategory.getSla());
         verify(subCategoryRepository).save(any(SubCategory.class));
+    }
+
+    @Test
+    void updateSubCategory_Success_CalculatesSlaFromSteps() {
+        UUID subCatId = subCategory.getSubCategoryId();
+        com.cityfix.backend.model.entity.Step s1 = com.cityfix.backend.model.entity.Step.builder().duration(12).build();
+        com.cityfix.backend.model.entity.Step s2 = com.cityfix.backend.model.entity.Step.builder().duration(24).build();
+
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCategory));
+        when(categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())).thenReturn(Optional.of(category));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(java.util.List.of(s1, s2));
+        when(subCategoryRepository.save(any(SubCategory.class))).thenReturn(subCategory);
+        when(subCategoryMapper.toResponse(subCategory)).thenReturn(response);
+
+        SubCategoryResponse result = subCategoryService.updateSubCategory(subCatId, request);
+
+        assertNotNull(result);
+        assertEquals(36, subCategory.getSla());
+        verify(subCategoryRepository).save(subCategory);
     }
 
     @Test

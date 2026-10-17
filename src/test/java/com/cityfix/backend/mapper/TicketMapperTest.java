@@ -229,4 +229,16 @@ class TicketMapperTest {
         assertThat(response.getCategoryId()).isEqualTo(cat1.getCategoryId());
         assertThat(response.getCategoryName()).isEqualTo("Hạ tầng");
     }
+
+    @Test
+    @DisplayName("toTicketResponse_mapsDeadline")
+    void toTicketResponse_mapsDeadline() {
+        java.time.LocalDateTime deadline = java.time.LocalDateTime.of(2026, 10, 20, 15, 30);
+        ticket.setDeadline(deadline);
+
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getDeadline()).isEqualTo(deadline);
+    }
 }

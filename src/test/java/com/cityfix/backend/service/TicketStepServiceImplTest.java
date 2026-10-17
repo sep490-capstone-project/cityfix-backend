@@ -202,27 +202,28 @@ class TicketStepServiceImplTest {
     }
 
     @Test
-    @DisplayName("updateTicketStepStatus_withMultiSubCategories_recalculatesDuration")
-    void updateTicketStepStatus_withMultiSubCategories_recalculatesDuration() {
+    @DisplayName("updateTicketStepStatus_recalculatesTicketDeadline")
+    void updateTicketStepStatus_recalculatesTicketDeadline() {
         mockCurrentUser(staffUser);
 
         Ticket ticket = new Ticket();
         ticket.setTicketId(UUID.randomUUID());
         ticket.setSubCategories(List.of(new TicketSubCategory(), new TicketSubCategory()));
         step.setTicket(ticket);
+        java.time.LocalDateTime expectedDeadline = java.time.LocalDateTime.now().plusHours(48);
 
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(ticketService.calculateTicketDuration(ticket)).thenReturn(48);
+        when(ticketService.calculateTicketDeadline(ticket)).thenReturn(expectedDeadline);
 
         TicketStepResponse mockResponse = TicketStepResponse.builder().id(stepId).status(AssignmentStatus.COMPLETED).build();
         when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(mockResponse);
 
         ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.COMPLETED);
 
-        verify(ticketService).calculateTicketDuration(ticket);
+        verify(ticketService).calculateTicketDeadline(ticket);
         verify(ticketRepository).save(ticket);
-        assertThat(ticket.getDuration()).isEqualTo(48);
+        assertThat(ticket.getDeadline()).isEqualTo(expectedDeadline);
     }
 
     @Test

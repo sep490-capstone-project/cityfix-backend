@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -34,15 +35,20 @@ public class StepServiceImpl implements StepService {
 
         Step step = stepMapper.toEntity(request);
         step.setSubCategory(subCategory);
+        Step savedStep = stepRepository.save(step);
 
-        return stepMapper.toResponse(stepRepository.save(step));
+        recalculateSubCategorySla(subCategory);
+
+        return stepMapper.toResponse(savedStep);
     }
 
     @Override
     @Transactional
     public StepResponse updateStep(UUID id, StepRequest request) {
-        Step step = stepRepository.findById(id)
+        Step step = stepRepository.findByStepIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        SubCategory oldSubCategory = step.getSubCategory();
 
         SubCategory subCategory = subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())
                 .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
@@ -52,28 +58,65 @@ public class StepServiceImpl implements StepService {
         step.setDescription(request.getDescription());
         step.setDuration(request.getDuration());
 
-        return stepMapper.toResponse(stepRepository.save(step));
+        Step savedStep = stepRepository.save(step);
+
+        if (oldSubCategory != null && oldSubCategory.getSubCategoryId() != null
+                && !oldSubCategory.getSubCategoryId().equals(subCategory.getSubCategoryId())) {
+            recalculateSubCategorySla(oldSubCategory);
+        }
+        recalculateSubCategorySla(subCategory);
+
+        return stepMapper.toResponse(savedStep);
     }
 
     @Override
     @Transactional
     public void deleteStep(UUID id) {
-        Step step = stepRepository.findById(id)
+        Step step = stepRepository.findByStepIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
-        
-        stepRepository.delete(step);
+
+        SubCategory subCategory = step.getSubCategory();
+        step.setDeleted(true);
+        step.setDeletedAt(LocalDateTime.now());
+        stepRepository.save(step);
+
+        if (subCategory != null) {
+            recalculateSubCategorySla(subCategory, id);
+        }
+    }
+
+    private void recalculateSubCategorySla(SubCategory subCategory) {
+        recalculateSubCategorySla(subCategory, null);
+    }
+
+    private void recalculateSubCategorySla(SubCategory subCategory, UUID excludedStepId) {
+        if (subCategory == null || subCategory.getSubCategoryId() == null) {
+            return;
+        }
+        List<Step> steps = stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategory.getSubCategoryId());
+        int totalSla = 0;
+        if (steps != null) {
+            totalSla = steps.stream()
+                    .filter(s -> s != null && !s.isDeleted())
+                    .filter(s -> excludedStepId == null || !excludedStepId.equals(s.getStepId()))
+                    .filter(s -> s.getDuration() != null && s.getDuration() > 0)
+                    .mapToInt(Step::getDuration)
+                    .sum();
+        }
+        subCategory.setSla(totalSla);
+        subCategoryRepository.save(subCategory);
     }
 
     @Override
     public List<StepResponse> getAllSteps() {
-        return stepRepository.findAll().stream()
+        return stepRepository.findByIsDeletedFalse().stream()
                 .map(stepMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
     @Override
     public List<StepResponse> getStepsBySubCategoryId(UUID subCategoryId) {
-        return stepRepository.findBySubCategory_SubCategoryId(subCategoryId).stream()
+        return stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId).stream()
                 .map(stepMapper::toResponse)
                 .collect(Collectors.toList());
     }

@@ -423,7 +423,7 @@ class TicketServiceTest {
         when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(repStaff));
 
         Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subId)).thenReturn(List.of(stepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subId)).thenReturn(List.of(stepEntity));
 
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
@@ -472,7 +472,7 @@ class TicketServiceTest {
         when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(repStaff));
 
         Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subId)).thenReturn(List.of(stepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subId)).thenReturn(List.of(stepEntity));
 
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
@@ -519,7 +519,7 @@ class TicketServiceTest {
         when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(repStaff));
 
         Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subId)).thenReturn(List.of(stepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subId)).thenReturn(List.of(stepEntity));
 
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
@@ -876,7 +876,7 @@ class TicketServiceTest {
         mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
 
         Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
 
         User repStaff = new User();
         repStaff.setUserId(UUID.randomUUID());
@@ -1077,7 +1077,7 @@ class TicketServiceTest {
         mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
 
         Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
 
         User repStaff = new User();
         repStaff.setUserId(UUID.randomUUID());
@@ -1176,7 +1176,7 @@ class TicketServiceTest {
         mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
 
         Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
 
         User repStaff = new User();
         repStaff.setUserId(UUID.randomUUID());
@@ -1344,7 +1344,7 @@ class TicketServiceTest {
         LocalDateTime deadline1 = LocalDateTime.now().plusDays(2);
         LocalDateTime deadline2 = LocalDateTime.now().plusDays(3);
 
-        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
         when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
@@ -1397,72 +1397,77 @@ class TicketServiceTest {
     }
 
     // ==========================================
-    // 6. Ticket Duration Calculation Tests
+    // 6. Ticket Deadline Calculation Tests
     // ==========================================
 
     @Test
-    @DisplayName("calculateTicketDuration_singleSubCategory_returnsSla")
-    void calculateTicketDuration_singleSubCategory_returnsSla() {
-        SubCategory subCat = SubCategory.builder().subCategoryId(UUID.randomUUID()).sla(36).build();
-        TicketSubCategory tsc = TicketSubCategory.builder().subCategory(subCat).build();
-        Ticket ticket = Ticket.builder().subCategories(List.of(tsc)).build();
-
-        Integer duration = ticketService.calculateTicketDuration(ticket);
-
-        assertThat(duration).isEqualTo(36);
-    }
-
-    @Test
-    @DisplayName("calculateTicketDuration_multiSubCategory_withDeadlines_returnsCeilHours")
-    void calculateTicketDuration_multiSubCategory_withDeadlines_returnsCeilHours() {
+    @DisplayName("calculateTicketDeadline_withSteps_returnsMaxDeadline")
+    void calculateTicketDeadline_withSteps_returnsMaxDeadline() {
         java.time.LocalDateTime created = java.time.LocalDateTime.of(2026, 10, 11, 10, 0);
         java.time.LocalDateTime deadline1 = created.plusHours(24);
         java.time.LocalDateTime deadline2 = created.plusHours(48).plusMinutes(15);
-
-        TicketSubCategory tsc1 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(24).build()).build();
-        TicketSubCategory tsc2 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(48).build()).build();
 
         TicketStep step1 = TicketStep.builder().deadline(deadline1).build();
         TicketStep step2 = TicketStep.builder().deadline(deadline2).build();
 
         Ticket ticket = Ticket.builder()
                 .createdAt(created)
-                .subCategories(List.of(tsc1, tsc2))
                 .steps(List.of(step1, step2))
                 .build();
 
-        Integer duration = ticketService.calculateTicketDuration(ticket);
+        LocalDateTime ticketDeadline = ticketService.calculateTicketDeadline(ticket);
 
-        // 48h 15m -> ceil to 49h
-        assertThat(duration).isEqualTo(49);
+        assertThat(ticketDeadline).isEqualTo(deadline2);
     }
 
     @Test
-    @DisplayName("calculateTicketDuration_multiSubCategory_withoutDeadlines_returnsSumSla")
-    void calculateTicketDuration_multiSubCategory_withoutDeadlines_returnsSumSla() {
-        TicketSubCategory tsc1 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(24).build()).build();
-        TicketSubCategory tsc2 = TicketSubCategory.builder().subCategory(SubCategory.builder().sla(48).build()).build();
+    @DisplayName("calculateTicketDeadline_ignoresCancelledAndTransferredSteps")
+    void calculateTicketDeadline_ignoresCancelledAndTransferredSteps() {
+        java.time.LocalDateTime created = java.time.LocalDateTime.of(2026, 10, 11, 10, 0);
+        java.time.LocalDateTime activeDeadline = created.plusHours(24);
+        java.time.LocalDateTime cancelledDeadline = created.plusHours(72);
 
+        TicketStep activeStep = TicketStep.builder()
+                .status(AssignmentStatus.OPEN)
+                .deadline(activeDeadline)
+                .build();
+        TicketStep cancelledStep = TicketStep.builder()
+                .status(AssignmentStatus.CANCELLED)
+                .deadline(cancelledDeadline)
+                .build();
+
+        Ticket ticket = Ticket.builder()
+                .createdAt(created)
+                .steps(List.of(activeStep, cancelledStep))
+                .build();
+
+        LocalDateTime ticketDeadline = ticketService.calculateTicketDeadline(ticket);
+
+        assertThat(ticketDeadline).isEqualTo(activeDeadline);
+    }
+
+    @Test
+    @DisplayName("calculateTicketDeadline_withoutDeadlines_returnsNull")
+    void calculateTicketDeadline_withoutDeadlines_returnsNull() {
         TicketStep step1 = TicketStep.builder().deadline(null).build();
 
         Ticket ticket = Ticket.builder()
-                .subCategories(List.of(tsc1, tsc2))
                 .steps(List.of(step1))
                 .build();
 
-        Integer duration = ticketService.calculateTicketDuration(ticket);
+        LocalDateTime ticketDeadline = ticketService.calculateTicketDeadline(ticket);
 
-        assertThat(duration).isEqualTo(72);
+        assertThat(ticketDeadline).isNull();
     }
 
     @Test
-    @DisplayName("calculateTicketDuration_nullOrEmptySubCategories_returnsNull")
-    void calculateTicketDuration_nullOrEmptySubCategories_returnsNull() {
-        Ticket ticket = Ticket.builder().subCategories(Collections.emptyList()).build();
+    @DisplayName("calculateTicketDeadline_nullOrEmptySteps_returnsNull")
+    void calculateTicketDeadline_nullOrEmptySteps_returnsNull() {
+        Ticket ticket = Ticket.builder().steps(Collections.emptyList()).build();
 
-        Integer duration = ticketService.calculateTicketDuration(ticket);
+        LocalDateTime ticketDeadline = ticketService.calculateTicketDeadline(ticket);
 
-        assertThat(duration).isNull();
+        assertThat(ticketDeadline).isNull();
     }
 }
 
