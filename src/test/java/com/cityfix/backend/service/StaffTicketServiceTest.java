@@ -72,6 +72,8 @@ public class StaffTicketServiceTest {
     @Mock
     private EmailService emailService;
     @Mock
+    private NotificationService notificationService;
+    @Mock
     private SecurityContext securityContext;
 
     @InjectMocks
@@ -145,6 +147,7 @@ public class StaffTicketServiceTest {
         assertThat(response).isNotNull();
         verify(ticketHistoryRepository).save(any());
         verify(ticketRepository).save(any());
+        verify(notificationService).notifyStepStarted(any(TicketStep.class), eq(staffUser));
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
     }
 
@@ -201,7 +204,7 @@ public class StaffTicketServiceTest {
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
         verify(ticketHistoryRepository).save(any());
-        verify(notificationRepository).save(any()); // Notification sent upon completion
+        verify(notificationService).notifyStepCompleted(any(TicketStep.class), eq(staffUser), eq(true));
     }
 
     @Test

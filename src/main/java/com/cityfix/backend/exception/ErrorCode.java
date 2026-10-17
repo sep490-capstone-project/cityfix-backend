@@ -201,6 +201,11 @@ public enum ErrorCode {
     RATING_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "Không tìm thấy đánh giá"
+    ),
+
+    NOTIFICATION_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy thông báo"
     );
 
     private final HttpStatus status;
