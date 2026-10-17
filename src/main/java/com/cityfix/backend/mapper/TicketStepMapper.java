@@ -44,10 +44,54 @@ public interface TicketStepMapper {
             Integer orderIndex
     );
 
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "ticket", source = "ticket")
+    @Mapping(target = "step", source = "step")
+    @Mapping(target = "assignee", source = "assignee")
+    @Mapping(target = "status", source = "status")
+    @Mapping(target = "orderIndex", source = "orderIndex")
+    @Mapping(target = "startedAt", source = "startedAt")
+    @Mapping(target = "completedAt", ignore = true)
+    @Mapping(target = "deadline", source = "deadline")
+    @Mapping(target = "notes", source = "notes")
+    @Mapping(target = "isDeleted", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
+    TicketStep toTicketStep(
+            com.cityfix.backend.model.entity.Ticket ticket,
+            com.cityfix.backend.model.entity.Step step,
+            com.cityfix.backend.model.entity.User assignee,
+            com.cityfix.backend.model.enums.AssignmentStatus status,
+            Integer orderIndex,
+            java.time.LocalDateTime startedAt,
+            java.time.LocalDateTime deadline,
+            String notes
+    );
+
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateDeadline(UpdateTicketStepDeadlineRequest request, @MappingTarget TicketStep ticketStep);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateOrderIndex(UpdateTicketStepOrderRequest request, @MappingTarget TicketStep ticketStep);
+
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "ticket", ignore = true)
+    @Mapping(target = "step", ignore = true)
+    @Mapping(target = "assignee", ignore = true)
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "orderIndex", ignore = true)
+    @Mapping(target = "completedAt", ignore = true)
+    @Mapping(target = "notes", ignore = true)
+    @Mapping(target = "deleted", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "startedAt", source = "startedAt")
+    @Mapping(target = "deadline", source = "deadline")
+    @Mapping(target = "updatedAt", source = "updatedAt")
+    void updateTicketStepTimeline(
+            java.time.LocalDateTime startedAt,
+            java.time.LocalDateTime deadline,
+            java.time.LocalDateTime updatedAt,
+            @MappingTarget TicketStep ticketStep
+    );
 }
 

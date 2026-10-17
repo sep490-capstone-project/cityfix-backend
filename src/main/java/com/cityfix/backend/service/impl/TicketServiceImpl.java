@@ -174,10 +174,14 @@ public class TicketServiceImpl implements TicketService {
     }
 
     private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex) {
-        createOrUpdateTicketStep(ticket, step, assignee, status, orderIndex, null);
+        createOrUpdateTicketStep(ticket, step, assignee, status, orderIndex, null, null);
     }
 
     private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex, LocalDateTime deadline) {
+        createOrUpdateTicketStep(ticket, step, assignee, status, orderIndex, null, deadline);
+    }
+
+    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex, LocalDateTime startedAt, LocalDateTime deadline) {
         if (ticket.getSteps() == null) {
             ticket.setSteps(new ArrayList<>());
         }
@@ -192,14 +196,35 @@ public class TicketServiceImpl implements TicketService {
             if (orderIndex != null) {
                 existingStep.setOrderIndex(orderIndex);
             }
+            if (startedAt != null) {
+                existingStep.setStartedAt(startedAt);
+            }
             if (deadline != null) {
                 existingStep.setDeadline(deadline);
             }
             ticketStepRepository.save(existingStep);
         } else {
-            TicketStep ts = ticketStepMapper.toTicketStep(ticket, step, assignee, status, orderIndex);
-            if (deadline != null) {
-                ts.setDeadline(deadline);
+            TicketStep ts = ticketStepMapper.toTicketStep(ticket, step, assignee, status, orderIndex, startedAt, deadline, null);
+            if (ts == null) {
+                ts = ticketStepMapper.toTicketStep(ticket, step, assignee, status, orderIndex);
+            }
+            if (ts == null) {
+                ts = TicketStep.builder()
+                        .ticket(ticket)
+                        .step(step)
+                        .assignee(assignee)
+                        .status(status)
+                        .orderIndex(orderIndex)
+                        .startedAt(startedAt)
+                        .deadline(deadline)
+                        .build();
+            } else {
+                if (startedAt != null) {
+                    ts.setStartedAt(startedAt);
+                }
+                if (deadline != null) {
+                    ts.setDeadline(deadline);
+                }
             }
             ticketStepRepository.save(ts);
             ticket.getSteps().add(ts);
@@ -367,6 +392,7 @@ public class TicketServiceImpl implements TicketService {
         ticket = ticketRepository.save(ticket);
 
         int currentOrder = 1;
+        LocalDateTime currentStart = ticket.getCreatedAt() != null ? ticket.getCreatedAt() : LocalDateTime.now();
         for (SubCategory subCat : subCategories) {
             TicketSubCategory tsc = TicketSubCategory.builder()
                     .ticket(ticket)
@@ -377,21 +403,21 @@ public class TicketServiceImpl implements TicketService {
 
             // Persist corresponding TicketStep rows with autoStaff and incrementing orderIndex
             if (!finalNeedsReview && autoStaff != null) {
-                LocalDateTime currentDeadline = ticket.getCreatedAt() != null ? ticket.getCreatedAt() : LocalDateTime.now();
                 List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId());
                 for (Step s : steps) {
+                    LocalDateTime stepStart = currentStart;
                     LocalDateTime stepDeadline = null;
                     if (s.getDuration() != null && s.getDuration() > 0) {
-                        currentDeadline = currentDeadline.plusHours(s.getDuration());
-                        stepDeadline = currentDeadline;
+                        stepDeadline = stepStart.plusHours(s.getDuration());
+                        currentStart = stepDeadline;
                     }
-                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, currentOrder++, stepDeadline);
+                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, currentOrder++, stepStart, stepDeadline);
                 }
             }
         }
 
-        // Calculate and set duration
-        ticket.setDuration(calculateTicketDuration(ticket));
+        // Calculate and set deadline
+        ticket.setDeadline(calculateTicketDeadline(ticket));
 
         // Audit Log
         String historyNote;
@@ -580,17 +606,18 @@ public class TicketServiceImpl implements TicketService {
 
         int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
         if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
-            LocalDateTime currentDeadline = LocalDateTime.now();
+            LocalDateTime currentStart = LocalDateTime.now();
             for (TicketSubCategory tsc : ticket.getSubCategories()) {
                 if (tsc.getSubCategory() != null) {
                     List<Step> targetSteps = stepRepository.findBySubCategory_SubCategoryId(tsc.getSubCategory().getSubCategoryId());
                     for (Step s : targetSteps) {
+                        LocalDateTime stepStart = currentStart;
                         LocalDateTime stepDeadline = null;
                         if (s.getDuration() != null && s.getDuration() > 0) {
-                            currentDeadline = currentDeadline.plusHours(s.getDuration());
-                            stepDeadline = currentDeadline;
+                            stepDeadline = stepStart.plusHours(s.getDuration());
+                            currentStart = stepDeadline;
                         }
-                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.OPEN, index++, stepDeadline);
+                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.OPEN, index++, stepStart, stepDeadline);
                     }
                 }
             }
@@ -599,6 +626,7 @@ public class TicketServiceImpl implements TicketService {
         TicketStatus prevStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.ASSIGNED);
         ticket.setNeedsManualReview(false);
+        ticket.setDeadline(calculateTicketDeadline(ticket));
         ticket = ticketRepository.save(ticket);
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
@@ -820,8 +848,30 @@ public class TicketServiceImpl implements TicketService {
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
+        LocalDateTime now = LocalDateTime.now();
         ticketStepMapper.updateDeadline(request, ticketStep);
+        if (request.getDeadline() != null) {
+            ticketStep.setDeadline(request.getDeadline());
+        }
+        ticketStep.setUpdatedAt(now);
         ticketStep = ticketStepRepository.save(ticketStep);
+
+        Ticket ticket = ticketStep.getTicket();
+        if (ticket != null && ticket.getTicketId() != null) {
+            List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticket.getTicketId());
+            if (steps == null || steps.isEmpty()) {
+                steps = ticket.getSteps();
+            }
+            if (steps != null && !steps.isEmpty()) {
+                List<TicketStep> cascaded = cascadeSubsequentStepDeadlines(steps, ticketStep, now);
+                if (!cascaded.isEmpty()) {
+                    ticketStepRepository.saveAll(cascaded);
+                }
+                ticket.setSteps(steps);
+            }
+            ticket.setDeadline(calculateTicketDeadline(ticket));
+            ticketRepository.save(ticket);
+        }
 
         return ticketStepMapper.toTicketStepResponse(ticketStep);
     }
@@ -834,7 +884,8 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        if (!ticketRepository.existsById(ticketId)) {
+        Ticket ticket = ticketRepository.findById(ticketId).orElse(null);
+        if (ticket == null && !ticketRepository.existsById(ticketId)) {
             throw new AppException(ErrorCode.TICKET_NOT_FOUND);
         }
 
@@ -842,6 +893,7 @@ public class TicketServiceImpl implements TicketService {
         Map<UUID, TicketStep> stepMap = steps.stream()
                 .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
 
+        Map<UUID, LocalDateTime> requestedDeadlines = new HashMap<>();
         for (StepDeadlineItem item : request.getStepDeadlines()) {
             if (item.getDeadline() != null && item.getDeadline().isBefore(LocalDateTime.now())) {
                 throw new AppException(ErrorCode.INVALID_REQUEST);
@@ -850,12 +902,96 @@ public class TicketServiceImpl implements TicketService {
             if (step == null) {
                 throw new AppException(ErrorCode.STEP_NOT_FOUND);
             }
-            step.setDeadline(item.getDeadline());
+            requestedDeadlines.put(item.getTicketStepId(), item.getDeadline());
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        List<TicketStep> sortedSteps = steps.stream()
+                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.toList());
+
+        boolean cascade = false;
+        LocalDateTime prevDeadline = null;
+        for (TicketStep step : sortedSteps) {
+            if (requestedDeadlines.containsKey(step.getId())) {
+                LocalDateTime newDeadline = requestedDeadlines.get(step.getId());
+                if (cascade && prevDeadline != null && isStepPendingOrActive(step)) {
+                    step.setStartedAt(prevDeadline);
+                }
+                step.setDeadline(newDeadline);
+                step.setUpdatedAt(now);
+                prevDeadline = newDeadline;
+                cascade = true;
+            } else if (cascade && prevDeadline != null && isStepPendingOrActive(step)) {
+                int duration = (step.getStep() != null && step.getStep().getDuration() != null && step.getStep().getDuration() > 0)
+                        ? step.getStep().getDuration()
+                        : 0;
+                LocalDateTime nextStart = prevDeadline;
+                LocalDateTime nextDeadline = nextStart.plusHours(duration);
+                ticketStepMapper.updateTicketStepTimeline(nextStart, nextDeadline, now, step);
+                step.setStartedAt(nextStart);
+                step.setDeadline(nextDeadline);
+                step.setUpdatedAt(now);
+                prevDeadline = nextDeadline;
+            } else {
+                prevDeadline = step.getDeadline();
+            }
         }
 
         steps = ticketStepRepository.saveAll(steps);
 
+        if (ticket != null) {
+            ticket.setSteps(steps);
+            ticket.setDeadline(calculateTicketDeadline(ticket));
+            ticketRepository.save(ticket);
+        }
+
         return ticketStepMapper.toTicketStepResponseList(steps);
+    }
+
+    private boolean isStepPendingOrActive(TicketStep step) {
+        if (step == null || step.isDeleted()) return false;
+        AssignmentStatus status = step.getStatus();
+        return status != AssignmentStatus.COMPLETED
+                && status != AssignmentStatus.RESOLVED
+                && status != AssignmentStatus.CANCELLED
+                && status != AssignmentStatus.TRANSFERRED;
+    }
+
+    private List<TicketStep> cascadeSubsequentStepDeadlines(List<TicketStep> steps, TicketStep targetStep, LocalDateTime now) {
+        List<TicketStep> sortedSteps = steps.stream()
+                .filter(Objects::nonNull)
+                .filter(s -> !s.isDeleted())
+                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        boolean foundTarget = false;
+        LocalDateTime prevDeadline = targetStep.getDeadline();
+        List<TicketStep> cascaded = new ArrayList<>();
+
+        for (TicketStep s : sortedSteps) {
+            if (!foundTarget) {
+                if (s == targetStep || (s.getId() != null && s.getId().equals(targetStep.getId()))) {
+                    s.setDeadline(targetStep.getDeadline());
+                    s.setUpdatedAt(now);
+                    prevDeadline = s.getDeadline();
+                    foundTarget = true;
+                }
+            } else if (isStepPendingOrActive(s) && prevDeadline != null) {
+                int duration = (s.getStep() != null && s.getStep().getDuration() != null && s.getStep().getDuration() > 0)
+                        ? s.getStep().getDuration()
+                        : 0;
+                LocalDateTime nextStart = prevDeadline;
+                LocalDateTime nextDeadline = nextStart.plusHours(duration);
+                ticketStepMapper.updateTicketStepTimeline(nextStart, nextDeadline, now, s);
+                s.setStartedAt(nextStart);
+                s.setDeadline(nextDeadline);
+                s.setUpdatedAt(now);
+                prevDeadline = nextDeadline;
+                cascaded.add(s);
+            }
+        }
+        return cascaded;
     }
 
     @Override
@@ -908,53 +1044,24 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
-    public Integer calculateTicketDuration(Ticket ticket) {
+    public LocalDateTime calculateTicketDeadline(Ticket ticket) {
         if (ticket == null) return null;
-        List<TicketSubCategory> subCats = ticket.getSubCategories();
-        if (subCats == null || subCats.isEmpty()) {
-            return null;
-        }
-        if (subCats.size() == 1) {
-            SubCategory subCat = subCats.get(0).getSubCategory();
-            return (subCat != null) ? subCat.getSla() : null;
-        }
-
-        // Multi-SubCategory: count > 1
         List<TicketStep> steps = ticket.getSteps();
         if (steps == null || steps.isEmpty()) {
             if (ticket.getTicketId() != null) {
                 steps = ticketStepRepository.findByTicketTicketId(ticket.getTicketId());
             }
         }
-
-        Optional<LocalDateTime> maxDeadlineOpt = Optional.empty();
-        if (steps != null && !steps.isEmpty()) {
-            maxDeadlineOpt = steps.stream()
-                    .map(TicketStep::getDeadline)
-                    .filter(Objects::nonNull)
-                    .max(LocalDateTime::compareTo);
+        if (steps == null || steps.isEmpty()) {
+            return null;
         }
-
-        if (maxDeadlineOpt.isPresent()) {
-            LocalDateTime createdAt = ticket.getCreatedAt() != null ? ticket.getCreatedAt() : LocalDateTime.now();
-            LocalDateTime maxDeadline = maxDeadlineOpt.get();
-            if (maxDeadline.isAfter(createdAt)) {
-                long minutes = java.time.Duration.between(createdAt, maxDeadline).toMinutes();
-                int duration = (int) Math.ceil((double) minutes / 60.0);
-                return Math.max(duration, 1);
-            } else {
-                return 1;
-            }
-        } else {
-            // Các step CHƯA CÓ deadline (deadline == null):
-            // duration = tổng(subCategory.getSla()) của toàn bộ các SubCategory liên kết với ticket đó
-            int totalSla = 0;
-            for (TicketSubCategory tsc : subCats) {
-                if (tsc.getSubCategory() != null && tsc.getSubCategory().getSla() != null) {
-                    totalSla += tsc.getSubCategory().getSla();
-                }
-            }
-            return totalSla > 0 ? totalSla : null;
-        }
+        return steps.stream()
+                .filter(Objects::nonNull)
+                .filter(s -> !s.isDeleted())
+                .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED && s.getStatus() != AssignmentStatus.TRANSFERRED)
+                .map(TicketStep::getDeadline)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
     }
 }

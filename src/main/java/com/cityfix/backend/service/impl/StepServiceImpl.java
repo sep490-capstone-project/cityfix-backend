@@ -34,8 +34,11 @@ public class StepServiceImpl implements StepService {
 
         Step step = stepMapper.toEntity(request);
         step.setSubCategory(subCategory);
+        Step savedStep = stepRepository.save(step);
 
-        return stepMapper.toResponse(stepRepository.save(step));
+        recalculateSubCategorySla(subCategory);
+
+        return stepMapper.toResponse(savedStep);
     }
 
     @Override
@@ -43,6 +46,8 @@ public class StepServiceImpl implements StepService {
     public StepResponse updateStep(UUID id, StepRequest request) {
         Step step = stepRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        SubCategory oldSubCategory = step.getSubCategory();
 
         SubCategory subCategory = subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())
                 .orElseThrow(() -> new AppException(ErrorCode.SUBCATEGORY_NOT_FOUND));
@@ -52,7 +57,15 @@ public class StepServiceImpl implements StepService {
         step.setDescription(request.getDescription());
         step.setDuration(request.getDuration());
 
-        return stepMapper.toResponse(stepRepository.save(step));
+        Step savedStep = stepRepository.save(step);
+
+        if (oldSubCategory != null && oldSubCategory.getSubCategoryId() != null
+                && !oldSubCategory.getSubCategoryId().equals(subCategory.getSubCategoryId())) {
+            recalculateSubCategorySla(oldSubCategory);
+        }
+        recalculateSubCategorySla(subCategory);
+
+        return stepMapper.toResponse(savedStep);
     }
 
     @Override
@@ -60,8 +73,35 @@ public class StepServiceImpl implements StepService {
     public void deleteStep(UUID id) {
         Step step = stepRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
-        
+
+        SubCategory subCategory = step.getSubCategory();
         stepRepository.delete(step);
+
+        if (subCategory != null) {
+            recalculateSubCategorySla(subCategory, id);
+        }
+    }
+
+    private void recalculateSubCategorySla(SubCategory subCategory) {
+        recalculateSubCategorySla(subCategory, null);
+    }
+
+    private void recalculateSubCategorySla(SubCategory subCategory, UUID excludedStepId) {
+        if (subCategory == null || subCategory.getSubCategoryId() == null) {
+            return;
+        }
+        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCategory.getSubCategoryId());
+        int totalSla = 0;
+        if (steps != null) {
+            totalSla = steps.stream()
+                    .filter(s -> s != null && !s.isDeleted())
+                    .filter(s -> excludedStepId == null || !excludedStepId.equals(s.getStepId()))
+                    .filter(s -> s.getDuration() != null && s.getDuration() > 0)
+                    .mapToInt(Step::getDuration)
+                    .sum();
+        }
+        subCategory.setSla(totalSla);
+        subCategoryRepository.save(subCategory);
     }
 
     @Override

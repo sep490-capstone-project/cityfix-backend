@@ -174,7 +174,7 @@ public interface TicketMapper {
     @Mapping(target = "images", ignore = true)
     @Mapping(target = "ratings", ignore = true)
     @Mapping(target = "reviewNote", ignore = true)
-    @Mapping(target = "duration", ignore = true)
+    @Mapping(target = "deadline", ignore = true)
     @Mapping(target = "isAnonymous", expression = "java(request.getIsAnonymous() != null ? request.getIsAnonymous() : false)")
     Ticket toTicket(
             com.cityfix.backend.model.dto.request.CreateTicketRequest request,

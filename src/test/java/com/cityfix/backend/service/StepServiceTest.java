@@ -81,9 +81,16 @@ class StepServiceTest {
 
     @Test
     void createStep_Success() {
+        Step step2 = Step.builder()
+                .stepId(UUID.randomUUID())
+                .subCategory(subCategory)
+                .stepName("Sửa chữa")
+                .duration(12)
+                .build();
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())).thenReturn(Optional.of(subCategory));
         when(stepMapper.toEntity(request)).thenReturn(step);
         when(stepRepository.save(any(Step.class))).thenReturn(step);
+        when(stepRepository.findBySubCategory_SubCategoryId(subCategoryId)).thenReturn(java.util.List.of(step, step2));
         when(stepMapper.toResponse(step)).thenReturn(response);
 
         StepResponse result = stepService.createStep(request);
@@ -91,7 +98,9 @@ class StepServiceTest {
         assertNotNull(result);
         assertEquals("Khảo sát", result.getStepName());
         assertEquals(24, result.getDuration());
+        assertEquals(36, subCategory.getSla());
         verify(stepRepository).save(any(Step.class));
+        verify(subCategoryRepository).save(subCategory);
     }
 
     @Test
@@ -104,16 +113,20 @@ class StepServiceTest {
     
     @Test
     void updateStep_Success() {
+        request.setDuration(48);
         when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())).thenReturn(Optional.of(subCategory));
         when(stepRepository.save(any(Step.class))).thenReturn(step);
+        when(stepRepository.findBySubCategory_SubCategoryId(subCategoryId)).thenReturn(java.util.List.of(step));
         when(stepMapper.toResponse(step)).thenReturn(response);
 
         StepResponse result = stepService.updateStep(stepId, request);
 
         assertNotNull(result);
         assertEquals("Khảo sát", result.getStepName());
+        assertEquals(48, subCategory.getSla());
         verify(stepRepository).save(any(Step.class));
+        verify(subCategoryRepository).save(subCategory);
     }
 
     @Test
@@ -126,10 +139,18 @@ class StepServiceTest {
 
     @Test
     void deleteStep_Success() {
+        Step remainingStep = Step.builder()
+                .stepId(UUID.randomUUID())
+                .subCategory(subCategory)
+                .duration(10)
+                .build();
         when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(stepRepository.findBySubCategory_SubCategoryId(subCategoryId)).thenReturn(java.util.List.of(step, remainingStep));
         
         stepService.deleteStep(stepId);
         
         verify(stepRepository).delete(step);
+        assertEquals(10, subCategory.getSla());
+        verify(subCategoryRepository).save(subCategory);
     }
 }
