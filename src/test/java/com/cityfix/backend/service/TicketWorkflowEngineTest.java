@@ -41,13 +41,7 @@ class TicketWorkflowEngineTest {
     @Mock
     private TicketHistoryMapper ticketHistoryMapper;
     @Mock
-    private NotificationRepository notificationRepository;
-    @Mock
-    private NotificationMapper notificationMapper;
-    @Mock
-    private SimpMessagingTemplate messagingTemplate;
-    @Mock
-    private EmailService emailService;
+    private NotificationService notificationService;
 
     @InjectMocks
     private TicketWorkflowEngineImpl workflowEngine;
@@ -110,6 +104,7 @@ class TicketWorkflowEngineTest {
         assertThat(mockStep2.getStartedAt()).isNotNull();
         verify(ticketStepRepository, atLeastOnce()).save(mockStep2);
         verify(ticketHistoryRepository, times(1)).save(any(TicketHistory.class));
+        verify(notificationService, times(1)).notifyStepCompleted(eq(mockStep1), any(), eq(false));
     }
 
     @Test
@@ -125,15 +120,13 @@ class TicketWorkflowEngineTest {
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
         when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new TicketHistory());
-        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
 
         workflowEngine.handleStepCompletion(mockStep2.getId());
 
         assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.RESOLVED);
         verify(ticketRepository, times(1)).save(mockTicket);
         verify(ticketHistoryRepository, times(1)).save(any(TicketHistory.class));
-        verify(notificationRepository, times(1)).save(any(Notification.class));
-        verify(emailService, times(1)).sendTicketStatusEmail(eq("citizen@example.com"), anyString(), anyString());
+        verify(notificationService, times(1)).notifyStepCompleted(eq(mockStep2), any(), eq(true));
     }
 
     @Test
@@ -147,12 +140,12 @@ class TicketWorkflowEngineTest {
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
         when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new TicketHistory());
-        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
 
         workflowEngine.handleStepCompletion(mockStep1.getId());
 
         assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.RESOLVED);
         verify(ticketRepository, times(1)).save(mockTicket);
+        verify(notificationService, times(1)).notifyStepCompleted(eq(mockStep1), any(), eq(true));
     }
 
     @Test

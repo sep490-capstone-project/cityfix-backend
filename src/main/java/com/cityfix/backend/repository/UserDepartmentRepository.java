@@ -47,4 +47,11 @@ public interface UserDepartmentRepository extends JpaRepository<UserDepartment, 
 
     @Query("SELECT ud FROM UserDepartment ud JOIN FETCH ud.user u JOIN FETCH u.role WHERE ud.department.departmentId = :departmentId AND u.isDeleted = false ORDER BY ud.createdAt ASC")
     List<UserDepartment> findDepartmentUsersWithRole(@Param("departmentId") UUID departmentId);
+
+    @Query("SELECT DISTINCT ud.user FROM UserDepartment ud WHERE ud.department.departmentId IN :departmentIds AND ud.department.isDeleted = false AND UPPER(ud.user.role.roleName) = 'MANAGER' AND ud.user.status = :status AND ud.user.isDeleted = false")
+    List<User> findManagersByDepartmentIdsAndStatus(@Param("departmentIds") Collection<UUID> departmentIds, @Param("status") UserStatus status);
+
+    default List<User> findActiveManagersByDepartmentIds(Collection<UUID> departmentIds) {
+        return findManagersByDepartmentIdsAndStatus(departmentIds, UserStatus.ACTIVE);
+    }
 }

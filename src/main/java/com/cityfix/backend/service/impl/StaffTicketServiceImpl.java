@@ -51,6 +51,7 @@ public class StaffTicketServiceImpl implements StaffTicketService {
     private final TicketService ticketService;
     private final SimpMessagingTemplate messagingTemplate;
     private final EmailService emailService;
+    private final com.cityfix.backend.service.NotificationService notificationService;
 
     private static final Map<TicketStatus, Set<TicketStatus>> ALLOWED_TRANSITIONS = Map.of(
             TicketStatus.ASSIGNED, Set.of(TicketStatus.IN_PROGRESS, TicketStatus.REJECTED),
@@ -154,6 +155,7 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
         if (targetStepStatus != null) {
             for (TicketStep step : targetSteps) {
+                step.setTicket(ticket);
                 step.setStatus(targetStepStatus);
                 if (targetStepStatus == AssignmentStatus.IN_PROGRESS && step.getStartedAt() == null) {
                     step.setStartedAt(LocalDateTime.now());
@@ -181,7 +183,17 @@ public class StaffTicketServiceImpl implements StaffTicketService {
         );
         ticketHistoryRepository.save(history);
 
-        sendTicketStatusNotification(ticket, targetStatus);
+        if (targetStepStatus == AssignmentStatus.IN_PROGRESS && !targetSteps.isEmpty()) {
+            for (TicketStep step : targetSteps) {
+                notificationService.notifyStepStarted(step, currentUser);
+            }
+        } else if (targetStepStatus == AssignmentStatus.COMPLETED && !targetSteps.isEmpty()) {
+            for (TicketStep step : targetSteps) {
+                notificationService.notifyStepCompleted(step, currentUser, true);
+            }
+        } else {
+            sendTicketStatusNotification(ticket, targetStatus);
+        }
 
         return ticketMapper.toTicketResponse(ticket);
     }
