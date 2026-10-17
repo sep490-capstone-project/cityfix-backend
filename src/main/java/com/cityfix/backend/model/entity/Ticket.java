@@ -89,8 +89,8 @@ public class Ticket {
     @Column(name = "review_note", columnDefinition = "TEXT")
     private String reviewNote;
 
-    @Column(name = "duration")
-    private Integer duration;
+    @Column(name = "deadline")
+    private LocalDateTime deadline;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

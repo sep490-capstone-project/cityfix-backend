@@ -35,6 +35,4 @@ public interface ManagerTicketService {
     TicketStepResponse updateTicketStepOrderIndex(UUID ticketStepId, UpdateTicketStepOrderRequest request);
 
     List<TicketStepResponse> reorderTicketSteps(UUID ticketId, ReorderTicketStepsRequest request);
-
-    TicketResponse updateTicketDuration(UUID ticketId, UpdateTicketDurationRequest request);
 }

@@ -94,8 +94,8 @@ public class TicketStepServiceImpl implements TicketStepService {
         step = ticketStepRepository.save(step);
 
         Ticket ticket = step.getTicket();
-        if (ticket != null && ticket.getSubCategories() != null && ticket.getSubCategories().size() > 1) {
-            ticket.setDuration(ticketService.calculateTicketDuration(ticket));
+        if (ticket != null) {
+            ticket.setDeadline(ticketService.calculateTicketDeadline(ticket));
             ticketRepository.save(ticket);
         }
 
@@ -131,8 +131,8 @@ public class TicketStepServiceImpl implements TicketStepService {
         ticketStepRepository.delete(step);
 
         Ticket ticket = step.getTicket();
-        if (ticket != null && ticket.getSubCategories() != null && ticket.getSubCategories().size() > 1) {
-            ticket.setDuration(ticketService.calculateTicketDuration(ticket));
+        if (ticket != null) {
+            ticket.setDeadline(ticketService.calculateTicketDeadline(ticket));
             ticketRepository.save(ticket);
         }
     }

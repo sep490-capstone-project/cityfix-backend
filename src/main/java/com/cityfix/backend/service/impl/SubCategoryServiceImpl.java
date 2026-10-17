@@ -6,8 +6,10 @@ import com.cityfix.backend.mapper.SubCategoryMapper;
 import com.cityfix.backend.model.dto.request.SubCategoryRequest;
 import com.cityfix.backend.model.dto.response.SubCategoryResponse;
 import com.cityfix.backend.model.entity.Category;
+import com.cityfix.backend.model.entity.Step;
 import com.cityfix.backend.model.entity.SubCategory;
 import com.cityfix.backend.repository.CategoryRepository;
+import com.cityfix.backend.repository.StepRepository;
 import com.cityfix.backend.repository.SubCategoryRepository;
 import com.cityfix.backend.service.SubCategoryService;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
 
     private final SubCategoryRepository subCategoryRepository;
     private final CategoryRepository categoryRepository;
+    private final StepRepository stepRepository;
     private final SubCategoryMapper subCategoryMapper;
 
     @Override
@@ -35,6 +38,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
 
         SubCategory subCategory = subCategoryMapper.toEntity(request);
         subCategory.setCategory(category);
+        subCategory.setSla(0);
         
         return subCategoryMapper.toResponse(subCategoryRepository.save(subCategory));
     }
@@ -51,9 +55,15 @@ public class SubCategoryServiceImpl implements SubCategoryService {
         subCategory.setCategory(category);
         subCategory.setName(request.getName());
         subCategory.setDescription(request.getDescription());
-        subCategory.setSla(request.getSla());
         subCategory.setPriority(request.getPriority());
         subCategory.setActive(request.getIsActive());
+
+        List<Step> steps = stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(id);
+        int totalSla = (steps == null) ? 0 : steps.stream()
+                .filter(s -> s != null && !s.isDeleted() && s.getDuration() != null && s.getDuration() > 0)
+                .mapToInt(Step::getDuration)
+                .sum();
+        subCategory.setSla(totalSla);
 
         return subCategoryMapper.toResponse(subCategoryRepository.save(subCategory));
     }

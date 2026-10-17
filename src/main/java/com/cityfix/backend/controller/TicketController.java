@@ -8,7 +8,6 @@ import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
-import com.cityfix.backend.model.dto.request.UpdateTicketDurationRequest;
 import com.cityfix.backend.service.AiService;
 import com.cityfix.backend.service.ManagerTicketService;
 import com.cityfix.backend.service.TicketService;
@@ -57,16 +56,6 @@ public class TicketController {
     public ResponseEntity<BaseResponse<List<TicketStepResponse>>> getTicketSteps(@PathVariable UUID ticketId) {
         List<TicketStepResponse> response = ticketStepService.getTicketStepsByTicketId(ticketId);
         return ResponseEntity.ok(BaseResponse.success("Success", response));
-    }
-
-    @PatchMapping("/{id}/duration")
-    @PreAuthorize("hasRole('MANAGER')")
-    @Operation(summary = "Cập nhật thời lượng xử lý vé (Ticket duration)", description = "Chỉ cho phép role MANAGER và chỉ áp dụng cho ticket có đúng 1 SubCategory.")
-    public ResponseEntity<BaseResponse<TicketResponse>> updateTicketDuration(
-            @PathVariable UUID id,
-            @Valid @RequestBody UpdateTicketDurationRequest request) {
-        TicketResponse response = managerTicketService.updateTicketDuration(id, request);
-        return ResponseEntity.ok(BaseResponse.success("Cập nhật thời lượng vé thành công", response));
     }
 
     @PostMapping
