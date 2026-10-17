@@ -90,7 +90,7 @@ class StepServiceTest {
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())).thenReturn(Optional.of(subCategory));
         when(stepMapper.toEntity(request)).thenReturn(step);
         when(stepRepository.save(any(Step.class))).thenReturn(step);
-        when(stepRepository.findBySubCategory_SubCategoryId(subCategoryId)).thenReturn(java.util.List.of(step, step2));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId)).thenReturn(java.util.List.of(step, step2));
         when(stepMapper.toResponse(step)).thenReturn(response);
 
         StepResponse result = stepService.createStep(request);
@@ -114,10 +114,10 @@ class StepServiceTest {
     @Test
     void updateStep_Success() {
         request.setDuration(48);
-        when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(stepRepository.findByStepIdAndIsDeletedFalse(stepId)).thenReturn(Optional.of(step));
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())).thenReturn(Optional.of(subCategory));
         when(stepRepository.save(any(Step.class))).thenReturn(step);
-        when(stepRepository.findBySubCategory_SubCategoryId(subCategoryId)).thenReturn(java.util.List.of(step));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId)).thenReturn(java.util.List.of(step));
         when(stepMapper.toResponse(step)).thenReturn(response);
 
         StepResponse result = stepService.updateStep(stepId, request);
@@ -131,7 +131,7 @@ class StepServiceTest {
 
     @Test
     void updateStep_StepNotFound() {
-        when(stepRepository.findById(stepId)).thenReturn(Optional.empty());
+        when(stepRepository.findByStepIdAndIsDeletedFalse(stepId)).thenReturn(Optional.empty());
 
         AppException ex = assertThrows(AppException.class, () -> stepService.updateStep(stepId, request));
         assertEquals(ErrorCode.STEP_NOT_FOUND, ex.getErrorCode());
@@ -144,12 +144,14 @@ class StepServiceTest {
                 .subCategory(subCategory)
                 .duration(10)
                 .build();
-        when(stepRepository.findById(stepId)).thenReturn(Optional.of(step));
-        when(stepRepository.findBySubCategory_SubCategoryId(subCategoryId)).thenReturn(java.util.List.of(step, remainingStep));
+        when(stepRepository.findByStepIdAndIsDeletedFalse(stepId)).thenReturn(Optional.of(step));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId)).thenReturn(java.util.List.of(remainingStep));
         
         stepService.deleteStep(stepId);
         
-        verify(stepRepository).delete(step);
+        assertTrue(step.isDeleted());
+        assertNotNull(step.getDeletedAt());
+        verify(stepRepository).save(step);
         assertEquals(10, subCategory.getSla());
         verify(subCategoryRepository).save(subCategory);
     }

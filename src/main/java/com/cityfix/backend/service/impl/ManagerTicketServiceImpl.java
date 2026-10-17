@@ -598,7 +598,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 ticketStep.setNotes(stepReq.getNotes());
                 ticketStep.setUpdatedAt(now);
             } else {
-                ticketStep = ticketStepMapper.toTicketStep(
+                ticketStep = ticketStepMapper.toTicketStepWithTimeline(
                         ticket, step, assignee, AssignmentStatus.OPEN,
                         stepReq.getOrderIndex(), stepStart, deadline, stepReq.getNotes()
                 );

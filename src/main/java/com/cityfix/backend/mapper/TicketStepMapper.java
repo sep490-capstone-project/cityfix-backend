@@ -57,7 +57,7 @@ public interface TicketStepMapper {
     @Mapping(target = "isDeleted", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
-    TicketStep toTicketStep(
+    TicketStep toTicketStepWithTimeline(
             com.cityfix.backend.model.entity.Ticket ticket,
             com.cityfix.backend.model.entity.Step step,
             com.cityfix.backend.model.entity.User assignee,
@@ -74,16 +74,7 @@ public interface TicketStepMapper {
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateOrderIndex(UpdateTicketStepOrderRequest request, @MappingTarget TicketStep ticketStep);
 
-    @Mapping(target = "id", ignore = true)
-    @Mapping(target = "ticket", ignore = true)
-    @Mapping(target = "step", ignore = true)
-    @Mapping(target = "assignee", ignore = true)
-    @Mapping(target = "status", ignore = true)
-    @Mapping(target = "orderIndex", ignore = true)
-    @Mapping(target = "completedAt", ignore = true)
-    @Mapping(target = "notes", ignore = true)
-    @Mapping(target = "deleted", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
+    @BeanMapping(ignoreByDefault = true)
     @Mapping(target = "startedAt", source = "startedAt")
     @Mapping(target = "deadline", source = "deadline")
     @Mapping(target = "updatedAt", source = "updatedAt")

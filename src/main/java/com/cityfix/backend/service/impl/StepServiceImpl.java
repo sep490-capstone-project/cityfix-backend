@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -44,7 +45,7 @@ public class StepServiceImpl implements StepService {
     @Override
     @Transactional
     public StepResponse updateStep(UUID id, StepRequest request) {
-        Step step = stepRepository.findById(id)
+        Step step = stepRepository.findByStepIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
         SubCategory oldSubCategory = step.getSubCategory();
@@ -71,11 +72,13 @@ public class StepServiceImpl implements StepService {
     @Override
     @Transactional
     public void deleteStep(UUID id) {
-        Step step = stepRepository.findById(id)
+        Step step = stepRepository.findByStepIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
         SubCategory subCategory = step.getSubCategory();
-        stepRepository.delete(step);
+        step.setDeleted(true);
+        step.setDeletedAt(LocalDateTime.now());
+        stepRepository.save(step);
 
         if (subCategory != null) {
             recalculateSubCategorySla(subCategory, id);
@@ -90,7 +93,7 @@ public class StepServiceImpl implements StepService {
         if (subCategory == null || subCategory.getSubCategoryId() == null) {
             return;
         }
-        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(subCategory.getSubCategoryId());
+        List<Step> steps = stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategory.getSubCategoryId());
         int totalSla = 0;
         if (steps != null) {
             totalSla = steps.stream()
@@ -106,14 +109,14 @@ public class StepServiceImpl implements StepService {
 
     @Override
     public List<StepResponse> getAllSteps() {
-        return stepRepository.findAll().stream()
+        return stepRepository.findByIsDeletedFalse().stream()
                 .map(stepMapper::toResponse)
                 .collect(Collectors.toList());
     }
 
     @Override
     public List<StepResponse> getStepsBySubCategoryId(UUID subCategoryId) {
-        return stepRepository.findBySubCategory_SubCategoryId(subCategoryId).stream()
+        return stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId).stream()
                 .map(stepMapper::toResponse)
                 .collect(Collectors.toList());
     }

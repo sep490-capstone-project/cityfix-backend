@@ -423,7 +423,7 @@ class TicketServiceTest {
         when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(repStaff));
 
         Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subId)).thenReturn(List.of(stepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subId)).thenReturn(List.of(stepEntity));
 
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
@@ -472,7 +472,7 @@ class TicketServiceTest {
         when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(repStaff));
 
         Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subId)).thenReturn(List.of(stepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subId)).thenReturn(List.of(stepEntity));
 
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
@@ -519,7 +519,7 @@ class TicketServiceTest {
         when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.of(repStaff));
 
         Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subId)).thenReturn(List.of(stepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subId)).thenReturn(List.of(stepEntity));
 
         when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
@@ -876,7 +876,7 @@ class TicketServiceTest {
         mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
 
         Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
 
         User repStaff = new User();
         repStaff.setUserId(UUID.randomUUID());
@@ -1077,7 +1077,7 @@ class TicketServiceTest {
         mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
 
         Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
 
         User repStaff = new User();
         repStaff.setUserId(UUID.randomUUID());
@@ -1176,7 +1176,7 @@ class TicketServiceTest {
         mockTicket.setSubCategories(new ArrayList<>(List.of(tsc)));
 
         Step mockStepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(subCat).stepName("Sửa").build();
-        when(stepRepository.findBySubCategory_SubCategoryId(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCat.getSubCategoryId())).thenReturn(List.of(mockStepEntity));
 
         User repStaff = new User();
         repStaff.setUserId(UUID.randomUUID());
@@ -1344,7 +1344,7 @@ class TicketServiceTest {
         LocalDateTime deadline1 = LocalDateTime.now().plusDays(2);
         LocalDateTime deadline2 = LocalDateTime.now().plusDays(3);
 
-        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
         when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(

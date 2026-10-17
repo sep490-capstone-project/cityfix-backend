@@ -101,7 +101,7 @@ class SubCategoryServiceTest {
 
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCategory));
         when(categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())).thenReturn(Optional.of(category));
-        when(stepRepository.findBySubCategory_SubCategoryId(subCatId)).thenReturn(java.util.List.of(s1, s2));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(java.util.List.of(s1, s2));
         when(subCategoryRepository.save(any(SubCategory.class))).thenReturn(subCategory);
         when(subCategoryMapper.toResponse(subCategory)).thenReturn(response);
 

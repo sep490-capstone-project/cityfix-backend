@@ -58,7 +58,7 @@ public class SubCategoryServiceImpl implements SubCategoryService {
         subCategory.setPriority(request.getPriority());
         subCategory.setActive(request.getIsActive());
 
-        List<Step> steps = stepRepository.findBySubCategory_SubCategoryId(id);
+        List<Step> steps = stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(id);
         int totalSla = (steps == null) ? 0 : steps.stream()
                 .filter(s -> s != null && !s.isDeleted() && s.getDuration() != null && s.getDuration() > 0)
                 .mapToInt(Step::getDuration)
