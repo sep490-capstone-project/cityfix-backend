@@ -480,7 +480,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             }
         }
         List<Step> stepEntities = stepRepository.findAllById(uniqueStepIds);
-        if (stepEntities.size() != uniqueStepIds.size()) {
+        if (stepEntities.size() != uniqueStepIds.size() || stepEntities.stream().anyMatch(Step::isDeleted)) {
             throw new AppException(ErrorCode.STEP_NOT_FOUND);
         }
         return stepEntities.stream().collect(Collectors.toMap(Step::getStepId, Function.identity()));
