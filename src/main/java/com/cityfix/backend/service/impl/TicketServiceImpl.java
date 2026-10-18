@@ -635,7 +635,7 @@ public class TicketServiceImpl implements TicketService {
 
         List<AssignmentStatus> targetStatuses = (status != null)
                 ? List.of(status)
-                : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS);
+                : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS, AssignmentStatus.RESOLVED);
 
         Pageable unsortedPageable = (pageable == null || pageable.isUnpaged())
                 ? Pageable.unpaged()
@@ -646,7 +646,20 @@ public class TicketServiceImpl implements TicketService {
                         currentUser.getUserId(), targetStatuses, unsortedPageable
                 );
 
-        return ticketsPage.map(ticketMapper::toTicketResponse);
+        return ticketsPage.map(ticket -> {
+            TicketResponse response = ticketMapper.toTicketResponse(ticket);
+            if (response != null) {
+                List<TicketStep> staffSteps = (ticket.getSteps() != null ? ticket.getSteps() : Collections.<TicketStep>emptyList())
+                        .stream()
+                        .filter(s -> s != null && !s.isDeleted())
+                        .filter(s -> s.getAssignee() != null && currentUser.getUserId().equals(s.getAssignee().getUserId()))
+                        .filter(s -> targetStatuses.contains(s.getStatus()))
+                        .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .toList();
+                response.setSteps(ticketStepMapper.toTicketStepResponseList(staffSteps));
+            }
+            return response;
+        });
     }
 
     @Override

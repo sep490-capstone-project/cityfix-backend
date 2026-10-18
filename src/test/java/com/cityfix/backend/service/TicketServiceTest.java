@@ -949,29 +949,72 @@ class TicketServiceTest {
     }
 
     @Test
-    @DisplayName("getAssignedTicketsForStaff_validStaff_success")
-    void getAssignedTicketsForStaff_validStaff_success() {
+    @DisplayName("getAssignedTicketsForStaff_validStaff_returnsTicketWithStaffLinkedStepsOnly")
+    void getAssignedTicketsForStaff_validStaff_returnsTicketWithStaffLinkedStepsOnly() {
         com.cityfix.backend.model.entity.Department dept = new com.cityfix.backend.model.entity.Department();
         dept.setDepartmentId(UUID.randomUUID());
         dept.setName("Phòng Giao thông");
         mockUser.setDepartment(dept);
 
-        com.cityfix.backend.model.entity.TicketStep step =
+        User otherStaff = new User();
+        otherStaff.setUserId(UUID.randomUUID());
+
+        com.cityfix.backend.model.entity.TicketStep myStep2 =
                 com.cityfix.backend.model.entity.TicketStep.builder()
+                        .id(UUID.randomUUID())
                         .ticket(mockTicket)
+                        .assignee(mockUser)
+                        .orderIndex(2)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                        .build();
+
+        com.cityfix.backend.model.entity.TicketStep myStep1 =
+                com.cityfix.backend.model.entity.TicketStep.builder()
+                        .id(UUID.randomUUID())
+                        .ticket(mockTicket)
+                        .assignee(mockUser)
+                        .orderIndex(1)
                         .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
+                        .build();
+
+        com.cityfix.backend.model.entity.TicketStep otherStaffStep =
+                com.cityfix.backend.model.entity.TicketStep.builder()
+                        .id(UUID.randomUUID())
+                        .ticket(mockTicket)
+                        .assignee(otherStaff)
+                        .orderIndex(3)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.OPEN)
+                        .build();
+
+        mockTicket.setSteps(new ArrayList<>(List.of(myStep2, otherStaffStep, myStep1)));
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse stepRes1 =
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
+                        .id(myStep1.getId())
+                        .assigneeId(mockUser.getUserId())
+                        .orderIndex(1)
+                        .build();
+        com.cityfix.backend.model.dto.response.TicketStepResponse stepRes2 =
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
+                        .id(myStep2.getId())
+                        .assigneeId(mockUser.getUserId())
+                        .orderIndex(2)
                         .build();
 
         org.springframework.data.domain.Page<com.cityfix.backend.model.entity.Ticket> page =
                 new org.springframework.data.domain.PageImpl<>(List.of(mockTicket));
 
-        when(ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(any(), any(), any())).thenReturn(page);
+        when(ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(eq(mockUser.getUserId()), any(), any())).thenReturn(page);
         when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(mockResponse);
+        when(ticketStepMapper.toTicketStepResponseList(List.of(myStep1, myStep2))).thenReturn(List.of(stepRes1, stepRes2));
 
         org.springframework.data.domain.Page<TicketResponse> result =
                 ticketService.getAssignedTicketsForStaff(null, org.springframework.data.domain.PageRequest.of(0, 10));
 
         assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getSteps()).hasSize(2);
+        assertThat(result.getContent().get(0).getSteps().get(0).getId()).isEqualTo(myStep1.getId());
+        assertThat(result.getContent().get(0).getSteps().get(1).getId()).isEqualTo(myStep2.getId());
     }
 
     @Test
@@ -998,7 +1041,7 @@ class TicketServiceTest {
 
         verify(ticketStepRepository).findDistinctTicketsByAssigneeUserIdAndStatusIn(
                 eq(mockUser.getUserId()),
-                eq(List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)),
+                eq(List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS, AssignmentStatus.RESOLVED)),
                 pageableCaptor.capture()
         );
 

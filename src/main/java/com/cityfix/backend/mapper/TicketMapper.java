@@ -37,9 +37,26 @@ public interface TicketMapper {
     @Mapping(target = "imageUrl", expression = "java(ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null)")
     @Mapping(target = "images", expression = "java(ticket.getImages() != null ? ticket.getImages().stream().map(com.cityfix.backend.model.entity.ReportImage::getImageUrl).toList() : java.util.Collections.emptyList())")
     @Mapping(target = "subCategories", source = "subCategories")
+    @Mapping(target = "steps", source = "steps")
     @Mapping(target = "departmentId", ignore = true)
     @Mapping(target = "departmentName", ignore = true)
     TicketResponse toTicketResponse(Ticket ticket);
+
+    @AfterMapping
+    default void sortSteps(Ticket ticket, @MappingTarget TicketResponse response) {
+        if (response == null || response.getSteps() == null || response.getSteps().isEmpty()) {
+            return;
+        }
+        response.setSteps(
+                response.getSteps().stream()
+                        .filter(java.util.Objects::nonNull)
+                        .sorted(Comparator.comparing(
+                                com.cityfix.backend.model.dto.response.TicketStepResponse::getOrderIndex,
+                                Comparator.nullsLast(Comparator.naturalOrder())
+                        ))
+                        .toList()
+        );
+    }
 
     @AfterMapping
     default void mapCategoryFromSubCategories(Ticket ticket, @MappingTarget TicketResponse response) {
