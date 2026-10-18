@@ -1,6 +1,5 @@
 package com.cityfix.backend.service;
 
-import com.cityfix.backend.enums.AccountStatus;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.UserMapper;
@@ -101,7 +100,7 @@ class UserServiceImplTest {
                 .email("nguyenvana@gmail.com")
                 .fullName("Nguyen Van A")
                 .role("RESIDENT")
-                .status(AccountStatus.INACTIVE)
+                .status(UserStatus.BLOCKED)
                 .createdAt(LocalDateTime.now())
                 .nextStep("VERIFY_EMAIL")
                 .build();

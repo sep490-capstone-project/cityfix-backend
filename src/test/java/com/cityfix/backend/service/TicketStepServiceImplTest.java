@@ -102,7 +102,7 @@ class TicketStepServiceImplTest {
         stepId = UUID.randomUUID();
         step = new TicketStep();
         step.setId(stepId);
-        step.setStatus(AssignmentStatus.OPEN);
+        step.setStatus(AssignmentStatus.ASSIGNED);
         step.setAssignee(staffUser);
     }
 
@@ -334,7 +334,7 @@ class TicketStepServiceImplTest {
         UUID ticketId = UUID.randomUUID();
         TicketStep openStep = new TicketStep();
         openStep.setId(UUID.randomUUID());
-        openStep.setStatus(AssignmentStatus.OPEN);
+        openStep.setStatus(AssignmentStatus.ASSIGNED);
 
         TicketStep inProgressStep = new TicketStep();
         inProgressStep.setId(UUID.randomUUID());

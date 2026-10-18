@@ -40,7 +40,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                t.created_at AS createdAt
         FROM ticket t
         JOIN category c ON c.category_id = :categoryId
-        WHERE t.status IN ('INITIATED', 'OPEN', 'ASSIGNED', 'IN_PROGRESS')
+        WHERE t.status IN ('INITIATED', 'ASSIGNED', 'IN_PROGRESS')
           AND EXISTS (
               SELECT 1 FROM ticket_subcategory tsc
               JOIN sub_category sc ON tsc.sub_category_id = sc.sub_category_id
@@ -61,6 +61,49 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     Page<Ticket> findByStatus(TicketStatus status, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @Query(value = """
+        SELECT t FROM Ticket t
+        WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.RESOLVED
+          AND EXISTS (
+              SELECT 1 FROM TicketStep ts
+              WHERE ts.ticket = t
+                AND ts.isDeleted = false
+                AND ts.status = com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM TicketStep ts2
+              WHERE ts2.ticket = t
+                AND ts2.isDeleted = false
+                AND ts2.status NOT IN (
+                    com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.CANCELLED
+                )
+          )
+        """,
+        countQuery = """
+        SELECT COUNT(t) FROM Ticket t
+        WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.RESOLVED
+          AND EXISTS (
+              SELECT 1 FROM TicketStep ts
+              WHERE ts.ticket = t
+                AND ts.isDeleted = false
+                AND ts.status = com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM TicketStep ts2
+              WHERE ts2.ticket = t
+                AND ts2.isDeleted = false
+                AND ts2.status NOT IN (
+                    com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.CANCELLED
+                )
+          )
+        """)
+    Page<Ticket> findResolvedTicketsWithAllStepsResolved(Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
