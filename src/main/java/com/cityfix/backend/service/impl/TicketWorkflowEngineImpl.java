@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
@@ -73,13 +74,18 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
                 .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
-        // Quy tắc 3: CHỈ KHI NÀO TẤT CẢ các TicketStep thuộc về Ticket đó đều đã ở trạng thái RESOLVED thì Ticket cha mới chuyển sang COMPLETED
-        boolean allStepsResolved = !steps.isEmpty() && steps.stream()
-                .filter(s -> !s.isDeleted())
+        List<TicketStep> activeNonCancelledSteps = steps.stream()
+                .filter(s -> !s.isDeleted() && s.getStatus() != AssignmentStatus.CANCELLED)
+                .toList();
+
+        boolean allStepsCompleted = !activeNonCancelledSteps.isEmpty() && activeNonCancelledSteps.stream()
+                .allMatch(s -> s.getStatus() == AssignmentStatus.COMPLETED);
+
+        boolean allStepsResolved = !activeNonCancelledSteps.isEmpty() && activeNonCancelledSteps.stream()
                 .allMatch(s -> s.getStatus() == AssignmentStatus.RESOLVED || s.getStatus() == AssignmentStatus.COMPLETED);
 
-        if (remainingSteps.isEmpty() && allStepsResolved) {
-            // Tất cả các bước đã hoàn tất -> chuyển trạng thái vé sang COMPLETED
+        if (remainingSteps.isEmpty() && allStepsCompleted) {
+            // Tất cả các bước đã được Manager xác nhận COMPLETED -> chuyển trạng thái vé sang COMPLETED
             TicketStatus prevStatus = ticket.getStatus();
             ticket.setStatus(TicketStatus.COMPLETED);
             ticketRepository.save(ticket);
@@ -87,13 +93,31 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();
             TicketHistory history = ticketHistoryMapper.toTicketHistory(
                     ticket, actor, ActionType.CLOSED, prevStatus, TicketStatus.COMPLETED,
-                    "Tất cả các bước xử lý của vé đã hoàn tất. Sự cố chuyển sang trạng thái Hoàn thành."
+                    "Tất cả các bước xử lý của vé đã được quản lý xác nhận hoàn thành. Sự cố chuyển sang trạng thái Hoàn thành."
             );
             ticketHistoryRepository.save(history);
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
 
-            log.info("Ticket {} - All steps completed. Ticket marked as COMPLETED.", ticketId);
+            log.info("Ticket {} - All steps COMPLETED. Ticket marked as COMPLETED.", ticketId);
+        } else if (remainingSteps.isEmpty() && allStepsResolved) {
+            // Tất cả các bước đã hoàn tất (RESOLVED) -> chuyển trạng thái vé sang RESOLVED
+            TicketStatus prevStatus = ticket.getStatus();
+            if (ticket.getStatus() != TicketStatus.RESOLVED) {
+                ticket.setStatus(TicketStatus.RESOLVED);
+                ticketRepository.save(ticket);
+
+                User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();
+                TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                        ticket, actor, ActionType.CLOSED, prevStatus, TicketStatus.RESOLVED,
+                        "Tất cả các bước xử lý của vé đã hoàn tất. Sự cố chuyển sang trạng thái Đã giải quyết."
+                );
+                ticketHistoryRepository.save(history);
+            }
+
+            notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
+
+            log.info("Ticket {} - All steps RESOLVED. Ticket marked as RESOLVED.", ticketId);
         } else if (!remainingSteps.isEmpty()) {
             // Có ít nhất một bước chưa hoàn tất, chọn bước kế tiếp có orderIndex nhỏ nhất
             TicketStep candidateNextStep = remainingSteps.get(0);
@@ -111,18 +135,59 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
                 // Đủ điều kiện kích hoạt: chỉ chuyển sang IN_PROGRESS nếu chưa ở trạng thái này
                 if (candidateNextStep.getStatus() != AssignmentStatus.IN_PROGRESS) {
                     candidateNextStep.setStatus(AssignmentStatus.IN_PROGRESS);
-                    if (candidateNextStep.getStartedAt() == null) {
-                        candidateNextStep.setStartedAt(now);
+                    candidateNextStep.setStartedAt(now);
+                    if (candidateNextStep.getStep() != null && candidateNextStep.getStep().getDuration() != null && candidateNextStep.getStep().getDuration() > 0) {
+                        candidateNextStep.setDeadline(now.plusHours(candidateNextStep.getStep().getDuration()));
                     }
                     candidateNextStep.setUpdatedAt(now);
                     ticketStepRepository.save(candidateNextStep);
+
+                    // Cascade deadlines cho các bước phía sau (orderIndex > candidateOrder)
+                    LocalDateTime prevDeadline = candidateNextStep.getDeadline();
+                    if (prevDeadline != null) {
+                        List<TicketStep> subsequentSteps = steps.stream()
+                                .filter(s -> !s.getId().equals(candidateNextStep.getId()))
+                                .filter(s -> !s.isDeleted())
+                                .filter(s -> s.getOrderIndex() != null && s.getOrderIndex() > candidateOrder)
+                                .filter(s -> s.getStatus() != AssignmentStatus.COMPLETED
+                                        && s.getStatus() != AssignmentStatus.RESOLVED
+                                        && s.getStatus() != AssignmentStatus.CANCELLED)
+                                .sorted(Comparator.comparing(TicketStep::getOrderIndex))
+                                .toList();
+
+                        for (TicketStep s : subsequentSteps) {
+                            int duration = (s.getStep() != null && s.getStep().getDuration() != null && s.getStep().getDuration() > 0)
+                                    ? s.getStep().getDuration()
+                                    : 0;
+                            LocalDateTime nextStart = prevDeadline;
+                            LocalDateTime nextDeadline = nextStart.plusHours(duration);
+                            s.setStartedAt(nextStart);
+                            s.setDeadline(nextDeadline);
+                            s.setUpdatedAt(now);
+                            ticketStepRepository.save(s);
+                            prevDeadline = nextDeadline;
+                        }
+                    }
+
+                    // Cập nhật lại deadline tổng của Ticket từ max deadline của các bước hợp lệ
+                    LocalDateTime ticketDeadline = steps.stream()
+                            .filter(Objects::nonNull)
+                            .filter(s -> !s.isDeleted())
+                            .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
+                            .map(TicketStep::getDeadline)
+                            .filter(Objects::nonNull)
+                            .max(LocalDateTime::compareTo)
+                            .orElse(null);
+                    if (ticketDeadline != null) {
+                        ticket.setDeadline(ticketDeadline);
+                    }
 
                     // Ensure ticket is IN_PROGRESS
                     TicketStatus prevStatus = ticket.getStatus();
                     if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
                         ticket.setStatus(TicketStatus.IN_PROGRESS);
-                        ticketRepository.save(ticket);
                     }
+                    ticketRepository.save(ticket);
 
                     // Record history
                     User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();

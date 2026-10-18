@@ -863,7 +863,7 @@ class TicketServiceTest {
                         .reason("Không thuộc thẩm quyền xử lý")
                         .build();
 
-        mockTicket.setStatus(TicketStatus.OPEN);
+        mockTicket.setStatus(TicketStatus.ASSIGNED);
 
         SubCategory subCat = SubCategory.builder()
                 .subCategoryId(UUID.randomUUID())
@@ -885,7 +885,7 @@ class TicketServiceTest {
         TicketStep activeStep = TicketStep.builder()
                 .ticket(mockTicket)
                 .step(mockStepEntity)
-                .status(AssignmentStatus.OPEN)
+                .status(AssignmentStatus.ASSIGNED)
                 .orderIndex(0)
                 .build();
         when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), anyList()))
@@ -983,7 +983,7 @@ class TicketServiceTest {
                         .ticket(mockTicket)
                         .assignee(otherStaff)
                         .orderIndex(3)
-                        .status(com.cityfix.backend.model.enums.AssignmentStatus.OPEN)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
                         .build();
 
         mockTicket.setSteps(new ArrayList<>(List.of(myStep2, otherStaffStep, myStep1)));
@@ -1041,7 +1041,7 @@ class TicketServiceTest {
 
         verify(ticketStepRepository).findDistinctTicketsByAssigneeUserIdAndStatusIn(
                 eq(mockUser.getUserId()),
-                eq(List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS, AssignmentStatus.RESOLVED)),
+                eq(List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS, AssignmentStatus.RESOLVED)),
                 pageableCaptor.capture()
         );
 
@@ -1076,7 +1076,7 @@ class TicketServiceTest {
         com.cityfix.backend.model.entity.TicketStep step = new com.cityfix.backend.model.entity.TicketStep();
         step.setId(UUID.randomUUID());
         step.setAssignee(assignee);
-        step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
+        step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
         mockTicket.setSteps(new ArrayList<>(List.of(step)));
 
         when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
@@ -1270,10 +1270,10 @@ class TicketServiceTest {
 
         com.cityfix.backend.model.entity.TicketStep step = new com.cityfix.backend.model.entity.TicketStep();
         step.setId(UUID.randomUUID());
-        step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.OPEN);
+        step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
         step.setAssignee(currentStepAssignee);
 
-        mockTicket.setStatus(TicketStatus.OPEN);
+        mockTicket.setStatus(TicketStatus.ASSIGNED);
         mockTicket.setSteps(new ArrayList<>(List.of(step)));
 
         User targetAssignee = new User();
@@ -1471,7 +1471,7 @@ class TicketServiceTest {
         java.time.LocalDateTime cancelledDeadline = created.plusHours(72);
 
         TicketStep activeStep = TicketStep.builder()
-                .status(AssignmentStatus.OPEN)
+                .status(AssignmentStatus.ASSIGNED)
                 .deadline(activeDeadline)
                 .build();
         TicketStep cancelledStep = TicketStep.builder()

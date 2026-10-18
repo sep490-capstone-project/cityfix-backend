@@ -336,7 +336,7 @@ public class StaffTicketServiceTest {
 
         TicketStep step2 = new TicketStep();
         step2.setId(UUID.randomUUID());
-        step2.setStatus(AssignmentStatus.OPEN);
+        step2.setStatus(AssignmentStatus.ASSIGNED);
         step2.setAssignee(otherStaff);
         step2.setTicket(ticket);
 
