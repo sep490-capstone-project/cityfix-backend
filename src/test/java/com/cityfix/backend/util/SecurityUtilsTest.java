@@ -39,8 +39,11 @@ class SecurityUtilsTest {
                 .email("staff@cityfix.com")
                 .build();
 
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(user, null, Collections.emptyList());
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+                user,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_STAFF"))
+        );
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         String email = SecurityUtils.getCurrentUserEmail();
@@ -53,8 +56,11 @@ class SecurityUtilsTest {
         UserDetails userDetails = mock(UserDetails.class);
         when(userDetails.getUsername()).thenReturn("manager@cityfix.com");
 
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(userDetails, null, Collections.emptyList());
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+                userDetails,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_MANAGER"))
+        );
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         String email = SecurityUtils.getCurrentUserEmail();
@@ -64,8 +70,11 @@ class SecurityUtilsTest {
     @Test
     @DisplayName("getCurrentUserEmail_whenPrincipalIsStringEmail_returnsString")
     void getCurrentUserEmail_whenPrincipalIsStringEmail_returnsString() {
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken("resident@cityfix.com", null, Collections.emptyList());
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+                "resident@cityfix.com",
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_RESIDENT"))
+        );
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         String email = SecurityUtils.getCurrentUserEmail();
@@ -76,8 +85,11 @@ class SecurityUtilsTest {
     @DisplayName("getCurrentUserEmail_whenPrincipalIsCustomPrincipal_returnsPrincipalName")
     void getCurrentUserEmail_whenPrincipalIsCustomPrincipal_returnsPrincipalName() {
         Principal principal = () -> "admin@cityfix.com";
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(principal, null, Collections.emptyList());
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+                principal,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         String email = SecurityUtils.getCurrentUserEmail();
@@ -116,8 +128,11 @@ class SecurityUtilsTest {
                 .userId(UUID.randomUUID())
                 .email("test@cityfix.com")
                 .build();
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(user, null, List.of(new SimpleGrantedAuthority("ROLE_STAFF")));
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+                user,
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_STAFF"))
+        );
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         Optional<User> principal = SecurityUtils.getCurrentUserPrincipal();
@@ -127,8 +142,11 @@ class SecurityUtilsTest {
     @Test
     @DisplayName("getCurrentUserPrincipal_whenPrincipalIsNotUser_returnsEmpty")
     void getCurrentUserPrincipal_whenPrincipalIsNotUser_returnsEmpty() {
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken("string_principal", null, List.of(new SimpleGrantedAuthority("ROLE_STAFF")));
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+                "string_principal",
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_STAFF"))
+        );
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         Optional<User> principal = SecurityUtils.getCurrentUserPrincipal();
