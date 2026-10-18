@@ -8,6 +8,7 @@ import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.repository.ResolutionEvidenceRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.repository.UserRepository;
@@ -19,6 +20,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.cityfix.backend.util.SecurityUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,22 +35,16 @@ public class TicketStepServiceImpl implements TicketStepService {
     private final TicketStepRepository ticketStepRepository;
     private final TicketRepository ticketRepository;
     private final UserRepository userRepository;
+    private final ResolutionEvidenceRepository resolutionEvidenceRepository;
     private final TicketStepMapper ticketStepMapper;
     private final TicketService ticketService;
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
     private final com.cityfix.backend.service.NotificationService notificationService;
 
     private User getCurrentUser() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-        Object principal = auth.getPrincipal();
-        if (principal instanceof User user) {
-            return user;
-        }
-        String email = auth.getName();
+        String email = SecurityUtils.getCurrentUserEmail();
         return userRepository.findByEmail(email)
+                .or(SecurityUtils::getCurrentUserPrincipal)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
     }
 
@@ -77,6 +73,13 @@ public class TicketStepServiceImpl implements TicketStepService {
         validateStepPermission(step, currentUser);
 
         AssignmentStatus prevStatus = step.getStatus();
+
+        if (status == AssignmentStatus.RESOLVED) {
+            if (!resolutionEvidenceRepository.existsByTicketStep_Id(stepId)) {
+                throw new AppException(ErrorCode.EVIDENCE_REQUIRED);
+            }
+        }
+
         step.setStatus(status);
         LocalDateTime now = LocalDateTime.now();
         step.setUpdatedAt(now);
@@ -102,7 +105,12 @@ public class TicketStepServiceImpl implements TicketStepService {
         }
 
         if (status == AssignmentStatus.IN_PROGRESS && prevStatus != AssignmentStatus.IN_PROGRESS) {
-            notificationService.notifyStepStarted(step, currentUser);
+            TicketStep stepWithDetails = ticketStepRepository.findByIdWithAssigneeAndDepartment(stepId)
+                    .orElse(step);
+            User staffToNotify = (stepWithDetails.getAssignee() != null)
+                    ? stepWithDetails.getAssignee()
+                    : currentUser;
+            notificationService.notifyStepStarted(stepWithDetails, staffToNotify);
         } else if (status == AssignmentStatus.COMPLETED || status == AssignmentStatus.RESOLVED) {
             ticketWorkflowEngine.handleStepCompletion(step.getId());
             step = ticketStepRepository.findById(stepId).orElse(step);

@@ -74,6 +74,8 @@ public class StaffTicketServiceTest {
     @Mock
     private NotificationService notificationService;
     @Mock
+    private com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
+    @Mock
     private SecurityContext securityContext;
 
     @InjectMocks
@@ -119,8 +121,10 @@ public class StaffTicketServiceTest {
 
     private void setupActiveAssignment() {
         TicketStep step = new TicketStep();
+        step.setId(UUID.randomUUID());
         step.setStatus(AssignmentStatus.ASSIGNED);
         step.setAssignee(staffUser);
+        step.setTicket(ticket);
         ticket.getSteps().add(step);
         lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(any(), any()))
                 .thenReturn(List.of(step));
@@ -174,8 +178,9 @@ public class StaffTicketServiceTest {
         setupActiveAssignment();
 
         ticket.setStatus(TicketStatus.IN_PROGRESS);
+        UUID stepId = ticket.getSteps().get(0).getId();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)).thenReturn(false);
+        when(resolutionEvidenceRepository.existsByTicketStep_Id(stepId)).thenReturn(false);
 
         UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
 
@@ -192,8 +197,8 @@ public class StaffTicketServiceTest {
         setupActiveAssignment();
 
         ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.getSteps().get(0).setStatus(AssignmentStatus.RESOLVED);
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)).thenReturn(true);
         when(ticketRepository.save(any(Ticket.class))).thenReturn(ticket);
         
         TicketResponse mockResponse = TicketResponse.builder().status(TicketStatus.COMPLETED).build();
@@ -204,7 +209,6 @@ public class StaffTicketServiceTest {
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
         verify(ticketHistoryRepository).save(any());
-        verify(notificationService).notifyStepCompleted(any(TicketStep.class), eq(staffUser), eq(true));
     }
 
     @Test
@@ -235,16 +239,21 @@ public class StaffTicketServiceTest {
         List<MultipartFile> files = List.of(mockFile);
         
         ImageUploadResponse uploadRes = ImageUploadResponse.builder().secureUrl("http://image.url").build();
+        ResolutionEvidence mockEvidence = new ResolutionEvidence();
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
         when(ticketService.uploadImage(any(), eq("cityfix/evidences"))).thenReturn(List.of(uploadRes));
+        when(evidenceMapper.toResolutionEvidence(any(), any(), any(), any())).thenReturn(mockEvidence);
         when(resolutionEvidenceRepository.saveAll(any())).thenReturn(new ArrayList<>());
         
         staffTicketService.submitEvidence(ticketId, files, "Note");
 
         verify(ticketService).uploadImage(any(), eq("cityfix/evidences"));
+        verify(evidenceMapper).toResolutionEvidence(any(), any(), eq("http://image.url"), eq("Note"));
         verify(resolutionEvidenceRepository).saveAll(anyList());
         verify(ticketHistoryRepository).save(any());
+        verify(ticketWorkflowEngine, never()).handleStepCompletion(any());
+        assertThat(ticket.getSteps().get(0).getStatus()).isEqualTo(AssignmentStatus.ASSIGNED);
     }
 
     @Test

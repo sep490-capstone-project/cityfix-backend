@@ -10,6 +10,7 @@ import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.enums.UserStatus;
+import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
@@ -28,6 +29,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.cityfix.backend.util.SecurityUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,42 +50,22 @@ public class NotificationServiceImpl implements NotificationService {
     private final TicketVoteRepository ticketVoteRepository;
     private final UserDepartmentRepository userDepartmentRepository;
     private final UserRepository userRepository;
+    private final DepartmentRepository departmentRepository;
     private final NotificationMapper notificationMapper;
     private final SimpMessagingTemplate messagingTemplate;
 
     private User getCurrentUser() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-
-        Object principal = auth.getPrincipal();
+        Object principal = SecurityContextHolder.getContext().getAuthentication() != null
+                ? SecurityContextHolder.getContext().getAuthentication().getPrincipal()
+                : null;
         if (principal instanceof User user && user.getUserId() != null) {
             return user;
         }
 
-        String email = resolvePrincipalEmail(auth, principal);
-        if (email == null || email.isBlank() || "anonymousUser".equalsIgnoreCase(email)) {
-            log.warn("Unable to resolve current user email from principal of type: {}",
-                    principal != null ? principal.getClass().getName() : "null");
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-
+        String email = SecurityUtils.getCurrentUserEmail();
         return userRepository.findByEmail(email)
+                .or(SecurityUtils::getCurrentUserPrincipal)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
-    }
-
-    private String resolvePrincipalEmail(Authentication auth, Object principal) {
-        if (principal instanceof User user && user.getEmail() != null) {
-            return user.getEmail();
-        }
-        if (principal instanceof UserDetails userDetails) {
-            return userDetails.getUsername();
-        }
-        if (principal instanceof String str && !str.isBlank()) {
-            return str;
-        }
-        return auth.getName();
     }
 
     private boolean isEligibleRecipient(User user, UUID actorId) {
@@ -97,6 +79,19 @@ public class NotificationServiceImpl implements NotificationService {
             return false;
         }
         return user.getStatus() == null || user.getStatus() == UserStatus.ACTIVE;
+    }
+
+    private UUID extractDepartmentId(Department dept) {
+        if (dept == null) {
+            return null;
+        }
+        if (dept instanceof org.hibernate.proxy.HibernateProxy proxy) {
+            Object id = proxy.getHibernateLazyInitializer().getIdentifier();
+            if (id instanceof UUID uuid) {
+                return uuid;
+            }
+        }
+        return dept.getDepartmentId();
     }
 
     private List<User> resolveDepartmentManagers(User staff) {
@@ -121,11 +116,16 @@ public class NotificationServiceImpl implements NotificationService {
             }
         }
 
-        Department directDept = staff.getDepartment();
-        if (directDept != null && !directDept.isDeleted() && directDept.getDepartmentId() != null) {
-            departmentIds.add(directDept.getDepartmentId());
-            if (directDept.getManager() != null && directDept.getManager().getUserId() != null) {
-                managers.put(directDept.getManager().getUserId(), directDept.getManager());
+        UUID directDeptId = extractDepartmentId(staff.getDepartment());
+        if (directDeptId != null) {
+            Department dept = departmentRepository.findById(directDeptId)
+                    .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
+            if (Boolean.TRUE.equals(dept.isDeleted())) {
+                return Collections.emptyList();
+            }
+            departmentIds.add(dept.getDepartmentId());
+            if (dept.getManager() != null && dept.getManager().getUserId() != null) {
+                managers.put(dept.getManager().getUserId(), dept.getManager());
             }
         }
 

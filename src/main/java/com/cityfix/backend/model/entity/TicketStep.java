@@ -3,10 +3,13 @@ package com.cityfix.backend.model.entity;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -35,6 +38,11 @@ public class TicketStep {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id")
     private User assignee;
+
+    @BatchSize(size = 20)
+    @Builder.Default
+    @OneToMany(mappedBy = "ticketStep", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ResolutionEvidence> evidences = new ArrayList<>();
 
     @Builder.Default
     @Enumerated(EnumType.STRING)

@@ -75,12 +75,21 @@ public class StaffTicketController {
 
     @PostMapping(value = "/{id}/evidences", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Đính kèm bằng chứng xử lý", description = "Upload nhiều files (hình ảnh, video) và kèm ghi chú. Tối đa 7 files.")
+    @Operation(summary = "Đính kèm bằng chứng xử lý", description = "Upload nhiều files (hình ảnh, video) và kèm ghi chú. Hỗ trợ truyền stepId hoặc id của vé/bước.")
     public ResponseEntity<BaseResponse<java.util.List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse>>> submitEvidence(
             @PathVariable java.util.UUID id,
             @RequestPart("files") java.util.List<org.springframework.web.multipart.MultipartFile> files,
+            @RequestParam(value = "stepId", required = false) java.util.UUID stepId,
             @RequestParam(value = "resolutionNote", required = false) String resolutionNote) {
-        java.util.List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> response = staffTicketService.submitEvidence(id, files, resolutionNote);
+        java.util.UUID targetId = (stepId != null) ? stepId : id;
+        java.util.List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> response = staffTicketService.submitEvidence(targetId, files, resolutionNote);
         return ResponseEntity.ok(BaseResponse.success("Nộp bằng chứng xử lý thành công", response));
+    }
+
+    public ResponseEntity<BaseResponse<java.util.List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse>>> submitEvidence(
+            java.util.UUID id,
+            java.util.List<org.springframework.web.multipart.MultipartFile> files,
+            String resolutionNote) {
+        return submitEvidence(id, files, null, resolutionNote);
     }
 }
