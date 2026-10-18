@@ -34,6 +34,19 @@ public class ManagerTicketController {
 
     private final ManagerTicketService managerTicketService;
 
+    @GetMapping
+    @PreAuthorize("hasRole('MANAGER')")
+    @Operation(
+            summary = "Lấy toàn bộ vé có người xử lý thuộc phòng ban của Manager",
+            description = "Trả về danh sách phân trang toàn bộ thông tin vé và tất cả các bước xử lý (ticket steps) của vé mà người xử lý thuộc cùng phòng ban với Manager."
+    )
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getManagerAssignedDepartmentTickets(
+            @RequestParam(value = "departmentId", required = false) UUID departmentId,
+            @PageableDefault(size = 20) Pageable pageable) {
+        Page<TicketResponse> response = managerTicketService.getManagerAssignedDepartmentTickets(departmentId, pageable);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé theo phòng ban của quản lý thành công", response));
+    }
+
     @GetMapping("/initiated")
     @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Lấy danh sách vé chờ duyệt", description = "Trả về danh sách vé đang ở trạng thái INITIATED")

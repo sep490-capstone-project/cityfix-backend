@@ -741,4 +741,60 @@ class ManagerTicketServiceImplTest {
         assertThat(ts2.getDeadline()).isEqualTo(ts2.getStartedAt().plusHours(12));
         assertThat(ticket.getDeadline()).isEqualTo(ts2.getDeadline());
     }
+
+    @Test
+    @DisplayName("getManagerAssignedDepartmentTickets_asManager_returnsFullTicketAndAllSteps")
+    void getManagerAssignedDepartmentTickets_asManager_returnsFullTicketAndAllSteps() {
+        UUID deptId = UUID.randomUUID();
+        Department dept = Department.builder().departmentId(deptId).name("Phòng Quản lý Đô thị").build();
+        mockCurrentUser(managerUser);
+
+        TicketStep step2 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).orderIndex(2).build();
+        TicketStep step1 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).orderIndex(1).build();
+        ticket.setSteps(List.of(step2, step1));
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse stepRes1 =
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step1.getId()).orderIndex(1).build();
+        com.cityfix.backend.model.dto.response.TicketStepResponse stepRes2 =
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step2.getId()).orderIndex(2).build();
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Ticket> ticketPage = new PageImpl<>(List.of(ticket), pageable, 1);
+
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId())).thenReturn(List.of(dept));
+        when(ticketRepository.findTicketsByAssigneeDepartmentIds(any(), eq(pageable))).thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(TicketResponse.builder().id(ticketId).description("Sự cố ngập nước").build());
+        when(ticketStepMapper.toTicketStepResponseList(List.of(step1, step2))).thenReturn(List.of(stepRes1, stepRes2));
+
+        Page<TicketResponse> result = managerTicketService.getManagerAssignedDepartmentTickets(null, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        TicketResponse res = result.getContent().get(0);
+        assertThat(res.getId()).isEqualTo(ticketId);
+        assertThat(res.getSteps()).hasSize(2);
+        assertThat(res.getSteps().get(0).getId()).isEqualTo(step1.getId());
+        assertThat(res.getSteps().get(1).getId()).isEqualTo(step2.getId());
+    }
+
+    @Test
+    @DisplayName("getManagerAssignedDepartmentTickets_asStaff_throwsForbidden")
+    void getManagerAssignedDepartmentTickets_asStaff_throwsForbidden() {
+        mockCurrentUser(staffUser);
+
+        assertThatThrownBy(() -> managerTicketService.getManagerAssignedDepartmentTickets(null, PageRequest.of(0, 20)))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("getManagerAssignedDepartmentTickets_unmanagedDepartmentId_throwsForbidden")
+    void getManagerAssignedDepartmentTickets_unmanagedDepartmentId_throwsForbidden() {
+        Department dept = Department.builder().departmentId(UUID.randomUUID()).name("Phòng A").build();
+        mockCurrentUser(managerUser);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId())).thenReturn(List.of(dept));
+
+        assertThatThrownBy(() -> managerTicketService.getManagerAssignedDepartmentTickets(UUID.randomUUID(), PageRequest.of(0, 20)))
+                .isInstanceOf(AppException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FORBIDDEN);
+    }
 }
