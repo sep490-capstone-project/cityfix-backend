@@ -7,9 +7,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 
@@ -126,17 +128,24 @@ class SecurityUtilsTest {
     void getCurrentUserPrincipal_whenPrincipalIsUser_returnsOptionalUser() {
         User user = User.builder()
                 .userId(UUID.randomUUID())
-                .email("test@cityfix.com")
+                .email("staff@cityfix.com")
                 .build();
-        Authentication auth = new UsernamePasswordAuthenticationToken(
-                user,
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_STAFF"))
-        );
-        SecurityContextHolder.getContext().setAuthentication(auth);
 
-        Optional<User> principal = SecurityUtils.getCurrentUserPrincipal();
-        assertThat(principal).isPresent().contains(user);
+        TestingAuthenticationToken auth = new TestingAuthenticationToken(
+                user,
+                "password",
+                "ROLE_STAFF"
+        );
+        auth.setAuthenticated(true);
+
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(auth);
+        SecurityContextHolder.setContext(context);
+
+        Optional<User> result = SecurityUtils.getCurrentUserPrincipal();
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getEmail()).isEqualTo("staff@cityfix.com");
     }
 
     @Test
