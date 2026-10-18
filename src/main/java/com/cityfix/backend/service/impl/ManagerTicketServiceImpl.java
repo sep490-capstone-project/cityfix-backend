@@ -32,6 +32,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.cityfix.backend.util.SecurityUtils;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -66,17 +67,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     private final EmailService emailService;
 
     private User getCurrentUser() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-        Object principal = auth.getPrincipal();
-        String email = auth.getName();
-        if (principal instanceof User user && user.getEmail() != null) {
-            email = user.getEmail();
-        }
+        String email = SecurityUtils.getCurrentUserEmail();
         return userRepository.findByEmail(email)
-                .or(() -> principal instanceof User user ? Optional.of(user) : Optional.empty())
+                .or(SecurityUtils::getCurrentUserPrincipal)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
     }
 

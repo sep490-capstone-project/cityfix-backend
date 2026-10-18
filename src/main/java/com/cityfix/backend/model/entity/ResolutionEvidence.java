@@ -22,8 +22,11 @@ public class ResolutionEvidence {
     private UUID evidenceId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ticket_id", nullable = false)
-    private Ticket ticket;
+    @JoinColumn(name = "ticket_step_id")
+    private TicketStep ticketStep;
+
+    @Column(name = "legacy_ticket_id")
+    private UUID legacyTicketId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "staff_id", nullable = false)

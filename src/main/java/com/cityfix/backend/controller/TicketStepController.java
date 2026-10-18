@@ -3,6 +3,7 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.service.StaffTicketService;
 import com.cityfix.backend.service.TicketStepService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class TicketStepController {
 
     private final TicketStepService ticketStepService;
+    private final StaffTicketService staffTicketService;
 
     @PatchMapping("/{stepId}/status")
     @PreAuthorize("hasRole('STAFF')")
@@ -46,5 +49,16 @@ public class TicketStepController {
     public ResponseEntity<BaseResponse<Void>> deleteTicketStep(@PathVariable UUID id) {
         ticketStepService.deleteTicketStep(id);
         return ResponseEntity.ok(BaseResponse.success("Xóa bước xử lý thành công", null));
+    }
+
+    @PostMapping(value = "/{stepId}/evidences", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Đính kèm bằng chứng xử lý cho bước", description = "Upload nhiều files bằng chứng và kèm ghi chú cho một bước cụ thể. Bước sẽ tự động chuyển sang RESOLVED khi upload thành công.")
+    public ResponseEntity<BaseResponse<List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse>>> submitEvidence(
+            @PathVariable UUID stepId,
+            @RequestPart("files") List<MultipartFile> files,
+            @RequestParam(value = "resolutionNote", required = false) String resolutionNote) {
+        List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> response = staffTicketService.submitEvidence(stepId, files, resolutionNote);
+        return ResponseEntity.ok(BaseResponse.success("Nộp bằng chứng xử lý cho bước thành công", response));
     }
 }

@@ -22,6 +22,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.cityfix.backend.util.SecurityUtils;
 
 import com.cityfix.backend.model.dto.request.UpdateRatingRequest;
 import org.springframework.data.domain.Page;
@@ -42,24 +43,9 @@ public class RatingServiceImpl implements RatingService {
     private final RatingMapper ratingMapper;
 
     private User getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null
-                || !authentication.isAuthenticated()
-                || authentication instanceof AnonymousAuthenticationToken) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-
-        String email;
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof User user) {
-            email = user.getEmail();
-        } else if (principal instanceof UserDetails userDetails) {
-            email = userDetails.getUsername();
-        } else {
-            email = principal.toString();
-        }
-
+        String email = SecurityUtils.getCurrentUserEmail();
         return userRepository.findByEmail(email)
+                .or(SecurityUtils::getCurrentUserPrincipal)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
     }
 

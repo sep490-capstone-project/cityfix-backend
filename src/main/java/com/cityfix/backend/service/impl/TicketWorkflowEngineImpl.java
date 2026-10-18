@@ -51,9 +51,9 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
         completedStep.setTicket(ticket);
         LocalDateTime now = LocalDateTime.now();
 
-        // Ensure completedStep is marked COMPLETED
+        // Ensure completedStep is marked RESOLVED
         if (completedStep.getStatus() != AssignmentStatus.COMPLETED && completedStep.getStatus() != AssignmentStatus.RESOLVED) {
-            completedStep.setStatus(AssignmentStatus.COMPLETED);
+            completedStep.setStatus(AssignmentStatus.RESOLVED);
         }
         if (completedStep.getCompletedAt() == null) {
             completedStep.setCompletedAt(now);
@@ -73,23 +73,28 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
                 .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
-        if (remainingSteps.isEmpty()) {
-            // Tất cả các bước đã hoàn tất -> chuyển trạng thái vé sang RESOLVED
+        // Quy tắc 3: CHỈ KHI NÀO TẤT CẢ các TicketStep thuộc về Ticket đó đều đã ở trạng thái RESOLVED thì Ticket cha mới chuyển sang COMPLETED
+        boolean allStepsResolved = !steps.isEmpty() && steps.stream()
+                .filter(s -> !s.isDeleted())
+                .allMatch(s -> s.getStatus() == AssignmentStatus.RESOLVED || s.getStatus() == AssignmentStatus.COMPLETED);
+
+        if (remainingSteps.isEmpty() && allStepsResolved) {
+            // Tất cả các bước đã hoàn tất -> chuyển trạng thái vé sang COMPLETED
             TicketStatus prevStatus = ticket.getStatus();
-            ticket.setStatus(TicketStatus.RESOLVED);
+            ticket.setStatus(TicketStatus.COMPLETED);
             ticketRepository.save(ticket);
 
             User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();
             TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                    ticket, actor, ActionType.CLOSED, prevStatus, TicketStatus.RESOLVED,
-                    "Tất cả các bước xử lý của vé đã hoàn tất. Sự cố chuyển sang trạng thái Đã giải quyết."
+                    ticket, actor, ActionType.CLOSED, prevStatus, TicketStatus.COMPLETED,
+                    "Tất cả các bước xử lý của vé đã hoàn tất. Sự cố chuyển sang trạng thái Hoàn thành."
             );
             ticketHistoryRepository.save(history);
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
 
-            log.info("Ticket {} - All steps completed. Ticket marked as RESOLVED.", ticketId);
-        } else {
+            log.info("Ticket {} - All steps completed. Ticket marked as COMPLETED.", ticketId);
+        } else if (!remainingSteps.isEmpty()) {
             // Có ít nhất một bước chưa hoàn tất, chọn bước kế tiếp có orderIndex nhỏ nhất
             TicketStep candidateNextStep = remainingSteps.get(0);
             int candidateOrder = candidateNextStep.getOrderIndex() != null ? candidateNextStep.getOrderIndex() : 0;

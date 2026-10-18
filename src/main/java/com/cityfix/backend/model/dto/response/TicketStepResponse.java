@@ -25,6 +25,7 @@ public class TicketStepResponse {
     private LocalDateTime completedAt;
     private LocalDateTime deadline;
     private String notes;
+    private java.util.List<ResolutionEvidenceResponse> evidences;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

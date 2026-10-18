@@ -123,7 +123,7 @@ class TicketWorkflowEngineTest {
 
         workflowEngine.handleStepCompletion(mockStep2.getId());
 
-        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.RESOLVED);
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
         verify(ticketRepository, times(1)).save(mockTicket);
         verify(ticketHistoryRepository, times(1)).save(any(TicketHistory.class));
         verify(notificationService, times(1)).notifyStepCompleted(eq(mockStep2), any(), eq(true));
@@ -143,7 +143,7 @@ class TicketWorkflowEngineTest {
 
         workflowEngine.handleStepCompletion(mockStep1.getId());
 
-        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.RESOLVED);
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
         verify(ticketRepository, times(1)).save(mockTicket);
         verify(notificationService, times(1)).notifyStepCompleted(eq(mockStep1), any(), eq(true));
     }

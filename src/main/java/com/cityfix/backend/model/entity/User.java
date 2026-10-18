@@ -4,6 +4,7 @@ import com.cityfix.backend.model.enums.UserStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.security.Principal;
 import java.util.UUID;
 
 @Entity
@@ -13,7 +14,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class User extends BaseEntity {
+public class User extends BaseEntity implements Principal {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -61,4 +62,9 @@ public class User extends BaseEntity {
     @Builder.Default
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
+
+    @Override
+    public String getName() {
+        return this.email;
+    }
 }

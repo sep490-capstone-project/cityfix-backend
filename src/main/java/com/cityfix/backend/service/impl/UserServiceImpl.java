@@ -21,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.cityfix.backend.util.SecurityUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -175,19 +176,6 @@ public class UserServiceImpl implements UserService {
     }
 
     private String getCurrentUserEmail() {
-        org.springframework.security.core.Authentication authentication =
-                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null) {
-            throw new AppException(ErrorCode.ACCOUNT_NOT_FOUND);
-        }
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof User user) {
-            return user.getEmail();
-        } else if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
-            return userDetails.getUsername();
-        } else if (principal instanceof String str) {
-            return str;
-        }
-        return authentication.getName();
+        return SecurityUtils.getCurrentUserEmail();
     }
 }
