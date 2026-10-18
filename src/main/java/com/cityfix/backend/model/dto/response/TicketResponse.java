@@ -30,7 +30,7 @@ public class TicketResponse {
     private String creatorPhoneNumber;
     private java.util.List<String> images;
     private LocalDateTime createdAt;
-    // private java.util.List<TicketStepResponse> steps;
+    private java.util.List<TicketStepResponse> steps;
     private LocalDateTime deadline;
     private UUID departmentId;
     private String departmentName;

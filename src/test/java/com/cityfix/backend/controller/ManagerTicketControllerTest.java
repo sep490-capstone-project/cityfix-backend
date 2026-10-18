@@ -240,4 +240,33 @@ class ManagerTicketControllerTest {
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getData().getContent()).hasSize(1);
     }
+
+    @Test
+    @DisplayName("getManagerAssignedDepartmentTickets_returnsPageOfTicketsWithSteps")
+    void getManagerAssignedDepartmentTickets_returnsPageOfTicketsWithSteps() {
+        TicketStepResponse stepResponse = TicketStepResponse.builder()
+                .id(UUID.randomUUID())
+                .stepName("Xử lý hiện trường")
+                .orderIndex(1)
+                .build();
+        TicketResponse mockResponse = TicketResponse.builder()
+                .id(UUID.randomUUID())
+                .description("Test")
+                .steps(List.of(stepResponse))
+                .build();
+        Page<TicketResponse> page = new PageImpl<>(List.of(mockResponse));
+
+        when(managerTicketService.getManagerAssignedDepartmentTickets(any(), any(Pageable.class)))
+                .thenReturn(page);
+
+        ResponseEntity<BaseResponse<Page<TicketResponse>>> response = managerTicketController.getManagerAssignedDepartmentTickets(
+                UUID.randomUUID(), PageRequest.of(0, 20)
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData().getContent()).hasSize(1);
+        assertThat(response.getBody().getData().getContent().get(0).getSteps()).hasSize(1);
+    }
 }

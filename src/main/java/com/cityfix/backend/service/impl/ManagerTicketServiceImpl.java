@@ -156,6 +156,58 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<TicketResponse> getManagerAssignedDepartmentTickets(UUID departmentId, Pageable pageable) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        List<Department> mgrDepts = new ArrayList<>(userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId()));
+        if (currentUser.getDepartment() != null && currentUser.getDepartment().getDepartmentId() != null) {
+            UUID directDeptId = currentUser.getDepartment().getDepartmentId();
+            if (mgrDepts.stream().noneMatch(d -> d != null && directDeptId.equals(d.getDepartmentId()))) {
+                mgrDepts.add(currentUser.getDepartment());
+            }
+        }
+
+        if (mgrDepts.isEmpty()) {
+            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
+
+        Set<UUID> mgrDeptIds = mgrDepts.stream()
+                .filter(Objects::nonNull)
+                .map(Department::getDepartmentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        Set<UUID> targetDeptIds;
+        if (departmentId != null) {
+            if (!mgrDeptIds.contains(departmentId)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            targetDeptIds = Set.of(departmentId);
+        } else {
+            targetDeptIds = mgrDeptIds;
+        }
+
+        Page<Ticket> tickets = ticketRepository.findTicketsByAssigneeDepartmentIds(targetDeptIds, pageable);
+
+        return tickets.map(ticket -> {
+            TicketResponse response = ticketMapper.toTicketResponse(ticket);
+            if (response != null) {
+                List<TicketStep> allSteps = (ticket.getSteps() != null ? ticket.getSteps() : Collections.<TicketStep>emptyList())
+                        .stream()
+                        .filter(s -> s != null && !s.isDeleted())
+                        .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .toList();
+                response.setSteps(ticketStepMapper.toTicketStepResponseList(allSteps));
+            }
+            return response;
+        });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<TicketResponse> getDepartmentTickets(
             UUID departmentId,
             SeverityLevel severity,

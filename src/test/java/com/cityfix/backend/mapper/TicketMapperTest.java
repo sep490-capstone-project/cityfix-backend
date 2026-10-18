@@ -241,4 +241,26 @@ class TicketMapperTest {
         assertThat(response).isNotNull();
         assertThat(response.getDeadline()).isEqualTo(deadline);
     }
+
+    @Test
+    @DisplayName("toTicketResponse_mapsAndSortsStepsByOrderIndex")
+    void toTicketResponse_mapsAndSortsStepsByOrderIndex() {
+        TicketStep step2 = TicketStep.builder().id(UUID.randomUUID()).orderIndex(2).build();
+        TicketStep step1 = TicketStep.builder().id(UUID.randomUUID()).orderIndex(1).build();
+        ticket.setSteps(List.of(step2, step1));
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse res2 =
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step2.getId()).orderIndex(2).build();
+        com.cityfix.backend.model.dto.response.TicketStepResponse res1 =
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step1.getId()).orderIndex(1).build();
+
+        when(ticketStepMapper.toTicketStepResponseList(ticket.getSteps())).thenReturn(List.of(res2, res1));
+
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getSteps()).hasSize(2);
+        assertThat(response.getSteps().get(0).getOrderIndex()).isEqualTo(1);
+        assertThat(response.getSteps().get(1).getOrderIndex()).isEqualTo(2);
+    }
 }

@@ -138,4 +138,46 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             @Param("status") TicketStatus status,
             Pageable pageable
     );
+
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @Query(value = """
+        SELECT t FROM Ticket t
+        WHERE EXISTS (
+            SELECT 1 FROM TicketStep ts
+            WHERE ts.ticket = t
+              AND ts.isDeleted = false
+              AND ts.assignee IS NOT NULL
+              AND (
+                  ts.assignee.department.departmentId IN :departmentIds
+                  OR EXISTS (
+                      SELECT 1 FROM UserDepartment ud
+                      WHERE ud.user = ts.assignee
+                        AND ud.department.departmentId IN :departmentIds
+                        AND ud.department.isDeleted = false
+                  )
+              )
+        )
+        """,
+        countQuery = """
+        SELECT COUNT(t) FROM Ticket t
+        WHERE EXISTS (
+            SELECT 1 FROM TicketStep ts
+            WHERE ts.ticket = t
+              AND ts.isDeleted = false
+              AND ts.assignee IS NOT NULL
+              AND (
+                  ts.assignee.department.departmentId IN :departmentIds
+                  OR EXISTS (
+                      SELECT 1 FROM UserDepartment ud
+                      WHERE ud.user = ts.assignee
+                        AND ud.department.departmentId IN :departmentIds
+                        AND ud.department.isDeleted = false
+                  )
+              )
+        )
+        """)
+    Page<Ticket> findTicketsByAssigneeDepartmentIds(
+            @Param("departmentIds") java.util.Collection<UUID> departmentIds,
+            Pageable pageable
+    );
 }

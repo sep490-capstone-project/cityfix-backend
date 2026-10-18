@@ -14,6 +14,8 @@ public interface ManagerTicketService {
 
     Page<TicketResponse> getInitiatedTickets(Pageable pageable);
 
+    Page<TicketResponse> getManagerAssignedDepartmentTickets(UUID departmentId, Pageable pageable);
+
     Page<TicketResponse> getDepartmentTickets(
             UUID departmentId,
             com.cityfix.backend.model.enums.SeverityLevel severity,
