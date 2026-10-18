@@ -47,7 +47,7 @@ public class TicketStep {
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "assignment_status", nullable = false, length = 20)
-    private AssignmentStatus status = AssignmentStatus.OPEN;
+    private AssignmentStatus status = AssignmentStatus.ASSIGNED;
 
     @Column(name = "order_index")
     private Integer orderIndex;

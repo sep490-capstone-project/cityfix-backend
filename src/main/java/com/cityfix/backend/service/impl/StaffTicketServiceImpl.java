@@ -99,8 +99,7 @@ public class StaffTicketServiceImpl implements StaffTicketService {
     }
 
     private boolean isActiveStatus(AssignmentStatus status) {
-        return status == AssignmentStatus.OPEN 
-                || status == AssignmentStatus.ASSIGNED 
+        return status == AssignmentStatus.ASSIGNED 
                 || status == AssignmentStatus.IN_PROGRESS;
     }
 
@@ -215,15 +214,15 @@ public class StaffTicketServiceImpl implements StaffTicketService {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
 
-            ticket.setStatus(TicketStatus.COMPLETED);
+            ticket.setStatus(targetStatus);
             ticket = ticketRepository.save(ticket);
 
             String note = (request != null && request.getNote() != null) ? request.getNote() : "Hoàn thành xử lý sự cố";
             TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                    ticket, currentUser, ActionType.CLOSED, prevStatus, TicketStatus.COMPLETED, note
+                    ticket, currentUser, ActionType.CLOSED, prevStatus, targetStatus, note
             );
             ticketHistoryRepository.save(history);
-            sendTicketStatusNotification(ticket, TicketStatus.COMPLETED);
+            sendTicketStatusNotification(ticket, targetStatus);
 
             return ticketMapper.toTicketResponse(ticket);
         }
@@ -344,8 +343,7 @@ public class StaffTicketServiceImpl implements StaffTicketService {
             targetStep = steps.stream()
                     .filter(step -> isAdmin(currentUser) || isStepAssignedToUserOrDepartment(step, currentUser))
                     .filter(step -> step.getStatus() == AssignmentStatus.IN_PROGRESS 
-                            || step.getStatus() == AssignmentStatus.ASSIGNED 
-                            || step.getStatus() == AssignmentStatus.OPEN)
+                            || step.getStatus() == AssignmentStatus.ASSIGNED)
                     .findFirst()
                     .orElse(null);
             if (targetStep == null && !steps.isEmpty()) {

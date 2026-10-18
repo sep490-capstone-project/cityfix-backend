@@ -2,13 +2,18 @@ package com.cityfix.backend.service.impl;
 
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
+import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.model.entity.Ticket;
+import com.cityfix.backend.model.entity.TicketHistory;
 import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.ResolutionEvidenceRepository;
+import com.cityfix.backend.repository.TicketHistoryRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.repository.UserRepository;
@@ -34,9 +39,11 @@ public class TicketStepServiceImpl implements TicketStepService {
 
     private final TicketStepRepository ticketStepRepository;
     private final TicketRepository ticketRepository;
+    private final TicketHistoryRepository ticketHistoryRepository;
     private final UserRepository userRepository;
     private final ResolutionEvidenceRepository resolutionEvidenceRepository;
     private final TicketStepMapper ticketStepMapper;
+    private final TicketHistoryMapper ticketHistoryMapper;
     private final TicketService ticketService;
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
     private final com.cityfix.backend.service.NotificationService notificationService;
@@ -100,6 +107,19 @@ public class TicketStepServiceImpl implements TicketStepService {
 
         Ticket ticket = step.getTicket();
         if (ticket != null) {
+            TicketStatus prevTicketStatus = ticket.getStatus();
+            if (status == AssignmentStatus.IN_PROGRESS && prevTicketStatus == TicketStatus.ASSIGNED) {
+                ticket.setStatus(TicketStatus.IN_PROGRESS);
+                if (ticketHistoryMapper != null && ticketHistoryRepository != null) {
+                    TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                            ticket, currentUser, ActionType.WORK_STARTED, prevTicketStatus, TicketStatus.IN_PROGRESS,
+                            "Bước xử lý bắt đầu thực hiện, chuyển trạng thái sự cố sang Đang xử lý."
+                    );
+                    if (history != null) {
+                        ticketHistoryRepository.save(history);
+                    }
+                }
+            }
             ticket.setDeadline(ticketService.calculateTicketDeadline(ticket));
             ticketRepository.save(ticket);
         }

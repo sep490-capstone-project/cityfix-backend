@@ -1,6 +1,6 @@
 package com.cityfix.backend.model.dto.response;
 
-import com.cityfix.backend.enums.AccountStatus;
+import com.cityfix.backend.model.enums.UserStatus;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
@@ -16,7 +16,7 @@ public class UserRegisterResponse {
     private String email;
     private String fullName;
     private String role;
-    private AccountStatus status;
+    private UserStatus status;
     private LocalDateTime createdAt;
     private String nextStep;
 }

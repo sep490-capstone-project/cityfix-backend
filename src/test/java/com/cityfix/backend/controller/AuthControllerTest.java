@@ -1,6 +1,6 @@
 package com.cityfix.backend.controller;
 
-import com.cityfix.backend.enums.AccountStatus;
+import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.model.dto.request.LoginRequest;
@@ -53,7 +53,7 @@ class AuthControllerTest {
                 .email("nguyenvana@gmail.com")
                 .fullName("Nguyen Van A")
                 .role("RESIDENT")
-                .status(AccountStatus.INACTIVE)
+                .status(UserStatus.BLOCKED)
                 .createdAt(LocalDateTime.now())
                 .nextStep("VERIFY_EMAIL")
                 .build();

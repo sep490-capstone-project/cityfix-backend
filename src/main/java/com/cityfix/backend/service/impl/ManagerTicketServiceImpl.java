@@ -61,6 +61,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     private final DepartmentMapper departmentMapper;
 
     private final TicketService ticketService;
+    private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
     private final NotificationRepository notificationRepository;
     private final NotificationMapper notificationMapper;
     private final SimpMessagingTemplate messagingTemplate;
@@ -437,10 +438,10 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         updateTicketSteps(ticket, request.getSteps(), stepMap, assigneeMap);
 
         // =========================================================================
-        // 8. Chuyển trạng thái vé: IN_PROGRESS theo chỉ thị thiết kế
+        // 8. Chuyển trạng thái vé: ASSIGNED sau khi đã định tuyến / phân công
         // =========================================================================
         TicketStatus prevStatus = ticket.getStatus();
-        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setStatus(TicketStatus.ASSIGNED);
         ticket.setNeedsManualReview(false);
 
         // =========================================================================
@@ -458,9 +459,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         // =========================================================================
         String historyNote = (request.getReviewNote() != null && !request.getReviewNote().isBlank())
                 ? request.getReviewNote()
-                : "Duyệt thủ công vé thành công, chuyển sang Đang xử lý";
+                : "Duyệt thủ công vé thành công, chuyển sang Đã phân công";
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.ROUTED, prevStatus, TicketStatus.IN_PROGRESS, historyNote
+                ticket, currentUser, ActionType.MANUAL_APPROVED, prevStatus, TicketStatus.ASSIGNED, historyNote
         );
         ticketHistoryRepository.save(history);
 
@@ -482,7 +483,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             return ticket.getSteps().stream()
                     .filter(Objects::nonNull)
                     .filter(s -> !s.isDeleted())
-                    .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED && s.getStatus() != AssignmentStatus.TRANSFERRED)
+                    .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
                     .map(TicketStep::getDeadline)
                     .filter(Objects::nonNull)
                     .max(LocalDateTime::compareTo)
@@ -636,7 +637,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             TicketStep ticketStep = existingStepMap.get(stepReq.getStepId());
             if (ticketStep != null) {
                 ticketStep.setAssignee(assignee);
-                ticketStep.setStatus(AssignmentStatus.OPEN);
+                ticketStep.setStatus(AssignmentStatus.ASSIGNED);
                 ticketStep.setOrderIndex(stepReq.getOrderIndex());
                 ticketStep.setStartedAt(stepStart);
                 ticketStep.setDeadline(deadline);
@@ -644,7 +645,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 ticketStep.setUpdatedAt(now);
             } else {
                 ticketStep = ticketStepMapper.toTicketStepWithTimeline(
-                        ticket, step, assignee, AssignmentStatus.OPEN,
+                        ticket, step, assignee, AssignmentStatus.ASSIGNED,
                         stepReq.getOrderIndex(), stepStart, deadline, stepReq.getNotes()
                 );
                 if (ticketStep == null) {
@@ -652,7 +653,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                             .ticket(ticket)
                             .step(step)
                             .assignee(assignee)
-                            .status(AssignmentStatus.OPEN)
+                            .status(AssignmentStatus.ASSIGNED)
                             .orderIndex(stepReq.getOrderIndex())
                             .startedAt(stepStart)
                             .deadline(deadline)
@@ -888,8 +889,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         AssignmentStatus status = step.getStatus();
         return status != AssignmentStatus.COMPLETED
                 && status != AssignmentStatus.RESOLVED
-                && status != AssignmentStatus.CANCELLED
-                && status != AssignmentStatus.TRANSFERRED;
+                && status != AssignmentStatus.CANCELLED;
     }
 
     private List<TicketStep> cascadeSubsequentStepDeadlines(List<TicketStep> steps, TicketStep targetStep, LocalDateTime now) {
@@ -975,5 +975,91 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         sortedSteps = ticketStepRepository.saveAll(sortedSteps);
 
         return ticketStepMapper.toTicketStepResponseList(sortedSteps);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> getResolvedTickets(Pageable pageable) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Page<Ticket> tickets = ticketRepository.findResolvedTicketsWithAllStepsResolved(pageable);
+
+        return tickets.map(ticket -> {
+            TicketResponse response = ticketMapper.toTicketResponse(ticket);
+            if (response != null) {
+                List<TicketStep> steps = ticket.getSteps();
+                if ((steps == null || steps.isEmpty()) && ticket.getTicketId() != null) {
+                    steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticket.getTicketId());
+                }
+                List<TicketStep> allSteps = (steps != null ? steps : Collections.<TicketStep>emptyList())
+                        .stream()
+                        .filter(s -> s != null && !s.isDeleted())
+                        .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .toList();
+                response.setSteps(ticketStepMapper.toTicketStepResponseList(allSteps));
+            }
+            return response;
+        });
+    }
+
+    @Override
+    @Transactional
+    public TicketStepResponse updateResolvedTicketStepStatus(UUID stepId, AssignmentStatus targetStatus) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        TicketStep step = ticketStepRepository.findById(stepId)
+                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        if (step.getStatus() != AssignmentStatus.RESOLVED
+                || (targetStatus != AssignmentStatus.COMPLETED && targetStatus != AssignmentStatus.IN_PROGRESS)) {
+            throw new AppException(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        if (targetStatus == AssignmentStatus.COMPLETED) {
+            step.setStatus(AssignmentStatus.COMPLETED);
+            if (step.getCompletedAt() == null) {
+                step.setCompletedAt(now);
+            }
+            step.setUpdatedAt(now);
+            step = ticketStepRepository.save(step);
+
+            if (ticketWorkflowEngine != null) {
+                ticketWorkflowEngine.handleStepCompletion(stepId);
+                step = ticketStepRepository.findById(stepId).orElse(step);
+            }
+        } else if (targetStatus == AssignmentStatus.IN_PROGRESS) {
+            step.setStatus(AssignmentStatus.IN_PROGRESS);
+            step.setCompletedAt(null);
+            step.setUpdatedAt(now);
+            step = ticketStepRepository.save(step);
+
+            Ticket ticket = step.getTicket();
+            if (ticket != null && ticket.getStatus() != TicketStatus.IN_PROGRESS) {
+                TicketStatus prevStatus = ticket.getStatus();
+                ticket.setStatus(TicketStatus.IN_PROGRESS);
+                ticketRepository.save(ticket);
+
+                String stepName = (step.getStep() != null && step.getStep().getStepName() != null)
+                        ? step.getStep().getStepName()
+                        : String.valueOf(step.getId());
+                TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                        ticket, currentUser, ActionType.WORK_STARTED, prevStatus, TicketStatus.IN_PROGRESS,
+                        "Quản lý yêu cầu thực hiện lại bước xử lý '" + stepName + "'. Sự cố chuyển về trạng thái Đang xử lý."
+                );
+                if (history != null) {
+                    ticketHistoryRepository.save(history);
+                }
+            }
+        }
+
+        return ticketStepMapper.toTicketStepResponse(step);
     }
 }

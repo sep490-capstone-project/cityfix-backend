@@ -369,7 +369,7 @@ public class TicketServiceImpl implements TicketService {
             }
         }
 
-        TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.OPEN;
+        TicketStatus initialStatus = finalNeedsReview ? TicketStatus.INITIATED : TicketStatus.ASSIGNED;
 
         Ticket ticket = ticketMapper.toTicket(request, user, location, initialStatus, finalNeedsReview);
         if (request.getIsAnonymous() != null) {
@@ -397,7 +397,7 @@ public class TicketServiceImpl implements TicketService {
                         stepDeadline = stepStart.plusHours(s.getDuration());
                         currentStart = stepDeadline;
                     }
-                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.OPEN, currentOrder++, stepStart, stepDeadline);
+                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.ASSIGNED, currentOrder++, stepStart, stepDeadline);
                 }
             }
         }
@@ -578,15 +578,15 @@ public class TicketServiceImpl implements TicketService {
         User targetStaff = userRepository.findRepresentativeStaffByDepartmentId(targetDepartment.getDepartmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
 
-        // Mark old active steps as TRANSFERRED
+        // Reset old active steps to ASSIGNED before re-assigning
         List<TicketStep> activeSteps =
                 ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
                         ticketId,
-                        List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS)
+                        List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS)
                 );
 
         for (TicketStep oldStep : activeSteps) {
-            oldStep.setStatus(AssignmentStatus.TRANSFERRED);
+            oldStep.setStatus(AssignmentStatus.ASSIGNED);
             ticketStepRepository.save(oldStep);
         }
 
@@ -603,7 +603,7 @@ public class TicketServiceImpl implements TicketService {
                             stepDeadline = stepStart.plusHours(s.getDuration());
                             currentStart = stepDeadline;
                         }
-                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.OPEN, index++, stepStart, stepDeadline);
+                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.ASSIGNED, index++, stepStart, stepDeadline);
                     }
                 }
             }
@@ -635,7 +635,7 @@ public class TicketServiceImpl implements TicketService {
 
         List<AssignmentStatus> targetStatuses = (status != null)
                 ? List.of(status)
-                : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.OPEN, AssignmentStatus.IN_PROGRESS, AssignmentStatus.RESOLVED);
+                : List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS, AssignmentStatus.RESOLVED);
 
         Pageable unsortedPageable = (pageable == null || pageable.isUnpaged())
                 ? Pageable.unpaged()
@@ -677,7 +677,7 @@ public class TicketServiceImpl implements TicketService {
         }
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
-                ticketId, List.of(AssignmentStatus.OPEN, AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
+                ticketId, List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
 
         TicketStep stepToAssign;
         if (request.getStepId() != null) {
@@ -801,7 +801,7 @@ public class TicketServiceImpl implements TicketService {
 
         validateStaffDepartmentAccess(ticket, currentUser);
 
-        if (ticket.getStatus() != TicketStatus.ASSIGNED && ticket.getStatus() != TicketStatus.OPEN) {
+        if (ticket.getStatus() != TicketStatus.ASSIGNED) {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
         }
 
@@ -949,8 +949,7 @@ public class TicketServiceImpl implements TicketService {
         AssignmentStatus status = step.getStatus();
         return status != AssignmentStatus.COMPLETED
                 && status != AssignmentStatus.RESOLVED
-                && status != AssignmentStatus.CANCELLED
-                && status != AssignmentStatus.TRANSFERRED;
+                && status != AssignmentStatus.CANCELLED;
     }
 
     private List<TicketStep> cascadeSubsequentStepDeadlines(List<TicketStep> steps, TicketStep targetStep, LocalDateTime now) {
@@ -1053,7 +1052,7 @@ public class TicketServiceImpl implements TicketService {
         return steps.stream()
                 .filter(Objects::nonNull)
                 .filter(s -> !s.isDeleted())
-                .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED && s.getStatus() != AssignmentStatus.TRANSFERRED)
+                .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
                 .map(TicketStep::getDeadline)
                 .filter(Objects::nonNull)
                 .max(LocalDateTime::compareTo)

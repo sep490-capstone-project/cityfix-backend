@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
@@ -58,6 +59,20 @@ public class ManagerTicketController {
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé chờ duyệt thành công", response));
     }
 
+    @GetMapping("/resolved")
+    @PreAuthorize("hasRole('MANAGER')")
+    @Operation(
+            summary = "Lấy danh sách vé đang ở trạng thái RESOLVED kèm toàn bộ Ticket Step",
+            description = "Trả về danh sách phân trang các vé đang ở trạng thái RESOLVED (có tất cả các bước xử lý đều đã hoàn tất RESOLVED) cùng toàn bộ thông tin vé và các bước xử lý liên kết."
+    )
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getResolvedTickets(
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        Page<TicketResponse> response = managerTicketService.getResolvedTickets(pageable);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé đã giải quyết thành công", response));
+    }
+
     @GetMapping("/department")
     @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     @Operation(summary = "Lấy danh sách vé theo phòng ban và bộ lọc", description = "Manager lọc vé theo phòng ban phụ trách (tự detect nếu null), mức độ nguy hiểm (severity), mức độ ưu tiên (priority) và trạng thái.")
@@ -97,6 +112,19 @@ public class ManagerTicketController {
             @Valid @RequestBody RejectTicketRequest request) {
         TicketResponse response = managerTicketService.rejectInitiatedTicket(id, request.getReason());
         return ResponseEntity.ok(BaseResponse.success("Từ chối vé thành công", response));
+    }
+
+    @PutMapping("/steps/{stepId}/status")
+    @PreAuthorize("hasRole('MANAGER')")
+    @Operation(
+            summary = "Cập nhật trạng thái bước xử lý đang ở RESOLVED thành COMPLETED hoặc IN_PROGRESS",
+            description = "Manager xác nhận hoàn thành bước xử lý (COMPLETED) hoặc yêu cầu xử lý lại (IN_PROGRESS). Khi tất cả các bước của vé chuyển sang COMPLETED thì vé tự động chuyển sang COMPLETED."
+    )
+    public ResponseEntity<BaseResponse<TicketStepResponse>> updateResolvedTicketStepStatus(
+            @PathVariable UUID stepId,
+            @RequestParam("status") AssignmentStatus status) {
+        TicketStepResponse response = managerTicketService.updateResolvedTicketStepStatus(stepId, status);
+        return ResponseEntity.ok(BaseResponse.success("Cập nhật trạng thái bước xử lý thành công", response));
     }
 
     @PutMapping("/steps/{stepId}/deadline")
