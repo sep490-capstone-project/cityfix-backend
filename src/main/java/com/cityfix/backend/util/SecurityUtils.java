@@ -51,7 +51,7 @@ public final class SecurityUtils {
 
     public static Optional<User> getCurrentUserPrincipal() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth instanceof AnonymousAuthenticationToken) {
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             return Optional.empty();
         }
         Object principal = auth.getPrincipal();

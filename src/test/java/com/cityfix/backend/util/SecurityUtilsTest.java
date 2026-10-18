@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -111,9 +112,12 @@ class SecurityUtilsTest {
     @Test
     @DisplayName("getCurrentUserPrincipal_whenPrincipalIsUser_returnsOptionalUser")
     void getCurrentUserPrincipal_whenPrincipalIsUser_returnsOptionalUser() {
-        User user = User.builder().userId(UUID.randomUUID()).email("staff@cityfix.com").build();
+        User user = User.builder()
+                .userId(UUID.randomUUID())
+                .email("test@cityfix.com")
+                .build();
         UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(user, null, Collections.emptyList());
+                new UsernamePasswordAuthenticationToken(user, null, List.of(new SimpleGrantedAuthority("ROLE_STAFF")));
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         Optional<User> principal = SecurityUtils.getCurrentUserPrincipal();
@@ -124,7 +128,18 @@ class SecurityUtilsTest {
     @DisplayName("getCurrentUserPrincipal_whenPrincipalIsNotUser_returnsEmpty")
     void getCurrentUserPrincipal_whenPrincipalIsNotUser_returnsEmpty() {
         UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken("string_principal", null, Collections.emptyList());
+                new UsernamePasswordAuthenticationToken("string_principal", null, List.of(new SimpleGrantedAuthority("ROLE_STAFF")));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        Optional<User> principal = SecurityUtils.getCurrentUserPrincipal();
+        assertThat(principal).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getCurrentUserPrincipal_whenUnauthenticated_returnsEmpty")
+    void getCurrentUserPrincipal_whenUnauthenticated_returnsEmpty() {
+        Authentication auth = mock(Authentication.class);
+        when(auth.isAuthenticated()).thenReturn(false);
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         Optional<User> principal = SecurityUtils.getCurrentUserPrincipal();
