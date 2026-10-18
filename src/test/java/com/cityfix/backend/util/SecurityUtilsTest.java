@@ -124,6 +124,19 @@ class SecurityUtilsTest {
     }
 
     @Test
+    @DisplayName("getCurrentUserEmail_whenUnauthenticated_throwsUNAUTHENTICATED")
+    void getCurrentUserEmail_whenUnauthenticated_throwsUNAUTHENTICATED() {
+        Authentication auth = mock(Authentication.class);
+        when(auth.isAuthenticated()).thenReturn(false);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        assertThatThrownBy(SecurityUtils::getCurrentUserEmail)
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+    }
+
+    @Test
     @DisplayName("getCurrentUserPrincipal_whenPrincipalIsUser_returnsOptionalUser")
     void getCurrentUserPrincipal_whenPrincipalIsUser_returnsOptionalUser() {
         User user = User.builder()

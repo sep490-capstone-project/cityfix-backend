@@ -19,7 +19,7 @@ public final class SecurityUtils {
 
     public static Authentication getAuthentication() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth instanceof AnonymousAuthenticationToken) {
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
         return auth;

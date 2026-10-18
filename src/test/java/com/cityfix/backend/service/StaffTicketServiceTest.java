@@ -316,4 +316,128 @@ public class StaffTicketServiceTest {
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FORBIDDEN);
     }
+
+    @Test
+    @DisplayName("resolveStep_midWorkflow_ticketRemainsInProgress")
+    void resolveStep_midWorkflow_ticketRemainsInProgress() {
+        setupSecurityContext();
+
+        TicketStep step1 = new TicketStep();
+        step1.setId(UUID.randomUUID());
+        step1.setStatus(AssignmentStatus.IN_PROGRESS);
+        step1.setAssignee(staffUser);
+        step1.setTicket(ticket);
+
+        Department otherDept = new Department();
+        otherDept.setDepartmentId(UUID.randomUUID());
+        User otherStaff = new User();
+        otherStaff.setUserId(UUID.randomUUID());
+        otherStaff.setDepartment(otherDept);
+
+        TicketStep step2 = new TicketStep();
+        step2.setId(UUID.randomUUID());
+        step2.setStatus(AssignmentStatus.OPEN);
+        step2.setAssignee(otherStaff);
+        step2.setTicket(ticket);
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setSteps(new ArrayList<>(List.of(step1, step2)));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(resolutionEvidenceRepository.existsByTicketStep_Id(step1.getId())).thenReturn(true);
+        doAnswer(inv -> {
+            ticket.setStatus(TicketStatus.IN_PROGRESS);
+            return null;
+        }).when(ticketWorkflowEngine).handleStepCompletion(step1.getId());
+
+        when(ticketMapper.toTicketResponse(any())).thenAnswer(inv ->
+                TicketResponse.builder().status(ticket.getStatus()).build()
+        );
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+        request.setStepId(step1.getId());
+
+        TicketResponse response = staffTicketService.updateTicketStatus(ticketId, TicketStatus.RESOLVED, request);
+
+        assertThat(response.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(step1.getStatus()).isEqualTo(AssignmentStatus.RESOLVED);
+        verify(ticketWorkflowEngine).handleStepCompletion(step1.getId());
+        verify(ticketRepository, never()).save(any());
+        verify(ticketHistoryRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("resolveStep_finalStep_ticketTransitionToCompletedNotResolved")
+    void resolveStep_finalStep_ticketTransitionToCompletedNotResolved() {
+        setupSecurityContext();
+
+        TicketStep step1 = new TicketStep();
+        step1.setId(UUID.randomUUID());
+        step1.setStatus(AssignmentStatus.RESOLVED);
+        step1.setTicket(ticket);
+
+        TicketStep step2 = new TicketStep();
+        step2.setId(UUID.randomUUID());
+        step2.setStatus(AssignmentStatus.IN_PROGRESS);
+        step2.setAssignee(staffUser);
+        step2.setTicket(ticket);
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setSteps(new ArrayList<>(List.of(step1, step2)));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(resolutionEvidenceRepository.existsByTicketStep_Id(step2.getId())).thenReturn(true);
+        doAnswer(inv -> {
+            ticket.setStatus(TicketStatus.COMPLETED);
+            return null;
+        }).when(ticketWorkflowEngine).handleStepCompletion(step2.getId());
+
+        when(ticketMapper.toTicketResponse(any())).thenAnswer(inv ->
+                TicketResponse.builder().status(ticket.getStatus()).build()
+        );
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+        request.setStepId(step2.getId());
+
+        TicketResponse response = staffTicketService.updateTicketStatus(ticketId, TicketStatus.RESOLVED, request);
+
+        assertThat(response.getStatus()).isEqualTo(TicketStatus.COMPLETED);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
+        assertThat(step2.getStatus()).isEqualTo(AssignmentStatus.RESOLVED);
+        verify(ticketWorkflowEngine).handleStepCompletion(step2.getId());
+        verify(ticketRepository, never()).save(any());
+        verify(ticketHistoryRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStatus_directComplete_whenStepNotResolved_throwsException")
+    void updateTicketStatus_directComplete_whenStepNotResolved_throwsException() {
+        setupSecurityContext();
+
+        TicketStep step1 = new TicketStep();
+        step1.setId(UUID.randomUUID());
+        step1.setStatus(AssignmentStatus.RESOLVED);
+        step1.setAssignee(staffUser);
+        step1.setTicket(ticket);
+
+        TicketStep step2 = new TicketStep();
+        step2.setId(UUID.randomUUID());
+        step2.setStatus(AssignmentStatus.IN_PROGRESS);
+        step2.setAssignee(staffUser);
+        step2.setTicket(ticket);
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setSteps(new ArrayList<>(List.of(step1, step2)));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(resolutionEvidenceRepository.existsByTicketStep_Id(any())).thenReturn(true);
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.COMPLETED, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+    }
 }
