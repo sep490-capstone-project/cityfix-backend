@@ -26,6 +26,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import com.cityfix.backend.util.SecurityUtils;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -52,6 +53,7 @@ public class StaffTicketServiceImpl implements StaffTicketService {
     private final SimpMessagingTemplate messagingTemplate;
     private final EmailService emailService;
     private final com.cityfix.backend.service.NotificationService notificationService;
+    private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
 
     private static final Map<TicketStatus, Set<TicketStatus>> ALLOWED_TRANSITIONS = Map.of(
             TicketStatus.ASSIGNED, Set.of(TicketStatus.IN_PROGRESS, TicketStatus.REJECTED),
@@ -70,11 +72,9 @@ public class StaffTicketServiceImpl implements StaffTicketService {
     }
 
     private User getCurrentUser() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-        return userRepository.findByEmail(auth.getName())
+        String email = SecurityUtils.getCurrentUserEmail();
+        return userRepository.findByEmail(email)
+                .or(SecurityUtils::getCurrentUserPrincipal)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
     }
 
@@ -119,82 +119,169 @@ public class StaffTicketServiceImpl implements StaffTicketService {
         List<TicketStep> steps = ticket.getSteps() != null ? ticket.getSteps() : Collections.emptyList();
         UUID requestedStepId = (request != null) ? request.getStepId() : null;
 
-        List<TicketStep> targetSteps;
+        // 1. Phân biệt rõ giữa "Cập nhật trạng thái của Step" và "Cập nhật trạng thái của Ticket"
         if (requestedStepId != null) {
-            TicketStep step = steps.stream()
+            TicketStep targetStep = steps.stream()
                     .filter(s -> s.getId() != null && s.getId().equals(requestedStepId))
                     .findFirst()
                     .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
-            if (!admin && !isStepAssignedToUserOrDepartment(step, currentUser)) {
+
+            if (!admin && !isStepAssignedToUserOrDepartment(targetStep, currentUser)) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
-            targetSteps = List.of(step);
-        } else {
-            // Scope target steps to current staff's department/assignment, or all if admin
-            targetSteps = steps.stream()
+
+            if (targetStatus == TicketStatus.RESOLVED || targetStatus == TicketStatus.COMPLETED) {
+                if (!resolutionEvidenceRepository.existsByTicketStep_Id(targetStep.getId())) {
+                    throw new AppException(ErrorCode.EVIDENCE_REQUIRED);
+                }
+
+                targetStep.setStatus(AssignmentStatus.RESOLVED);
+                if (targetStep.getCompletedAt() == null) {
+                    targetStep.setCompletedAt(LocalDateTime.now());
+                }
+                targetStep.setUpdatedAt(LocalDateTime.now());
+                ticketStepRepository.save(targetStep);
+
+                // Giao quyền quyết định trạng thái ticket cha cho ticketWorkflowEngine
+                ticketWorkflowEngine.handleStepCompletion(targetStep.getId());
+
+                // TUYỆT ĐỐI KHÔNG gọi lệnh gán đè ticket.setStatus(targetStatus) hay ticketRepository.save(ticket)
+                // Reload lại ticket từ repository để lấy trạng thái mới nhất từ workflow engine
+                ticket = ticketRepository.findById(ticketId)
+                        .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+                String note = (request != null && request.getNote() != null) ? request.getNote() : "Hoàn tất xử lý bước: " + (targetStep.getStep() != null ? targetStep.getStep().getStepName() : targetStep.getId());
+                TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                        ticket, currentUser, ActionType.CLOSED, prevStatus, ticket.getStatus(), note
+                );
+                ticketHistoryRepository.save(history);
+
+                return ticketMapper.toTicketResponse(ticket);
+            } else if (targetStatus == TicketStatus.IN_PROGRESS) {
+                targetStep.setStatus(AssignmentStatus.IN_PROGRESS);
+                if (targetStep.getStartedAt() == null) {
+                    targetStep.setStartedAt(LocalDateTime.now());
+                }
+                targetStep.setUpdatedAt(LocalDateTime.now());
+                ticketStepRepository.save(targetStep);
+
+                if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
+                    ticket.setStatus(TicketStatus.IN_PROGRESS);
+                    ticket = ticketRepository.save(ticket);
+                }
+                notificationService.notifyStepStarted(targetStep, currentUser);
+
+                String note = (request != null && request.getNote() != null) ? request.getNote() : "Bắt đầu thực hiện bước";
+                TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                        ticket, currentUser, ActionType.WORK_STARTED, prevStatus, ticket.getStatus(), note
+                );
+                ticketHistoryRepository.save(history);
+
+                return ticketMapper.toTicketResponse(ticket);
+            } else if (targetStatus == TicketStatus.CANCELLED) {
+                targetStep.setStatus(AssignmentStatus.CANCELLED);
+                targetStep.setCompletedAt(LocalDateTime.now());
+                targetStep.setUpdatedAt(LocalDateTime.now());
+                ticketStepRepository.save(targetStep);
+
+                String note = (request != null && request.getNote() != null) ? request.getNote() : "Hủy bước";
+                TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                        ticket, currentUser, ActionType.CANCELLED, prevStatus, ticket.getStatus(), note
+                );
+                ticketHistoryRepository.save(history);
+
+                return ticketMapper.toTicketResponse(ticket);
+            }
+        }
+
+        // 2. Cập nhật trạng thái trực tiếp trên Ticket (requestedStepId == null)
+        if (targetStatus == TicketStatus.COMPLETED || targetStatus == TicketStatus.RESOLVED) {
+            // Không cho phép cập nhật trực tiếp Ticket sang COMPLETED / RESOLVED nếu tồn tại bất kỳ TicketStep nào chưa đạt AssignmentStatus.RESOLVED
+            boolean allResolved = !steps.isEmpty() && steps.stream()
+                    .filter(s -> !s.isDeleted())
+                    .allMatch(s -> s.getStatus() == AssignmentStatus.RESOLVED || s.getStatus() == AssignmentStatus.COMPLETED);
+
+            if (!allResolved) {
+                boolean anyMissingEvidence = steps.stream()
+                        .anyMatch(s -> s.getId() != null && !resolutionEvidenceRepository.existsByTicketStep_Id(s.getId()));
+                if (anyMissingEvidence) {
+                    throw new AppException(ErrorCode.EVIDENCE_REQUIRED);
+                }
+                throw new AppException(ErrorCode.INVALID_STATUS_TRANSITION);
+            }
+
+            boolean hasAccess = admin || steps.stream().anyMatch(s -> isStepAssignedToUserOrDepartment(s, currentUser));
+            if (!hasAccess) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+
+            ticket.setStatus(TicketStatus.COMPLETED);
+            ticket = ticketRepository.save(ticket);
+
+            String note = (request != null && request.getNote() != null) ? request.getNote() : "Hoàn thành xử lý sự cố";
+            TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                    ticket, currentUser, ActionType.CLOSED, prevStatus, TicketStatus.COMPLETED, note
+            );
+            ticketHistoryRepository.save(history);
+            sendTicketStatusNotification(ticket, TicketStatus.COMPLETED);
+
+            return ticketMapper.toTicketResponse(ticket);
+        }
+
+        if (targetStatus == TicketStatus.IN_PROGRESS) {
+            List<TicketStep> targetSteps = steps.stream()
                     .filter(s -> isActiveStatus(s.getStatus()) && (admin || isStepAssignedToUserOrDepartment(s, currentUser)))
                     .toList();
             if (!admin && targetSteps.isEmpty()) {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
-        }
-
-        AssignmentStatus targetStepStatus;
-        if (targetStatus == TicketStatus.IN_PROGRESS) {
-            targetStepStatus = AssignmentStatus.IN_PROGRESS;
-        } else if (targetStatus == TicketStatus.COMPLETED || targetStatus == TicketStatus.RESOLVED) {
-            if (!resolutionEvidenceRepository.existsByTicket_TicketId(ticketId)) {
-                throw new AppException(ErrorCode.EVIDENCE_REQUIRED);
-            }
-            targetStepStatus = AssignmentStatus.COMPLETED;
-        } else if (targetStatus == TicketStatus.CANCELLED) {
-            targetStepStatus = AssignmentStatus.CANCELLED;
-        } else {
-            targetStepStatus = null;
-        }
-
-        if (targetStepStatus != null) {
             for (TicketStep step : targetSteps) {
-                step.setTicket(ticket);
-                step.setStatus(targetStepStatus);
-                if (targetStepStatus == AssignmentStatus.IN_PROGRESS && step.getStartedAt() == null) {
+                step.setStatus(AssignmentStatus.IN_PROGRESS);
+                if (step.getStartedAt() == null) {
                     step.setStartedAt(LocalDateTime.now());
-                } else if (targetStepStatus == AssignmentStatus.COMPLETED || targetStepStatus == AssignmentStatus.CANCELLED) {
-                    step.setCompletedAt(LocalDateTime.now());
                 }
+                step.setUpdatedAt(LocalDateTime.now());
                 ticketStepRepository.save(step);
+                notificationService.notifyStepStarted(step, currentUser);
             }
+
+            ticket.setStatus(TicketStatus.IN_PROGRESS);
+            ticket = ticketRepository.save(ticket);
+
+            String note = (request != null && request.getNote() != null) ? request.getNote() : "Bắt đầu xử lý sự cố";
+            TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                    ticket, currentUser, ActionType.WORK_STARTED, prevStatus, TicketStatus.IN_PROGRESS, note
+            );
+            ticketHistoryRepository.save(history);
+
+            return ticketMapper.toTicketResponse(ticket);
+        }
+
+        if (targetStatus == TicketStatus.CANCELLED || targetStatus == TicketStatus.REJECTED) {
+            ticket.setStatus(targetStatus);
+            ticket = ticketRepository.save(ticket);
+
+            for (TicketStep s : steps) {
+                if (isActiveStatus(s.getStatus())) {
+                    s.setStatus(AssignmentStatus.CANCELLED);
+                    s.setCompletedAt(LocalDateTime.now());
+                    s.setUpdatedAt(LocalDateTime.now());
+                    ticketStepRepository.save(s);
+                }
+            }
+
+            String note = (request != null && request.getNote() != null) ? request.getNote() : "Hủy/từ chối sự cố";
+            TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                    ticket, currentUser, ActionType.CANCELLED, prevStatus, targetStatus, note
+            );
+            ticketHistoryRepository.save(history);
+            sendTicketStatusNotification(ticket, targetStatus);
+
+            return ticketMapper.toTicketResponse(ticket);
         }
 
         ticket.setStatus(targetStatus);
         ticket = ticketRepository.save(ticket);
-
-        String note = (request != null && request.getNote() != null) ? request.getNote() : "Cập nhật trạng thái vé sang " + targetStatus;
-        
-        ActionType action = ActionType.WORK_STARTED;
-        if (targetStatus == TicketStatus.RESOLVED || targetStatus == TicketStatus.COMPLETED) {
-            action = ActionType.CLOSED;
-        } else if (targetStatus == TicketStatus.CANCELLED || targetStatus == TicketStatus.REJECTED) {
-            action = ActionType.CANCELLED;
-        }
-
-        TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, action, prevStatus, targetStatus, note
-        );
-        ticketHistoryRepository.save(history);
-
-        if (targetStepStatus == AssignmentStatus.IN_PROGRESS && !targetSteps.isEmpty()) {
-            for (TicketStep step : targetSteps) {
-                notificationService.notifyStepStarted(step, currentUser);
-            }
-        } else if (targetStepStatus == AssignmentStatus.COMPLETED && !targetSteps.isEmpty()) {
-            for (TicketStep step : targetSteps) {
-                notificationService.notifyStepCompleted(step, currentUser, true);
-            }
-        } else {
-            sendTicketStatusNotification(ticket, targetStatus);
-        }
-
         return ticketMapper.toTicketResponse(ticket);
     }
 
@@ -240,31 +327,48 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
     @Override
     @Transactional
-    public List<ResolutionEvidenceResponse> submitEvidence(UUID ticketId, List<MultipartFile> files, String resolutionNote) {
+    public List<ResolutionEvidenceResponse> submitEvidence(UUID id, List<MultipartFile> files, String resolutionNote) {
         User currentUser = getCurrentUser();
 
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+        TicketStep targetStep;
+        Ticket ticket;
 
-        if (!isAdmin(currentUser)) {
-            boolean hasAccess = ticket.getSteps() != null && ticket.getSteps().stream()
-                    .anyMatch(step -> isStepAssignedToUserOrDepartment(step, currentUser));
-            if (!hasAccess) {
-                throw new AppException(ErrorCode.FORBIDDEN);
+        Optional<TicketStep> stepOpt = ticketStepRepository.findById(id);
+        if (stepOpt.isPresent()) {
+            targetStep = stepOpt.get();
+            ticket = targetStep.getTicket();
+        } else {
+            ticket = ticketRepository.findById(id)
+                    .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+            List<TicketStep> steps = ticket.getSteps() != null ? ticket.getSteps() : Collections.emptyList();
+            targetStep = steps.stream()
+                    .filter(step -> isAdmin(currentUser) || isStepAssignedToUserOrDepartment(step, currentUser))
+                    .filter(step -> step.getStatus() == AssignmentStatus.IN_PROGRESS 
+                            || step.getStatus() == AssignmentStatus.ASSIGNED 
+                            || step.getStatus() == AssignmentStatus.OPEN)
+                    .findFirst()
+                    .orElse(null);
+            if (targetStep == null && !steps.isEmpty()) {
+                targetStep = steps.stream()
+                        .filter(step -> isAdmin(currentUser) || isStepAssignedToUserOrDepartment(step, currentUser))
+                        .findFirst()
+                        .orElse(null);
             }
+            if (targetStep == null) {
+                throw new AppException(ErrorCode.STEP_NOT_FOUND);
+            }
+        }
+
+        if (!isAdmin(currentUser) && !isStepAssignedToUserOrDepartment(targetStep, currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
         }
 
         List<ImageUploadResponse> uploadResponses = ticketService.uploadImage(files, "cityfix/evidences");
 
-        List<ResolutionEvidence> evidences = uploadResponses.stream().map(res -> {
-            ResolutionEvidence evidence = ResolutionEvidence.builder()
-                    .ticket(ticket)
-                    .staff(currentUser)
-                    .imageUrl(res.getSecureUrl())
-                    .resolutionNote(resolutionNote)
-                    .build();
-            return evidence;
-        }).collect(Collectors.toList());
+        TicketStep finalStep = targetStep;
+        List<ResolutionEvidence> evidences = uploadResponses.stream()
+                .map(res -> evidenceMapper.toResolutionEvidence(finalStep, currentUser, res.getSecureUrl(), resolutionNote))
+                .collect(Collectors.toList());
 
         evidences = resolutionEvidenceRepository.saveAll(evidences);
 
@@ -274,5 +378,11 @@ public class StaffTicketServiceImpl implements StaffTicketService {
         ticketHistoryRepository.save(history);
 
         return evidenceMapper.toResponseList(evidences);
+    }
+
+    @Override
+    @Transactional
+    public List<ResolutionEvidenceResponse> submitEvidenceForStep(UUID stepId, List<MultipartFile> files, String resolutionNote) {
+        return submitEvidence(stepId, files, resolutionNote);
     }
 }

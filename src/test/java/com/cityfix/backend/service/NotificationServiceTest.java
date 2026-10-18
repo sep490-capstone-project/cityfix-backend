@@ -13,6 +13,7 @@ import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.UserStatus;
+import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
@@ -56,6 +57,8 @@ class NotificationServiceTest {
     private UserDepartmentRepository userDepartmentRepository;
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private DepartmentRepository departmentRepository;
     @Mock
     private NotificationMapper notificationMapper;
     @Mock
@@ -156,6 +159,9 @@ class NotificationServiceTest {
                 .assignee(staff)
                 .status(AssignmentStatus.IN_PROGRESS)
                 .build();
+
+        lenient().when(departmentRepository.findById(department.getDepartmentId()))
+                .thenReturn(Optional.of(department));
     }
 
     private void mockCurrentUser(User user) {
@@ -376,5 +382,58 @@ class NotificationServiceTest {
 
         assertThat(count).isEqualTo(4L);
         verify(notificationRepository).countByUser_UserIdAndIsReadFalse(manager1.getUserId());
+    }
+
+    @Test
+    @DisplayName("notifyStepStarted_whenDepartmentIsDeleted_doesNotNotifyManagersOfDeletedDepartment")
+    void notifyStepStarted_whenDepartmentIsDeleted_doesNotNotifyManagersOfDeletedDepartment() {
+        Department deletedDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng Đã Xóa")
+                .manager(manager1)
+                .build();
+        deletedDept.setDeleted(true);
+
+        User staffWithDeletedDept = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Nhân Viên")
+                .role(new Role(UUID.randomUUID(), "STAFF"))
+                .department(deletedDept)
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        when(departmentRepository.findById(deletedDept.getDepartmentId())).thenReturn(Optional.of(deletedDept));
+        when(ticketVoteRepository.findUpvotersByTicketId(ticket.getTicketId())).thenReturn(Collections.emptyList());
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.notifyStepStarted(ticketStep, staffWithDeletedDept);
+
+        // Only reporter is notified, managers of deleted department are not notified
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository, times(1)).save(captor.capture());
+        assertThat(captor.getValue().getUser().getUserId()).isEqualTo(reporter.getUserId());
+    }
+
+    @Test
+    @DisplayName("notifyStepStarted_whenDepartmentNotFound_throwsDEPARTMENT_NOT_FOUND")
+    void notifyStepStarted_whenDepartmentNotFound_throwsDEPARTMENT_NOT_FOUND() {
+        UUID unknownDeptId = UUID.randomUUID();
+        Department unknownDept = Department.builder()
+                .departmentId(unknownDeptId)
+                .build();
+
+        User staffWithUnknownDept = User.builder()
+                .userId(UUID.randomUUID())
+                .role(new Role(UUID.randomUUID(), "STAFF"))
+                .department(unknownDept)
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        when(departmentRepository.findById(unknownDeptId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> notificationService.notifyStepStarted(ticketStep, staffWithUnknownDept))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
     }
 }

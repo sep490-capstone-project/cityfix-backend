@@ -41,6 +41,8 @@ class TicketStepServiceImplTest {
     @Mock
     private UserRepository userRepository;
     @Mock
+    private com.cityfix.backend.repository.ResolutionEvidenceRepository resolutionEvidenceRepository;
+    @Mock
     private TicketStepMapper ticketStepMapper;
     @Mock
     private TicketService ticketService;
@@ -117,6 +119,7 @@ class TicketStepServiceImplTest {
     void updateTicketStepStatus_whenCurrentUserIsAssignee_success() {
         mockCurrentUser(staffUser);
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.findByIdWithAssigneeAndDepartment(stepId)).thenReturn(Optional.of(step));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TicketStepResponse mockResponse = TicketStepResponse.builder().id(stepId).status(AssignmentStatus.IN_PROGRESS).build();
@@ -147,6 +150,38 @@ class TicketStepServiceImplTest {
         assertThat(step.getStatus()).isEqualTo(AssignmentStatus.COMPLETED);
         assertThat(step.getCompletedAt()).isNotNull();
         assertThat(step.getUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("updateTicketStepStatus_resolved_withoutEvidence_throwsEvidenceRequired")
+    void updateTicketStepStatus_resolved_withoutEvidence_throwsEvidenceRequired() {
+        mockCurrentUser(staffUser);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(resolutionEvidenceRepository.existsByTicketStep_Id(stepId)).thenReturn(false);
+
+        assertThatThrownBy(() -> ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.RESOLVED))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EVIDENCE_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepStatus_resolved_withEvidence_success")
+    void updateTicketStepStatus_resolved_withEvidence_success() {
+        mockCurrentUser(staffUser);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(resolutionEvidenceRepository.existsByTicketStep_Id(stepId)).thenReturn(true);
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TicketStepResponse mockResponse = TicketStepResponse.builder().id(stepId).status(AssignmentStatus.RESOLVED).build();
+        when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(mockResponse);
+
+        TicketStepResponse response = ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.RESOLVED);
+
+        assertThat(response).isNotNull();
+        assertThat(step.getStatus()).isEqualTo(AssignmentStatus.RESOLVED);
+        assertThat(step.getCompletedAt()).isNotNull();
+        verify(ticketWorkflowEngine).handleStepCompletion(stepId);
     }
 
     @Test

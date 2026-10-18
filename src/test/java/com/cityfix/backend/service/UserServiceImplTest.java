@@ -210,6 +210,7 @@ class UserServiceImplTest {
     void getMyProfile_authenticatedUser_returnsProfileResponse() {
         org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
         when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
 
         com.cityfix.backend.model.dto.response.UserProfileResponse profileResponse =
@@ -237,6 +238,7 @@ class UserServiceImplTest {
     void updateMyProfile_validRequest_updatesAndReturnsProfile() {
         org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
         when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
 
         com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =

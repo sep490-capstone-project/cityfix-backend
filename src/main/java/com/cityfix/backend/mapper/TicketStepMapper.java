@@ -12,7 +12,7 @@ import org.mapstruct.NullValuePropertyMappingStrategy;
 
 import java.util.List;
 
-@Mapper(componentModel = "spring")
+@Mapper(componentModel = "spring", uses = {EvidenceMapper.class})
 public interface TicketStepMapper {
 
     @Mapping(target = "stepId", source = "step.stepId")

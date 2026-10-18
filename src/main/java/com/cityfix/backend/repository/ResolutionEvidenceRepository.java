@@ -9,7 +9,9 @@ import java.util.UUID;
 @Repository
 public interface ResolutionEvidenceRepository extends JpaRepository<ResolutionEvidence, UUID> {
     
-    boolean existsByTicket_TicketId(UUID ticketId);
+    boolean existsByTicketStep_Id(UUID ticketStepId);
     
-    java.util.List<ResolutionEvidence> findByTicket_TicketId(UUID ticketId);
+    java.util.List<ResolutionEvidence> findByTicketStep_Id(UUID ticketStepId);
+
+    java.util.List<ResolutionEvidence> findByTicketStep_Ticket_TicketId(UUID ticketId);
 }

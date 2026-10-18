@@ -40,6 +40,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import com.cityfix.backend.util.SecurityUtils;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -108,24 +109,9 @@ public class TicketServiceImpl implements TicketService {
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
     private User getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null 
-                || !authentication.isAuthenticated() 
-                || authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
-            throw new AppException(ErrorCode.UNAUTHENTICATED);
-        }
-
-        String email;
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof User user) {
-            email = user.getEmail();
-        } else if (principal instanceof org.springframework.security.core.userdetails.UserDetails userDetails) {
-            email = userDetails.getUsername();
-        } else {
-            email = principal.toString();
-        }
-
+        String email = SecurityUtils.getCurrentUserEmail();
         return userRepository.findByEmail(email)
+                .or(SecurityUtils::getCurrentUserPrincipal)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
     }
 
