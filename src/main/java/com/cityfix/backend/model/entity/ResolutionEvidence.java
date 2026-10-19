@@ -25,9 +25,6 @@ public class ResolutionEvidence {
     @JoinColumn(name = "ticket_step_id")
     private TicketStep ticketStep;
 
-    @Column(name = "legacy_ticket_id")
-    private UUID legacyTicketId;
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "staff_id", nullable = false)
     private User staff;
