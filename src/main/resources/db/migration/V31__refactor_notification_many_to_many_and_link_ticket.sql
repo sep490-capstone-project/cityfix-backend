@@ -75,7 +75,7 @@ END $$;
 -- 5. Deduplicate user_notification in case duplicates already existed before adding constraint
 DELETE FROM user_notification a
 WHERE a.id NOT IN (
-    SELECT MIN(b.id)
+    SELECT MIN(b.id::text)::uuid
     FROM user_notification b
     GROUP BY b.user_id, b.notification_id
 );
