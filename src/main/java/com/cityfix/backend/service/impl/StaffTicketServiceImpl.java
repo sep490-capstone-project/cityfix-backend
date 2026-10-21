@@ -3,7 +3,6 @@ package com.cityfix.backend.service.impl;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.EvidenceMapper;
-import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.model.dto.request.UpdateStaffTicketStatusRequest;
@@ -20,7 +19,6 @@ import com.cityfix.backend.service.StaffTicketService;
 import com.cityfix.backend.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -42,15 +40,12 @@ public class StaffTicketServiceImpl implements StaffTicketService {
     private final TicketHistoryRepository ticketHistoryRepository;
     private final ResolutionEvidenceRepository resolutionEvidenceRepository;
     private final UserRepository userRepository;
-    private final NotificationRepository notificationRepository;
 
     private final TicketMapper ticketMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
     private final EvidenceMapper evidenceMapper;
-    private final NotificationMapper notificationMapper;
 
     private final TicketService ticketService;
-    private final SimpMessagingTemplate messagingTemplate;
     private final EmailService emailService;
     private final com.cityfix.backend.service.NotificationService notificationService;
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
@@ -303,20 +298,7 @@ public class StaffTicketServiceImpl implements StaffTicketService {
                 return;
             }
 
-            Notification notification = Notification.builder()
-                    .user(ticketUser)
-                    .title(title)
-                    .content(message)
-                    .isRead(false)
-                    .build();
-            notification = notificationRepository.save(notification);
-
-            try {
-                com.cityfix.backend.model.dto.response.NotificationResponse notifResponse = notificationMapper.toResponse(notification);
-                messagingTemplate.convertAndSend("/topic/notifications/" + ticketUser.getUserId(), notifResponse);
-            } catch (Exception e) {
-                log.error("Lỗi khi gửi websocket notification: {}", e.getMessage());
-            }
+            notificationService.createAndSendNotification(ticket, List.of(ticketUser), title, message);
 
             if (ticketUser.getEmail() != null) {
                 emailService.sendTicketStatusEmail(ticketUser.getEmail(), title, message);

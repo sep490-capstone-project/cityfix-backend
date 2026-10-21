@@ -3,7 +3,6 @@ package com.cityfix.backend.service.impl;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.DepartmentMapper;
-import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
@@ -27,7 +26,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -62,9 +60,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
     private final TicketService ticketService;
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
-    private final NotificationRepository notificationRepository;
-    private final NotificationMapper notificationMapper;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final com.cityfix.backend.service.NotificationService notificationService;
     private final EmailService emailService;
 
     private User getCurrentUser() {
@@ -676,22 +672,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         String title = "Sự cố của bạn đã được tiếp nhận và xử lý";
         String message = "Phản ánh của bạn đã được quản lý phê duyệt và chuyển cho cán bộ chuyên trách tiến hành xử lý.";
 
-        Notification notification = Notification.builder()
-                .user(creator)
-                .title(title)
-                .content(message)
-                .isRead(false)
-                .build();
-        notification = notificationRepository.save(notification);
-
-        try {
-            messagingTemplate.convertAndSend(
-                    "/topic/notifications/" + creator.getUserId(),
-                    notificationMapper.toResponse(notification)
-            );
-        } catch (Exception e) {
-            log.error("Lỗi khi gửi WebSocket notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
-        }
+        notificationService.createAndSendNotification(ticket, List.of(creator), title, message);
 
         if (creator.getEmail() != null && !creator.getEmail().isBlank()) {
             try {
@@ -709,22 +690,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         String title = "Sự cố của bạn đã bị từ chối tiếp nhận";
         String message = "Phản ánh của bạn đã bị từ chối với lý do: " + reason;
 
-        Notification notification = Notification.builder()
-                .user(creator)
-                .title(title)
-                .content(message)
-                .isRead(false)
-                .build();
-        notification = notificationRepository.save(notification);
-
-        try {
-            messagingTemplate.convertAndSend(
-                    "/topic/notifications/" + creator.getUserId(),
-                    notificationMapper.toResponse(notification)
-            );
-        } catch (Exception e) {
-            log.error("Lỗi khi gửi WebSocket notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
-        }
+        notificationService.createAndSendNotification(ticket, List.of(creator), title, message);
 
         if (creator.getEmail() != null && !creator.getEmail().isBlank()) {
             try {

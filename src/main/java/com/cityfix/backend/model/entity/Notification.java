@@ -5,6 +5,8 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -20,8 +22,8 @@ public class Notification {
     private UUID notificationId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @JoinColumn(name = "ticket_id")
+    private Ticket ticket;
 
     @Column(nullable = false)
     private String title;
@@ -29,18 +31,21 @@ public class Notification {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @Column(nullable = false)
-    private boolean isRead;
-
     @CreationTimestamp
     @Column(updatable = false)
     private ZonedDateTime createdAt;
 
-    public boolean isRead() {
-        return isRead;
-    }
+    @Builder.Default
+    @OneToMany(mappedBy = "notification", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<UserNotification> recipients = new ArrayList<>();
 
-    public boolean getIsRead() {
-        return isRead;
+    public UserNotification addRecipient(User user) {
+        UserNotification recipient = UserNotification.builder()
+                .notification(this)
+                .user(user)
+                .isRead(false)
+                .build();
+        this.recipients.add(recipient);
+        return recipient;
     }
 }
