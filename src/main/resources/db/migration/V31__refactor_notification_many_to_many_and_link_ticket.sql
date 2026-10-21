@@ -1,5 +1,8 @@
+-- Phase 1 (Expand): Create user_notification table and link ticket_id
+-- Keeps legacy columns user_id and is_read nullable for zero-downtime rolling deployment
+
 -- 1. Create junction table user_notification
-CREATE TABLE user_notification (
+CREATE TABLE IF NOT EXISTS user_notification (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     notification_id UUID NOT NULL REFERENCES notifications(notification_id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES user_account(user_id) ON DELETE CASCADE,
@@ -11,19 +14,30 @@ CREATE TABLE user_notification (
 
 -- 2. Add ticket_id to notifications (nullable to allow general notifications, cascade on ticket deletion)
 ALTER TABLE notifications
-    ADD COLUMN ticket_id UUID REFERENCES ticket(ticket_id) ON DELETE CASCADE;
+    ADD COLUMN IF NOT EXISTS ticket_id UUID REFERENCES ticket(ticket_id) ON DELETE CASCADE;
 
--- 3. Migrate existing data from notifications to user_notification
-INSERT INTO user_notification (id, notification_id, user_id, is_read, created_at)
-SELECT gen_random_uuid(), notification_id, user_id, COALESCE(is_read, FALSE), created_at
-FROM notifications
-ON CONFLICT DO NOTHING;
+-- 3. Migrate existing data from notifications to user_notification if user_id column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'notifications' 
+          AND column_name = 'user_id'
+    ) THEN
+        INSERT INTO user_notification (id, notification_id, user_id, is_read, created_at)
+        SELECT gen_random_uuid(), notification_id, user_id, COALESCE(is_read, FALSE), created_at
+        FROM notifications
+        WHERE user_id IS NOT NULL
+        ON CONFLICT DO NOTHING;
 
--- 4. Drop user_id and is_read from notifications
-ALTER TABLE notifications DROP COLUMN user_id;
-ALTER TABLE notifications DROP COLUMN is_read;
+        -- Make legacy columns nullable to support zero-downtime deploy (new app versions won't provide user_id)
+        ALTER TABLE notifications ALTER COLUMN user_id DROP NOT NULL;
+    END IF;
+END $$;
 
--- 5. Create indexes for performance
-CREATE INDEX idx_notifications_ticket_id ON notifications (ticket_id);
-CREATE INDEX idx_user_notification_user_is_read ON user_notification (user_id, is_read, created_at DESC);
-CREATE INDEX idx_user_notification_notif_id ON user_notification (notification_id);
+-- 4. Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_notifications_ticket_id ON notifications (ticket_id);
+CREATE INDEX IF NOT EXISTS idx_user_notification_user_is_read ON user_notification (user_id, is_read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_notification_notif_id ON user_notification (notification_id);

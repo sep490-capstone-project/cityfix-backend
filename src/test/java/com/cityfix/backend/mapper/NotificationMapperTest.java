@@ -66,6 +66,57 @@ class NotificationMapperTest {
     }
 
     @Test
+    @DisplayName("toResponse_whenNotificationHasNoTicket_mapsSuccessfullyWithNullTicketId")
+    void toResponse_whenNotificationHasNoTicket_mapsSuccessfullyWithNullTicketId() {
+        UUID notifId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        ZonedDateTime now = ZonedDateTime.now();
+
+        User user = User.builder().userId(userId).build();
+
+        Notification notifWithoutTicket = Notification.builder()
+                .notificationId(notifId)
+                .ticket(null) // System / General notification
+                .title("Thông báo bảo trì hệ thống")
+                .content("Hệ thống bảo trì từ 0h - 2h sáng.")
+                .createdAt(now)
+                .build();
+
+        UserNotification un = UserNotification.builder()
+                .id(UUID.randomUUID())
+                .notification(notifWithoutTicket)
+                .user(user)
+                .isRead(false)
+                .createdAt(now)
+                .build();
+
+        NotificationResponse resp = notificationMapper.toResponse(un);
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getNotificationId()).isEqualTo(notifId);
+        assertThat(resp.getTicketId()).isNull();
+        assertThat(resp.getTitle()).isEqualTo("Thông báo bảo trì hệ thống");
+        assertThat(resp.getContent()).isEqualTo("Hệ thống bảo trì từ 0h - 2h sáng.");
+    }
+
+    @Test
+    @DisplayName("toResponse_whenInnerNotificationIsNull_doesNotThrowNPE")
+    void toResponse_whenInnerNotificationIsNull_doesNotThrowNPE() {
+        UserNotification un = UserNotification.builder()
+                .id(UUID.randomUUID())
+                .notification(null)
+                .user(null)
+                .isRead(false)
+                .build();
+
+        NotificationResponse resp = notificationMapper.toResponse(un);
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getNotificationId()).isNull();
+        assertThat(resp.getTicketId()).isNull();
+    }
+
+    @Test
     @DisplayName("toResponse_whenNull_returnsNull")
     void toResponse_whenNull_returnsNull() {
         assertThat(notificationMapper.toResponse(null)).isNull();

@@ -156,8 +156,16 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     @Transactional
+    public void createAndSendNotification(Collection<User> recipients, String title, String content) {
+        createAndSendNotification(null, recipients, title, content);
+    }
+
+    @Override
+    @Transactional
     public void createAndSendNotification(Ticket ticket, Collection<User> recipients, String title, String content) {
         if (recipients == null || recipients.isEmpty()) {
+            log.warn("createAndSendNotification called with empty or null recipients. ticketId={}, title={}",
+                    ticket != null ? ticket.getTicketId() : null, title);
             return;
         }
 
@@ -169,12 +177,14 @@ public class NotificationServiceImpl implements NotificationService {
 
         Set<UUID> addedUserIds = new HashSet<>();
         for (User recipient : recipients) {
-            if (recipient != null && recipient.getUserId() != null && addedUserIds.add(recipient.getUserId())) {
+            if (isEligibleRecipient(recipient, null) && addedUserIds.add(recipient.getUserId())) {
                 notification.addRecipient(recipient);
             }
         }
 
         if (notification.getRecipients().isEmpty()) {
+            log.warn("No eligible active recipients found for notification. ticketId={}, title={}",
+                    ticket != null ? ticket.getTicketId() : null, title);
             return;
         }
 

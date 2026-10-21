@@ -14,6 +14,8 @@ public interface NotificationService {
 
     void createAndSendNotification(Ticket ticket, Collection<User> recipients, String title, String content);
 
+    void createAndSendNotification(Collection<User> recipients, String title, String content);
+
     void notifyStepStarted(TicketStep step, User staff);
 
     void notifyStepCompleted(TicketStep step, User staff, boolean isTicketResolved);

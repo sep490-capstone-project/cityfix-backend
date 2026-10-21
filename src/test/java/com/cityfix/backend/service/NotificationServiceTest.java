@@ -448,4 +448,75 @@ class NotificationServiceTest {
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
     }
+
+    @Test
+    @DisplayName("createAndSendNotification_whenTicketIsNull_savesSystemNotification")
+    void createAndSendNotification_whenTicketIsNull_savesSystemNotification() {
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(notificationMapper.toResponse(any(UserNotification.class)))
+                .thenReturn(NotificationResponse.builder().title("Thông báo chung").build());
+
+        notificationService.createAndSendNotification(List.of(reporter), "Thông báo chung", "Nội dung bảo trì");
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertThat(saved.getTicket()).isNull();
+        assertThat(saved.getTitle()).isEqualTo("Thông báo chung");
+        assertThat(saved.getContent()).isEqualTo("Nội dung bảo trì");
+        assertThat(saved.getRecipients()).hasSize(1);
+        assertThat(saved.getRecipients().get(0).getUser().getUserId()).isEqualTo(reporter.getUserId());
+        verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + reporter.getUserId()), any(NotificationResponse.class));
+    }
+
+    @Test
+    @DisplayName("createAndSendNotification_filtersOutDeletedOrInactiveRecipients")
+    void createAndSendNotification_filtersOutDeletedOrInactiveRecipients() {
+        User deletedUser = User.builder()
+                .userId(UUID.randomUUID())
+                .status(UserStatus.ACTIVE)
+                .build();
+        deletedUser.setDeleted(true);
+
+        User blockedUser = User.builder()
+                .userId(UUID.randomUUID())
+                .status(UserStatus.BLOCKED)
+                .build();
+
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.createAndSendNotification(ticket, List.of(reporter, deletedUser, blockedUser), "Tiêu đề", "Nội dung");
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertThat(saved.getRecipients()).hasSize(1);
+        assertThat(saved.getRecipients().get(0).getUser().getUserId()).isEqualTo(reporter.getUserId());
+    }
+
+    @Test
+    @DisplayName("createAndSendNotification_whenRecipientsEmptyOrNull_doesNotSave")
+    void createAndSendNotification_whenRecipientsEmptyOrNull_doesNotSave() {
+        notificationService.createAndSendNotification(ticket, Collections.emptyList(), "Tiêu đề", "Nội dung");
+        notificationService.createAndSendNotification(ticket, null, "Tiêu đề", "Nội dung");
+
+        verify(notificationRepository, never()).save(any());
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(NotificationResponse.class));
+    }
+
+    @Test
+    @DisplayName("createAndSendNotification_deduplicatesDuplicateRecipients")
+    void createAndSendNotification_deduplicatesDuplicateRecipients() {
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.createAndSendNotification(ticket, List.of(reporter, reporter), "Tiêu đề", "Nội dung");
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertThat(saved.getRecipients()).hasSize(1);
+    }
 }

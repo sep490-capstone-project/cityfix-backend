@@ -5,11 +5,13 @@ import com.cityfix.backend.model.entity.UserNotification;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
+import java.util.UUID;
+
 @Mapper(componentModel = "spring")
 public interface NotificationMapper {
 
     @Mapping(source = "notification.notificationId", target = "notificationId")
-    @Mapping(source = "notification.ticket.ticketId", target = "ticketId")
+    @Mapping(target = "ticketId", expression = "java(mapTicketId(userNotification))")
     @Mapping(source = "notification.title", target = "title")
     @Mapping(source = "notification.content", target = "content")
     @Mapping(source = "user.userId", target = "userId")
@@ -17,4 +19,14 @@ public interface NotificationMapper {
     @Mapping(source = "readAt", target = "readAt")
     @Mapping(source = "createdAt", target = "createdAt")
     NotificationResponse toResponse(UserNotification userNotification);
+
+    default UUID mapTicketId(UserNotification userNotification) {
+        if (userNotification == null || userNotification.getNotification() == null) {
+            return null;
+        }
+        if (userNotification.getNotification().getTicket() == null) {
+            return null;
+        }
+        return userNotification.getNotification().getTicket().getTicketId();
+    }
 }
