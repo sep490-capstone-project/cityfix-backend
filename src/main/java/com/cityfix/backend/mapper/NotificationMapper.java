@@ -27,6 +27,10 @@ public interface NotificationMapper {
         if (userNotification.getNotification().getTicket() == null) {
             return null;
         }
-        return userNotification.getNotification().getTicket().getTicketId();
+        try {
+            return userNotification.getNotification().getTicket().getTicketId();
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
