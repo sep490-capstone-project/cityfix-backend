@@ -11,12 +11,14 @@ import com.cityfix.backend.model.entity.Step;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.entity.UserNotification;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
+import com.cityfix.backend.repository.UserNotificationRepository;
 import com.cityfix.backend.repository.UserRepository;
 import com.cityfix.backend.service.impl.NotificationServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +37,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.time.ZonedDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -51,6 +54,8 @@ class NotificationServiceTest {
 
     @Mock
     private NotificationRepository notificationRepository;
+    @Mock
+    private UserNotificationRepository userNotificationRepository;
     @Mock
     private TicketVoteRepository ticketVoteRepository;
     @Mock
@@ -128,7 +133,7 @@ class NotificationServiceTest {
 
         department = Department.builder()
                 .departmentId(UUID.randomUUID())
-                .name("Phòng Hạ tầng Kỹ thuật")
+                .name("Phòng Quản Lý Đô Thị")
                 .manager(manager1)
                 .build();
 
@@ -144,7 +149,7 @@ class NotificationServiceTest {
         ticket = Ticket.builder()
                 .ticketId(UUID.randomUUID())
                 .user(reporter)
-                .address("123 Nguyễn Huệ, Quận 1, TP.HCM")
+                .address("123 Đường ABC")
                 .build();
 
         stepDef = Step.builder()
@@ -159,9 +164,6 @@ class NotificationServiceTest {
                 .assignee(staff)
                 .status(AssignmentStatus.IN_PROGRESS)
                 .build();
-
-        lenient().when(departmentRepository.findById(department.getDepartmentId()))
-                .thenReturn(Optional.of(department));
     }
 
     private void mockCurrentUser(User user) {
@@ -174,55 +176,57 @@ class NotificationServiceTest {
     @Test
     @DisplayName("notifyStepStarted_sendsToReporterUpvotersAndSameDepartmentManagers_andDeduplicates")
     void notifyStepStarted_sendsToReporterUpvotersAndSameDepartmentManagers_andDeduplicates() {
-        // Reporter is also in upvoters list; manager1 is both department.manager and in userDepartmentRepository
         when(ticketVoteRepository.findUpvotersByTicketId(ticket.getTicketId()))
                 .thenReturn(List.of(reporter, upvoter1, upvoter2));
         when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId()))
                 .thenReturn(List.of(department));
         when(userDepartmentRepository.findActiveManagersByDepartmentIds(any()))
                 .thenReturn(List.of(manager1, manager2));
-        when(userRepository.findActiveManagersByDepartmentIds(any()))
-                .thenReturn(List.of(manager1));
+        when(departmentRepository.findById(department.getDepartmentId()))
+                .thenReturn(Optional.of(department));
         when(notificationRepository.save(any(Notification.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
-        when(notificationMapper.toResponse(any(Notification.class)))
+        when(notificationMapper.toResponse(any(UserNotification.class)))
                 .thenAnswer(inv -> {
-                    Notification n = inv.getArgument(0);
+                    UserNotification un = inv.getArgument(0);
                     return NotificationResponse.builder()
-                            .userId(n.getUser().getUserId())
-                            .title(n.getTitle())
-                            .content(n.getContent())
-                            .isRead(n.isRead())
+                            .userId(un.getUser().getUserId())
+                            .title(un.getNotification().getTitle())
+                            .content(un.getNotification().getContent())
+                            .isRead(un.isRead())
                             .build();
                 });
 
         notificationService.notifyStepStarted(ticketStep, staff);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        verify(notificationRepository, times(5)).save(captor.capture());
+        // 1 notification for citizen group (reporter, upvoter1, upvoter2), 1 notification for manager group (manager1, manager2)
+        verify(notificationRepository, times(2)).save(captor.capture());
 
         List<Notification> saved = captor.getAllValues();
-        List<UUID> recipientIds = saved.stream().map(n -> n.getUser().getUserId()).toList();
-        assertThat(recipientIds).containsExactly(
+
+        // 1. Citizen Notification
+        Notification citizenNotif = saved.get(0);
+        assertThat(citizenNotif.getTitle()).isEqualTo("Tiến độ sự cố: Bắt đầu bước xử lý");
+        assertThat(citizenNotif.getContent()).contains("Sự cố của bạn").contains("Nhân Viên Xử Lý").contains("Khảo sát hiện trường");
+        List<UUID> citizenRecipientIds = citizenNotif.getRecipients().stream().map(un -> un.getUser().getUserId()).toList();
+        assertThat(citizenRecipientIds).containsExactly(
                 reporter.getUserId(),
                 upvoter1.getUserId(),
-                upvoter2.getUserId(),
+                upvoter2.getUserId()
+        );
+
+        // 2. Manager Notification
+        Notification managerNotif = saved.get(1);
+        assertThat(managerNotif.getTitle()).isEqualTo("Tiến độ xử lý của nhân viên: Bắt đầu bước xử lý");
+        assertThat(managerNotif.getContent()).contains("Nhân viên Nhân Viên Xử Lý đã bắt đầu thực hiện bước 'Khảo sát hiện trường'");
+        List<UUID> managerRecipientIds = managerNotif.getRecipients().stream().map(un -> un.getUser().getUserId()).toList();
+        assertThat(managerRecipientIds).containsExactly(
                 manager1.getUserId(),
                 manager2.getUserId()
         );
 
-        // Check reporter content
-        assertThat(saved.get(0).getTitle()).isEqualTo("Tiến độ sự cố: Bắt đầu bước xử lý");
-        assertThat(saved.get(0).getContent()).contains("Sự cố của bạn").contains("Nhân Viên Xử Lý").contains("Khảo sát hiện trường");
-
-        // Check upvoter content
-        assertThat(saved.get(1).getContent()).contains("Sự cố bạn theo dõi").contains("Nhân Viên Xử Lý").contains("Khảo sát hiện trường");
-
-        // Check manager content
-        assertThat(saved.get(3).getTitle()).isEqualTo("Tiến độ xử lý của nhân viên: Bắt đầu bước xử lý");
-        assertThat(saved.get(3).getContent()).contains("Nhân viên Nhân Viên Xử Lý đã bắt đầu thực hiện bước 'Khảo sát hiện trường'");
-
-        // Verify WebSocket pushes
+        // Verify WebSocket pushes to all 5 recipients
         verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + reporter.getUserId()), any(NotificationResponse.class));
         verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + upvoter1.getUserId()), any(NotificationResponse.class));
         verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + upvoter2.getUserId()), any(NotificationResponse.class));
@@ -239,22 +243,26 @@ class NotificationServiceTest {
                 .thenReturn(List.of(department));
         when(userDepartmentRepository.findActiveManagersByDepartmentIds(any()))
                 .thenReturn(List.of(manager1));
-        when(userRepository.findActiveManagersByDepartmentIds(any()))
-                .thenReturn(Collections.emptyList());
+        when(departmentRepository.findById(department.getDepartmentId()))
+                .thenReturn(Optional.of(department));
         when(notificationRepository.save(any(Notification.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         notificationService.notifyStepCompleted(ticketStep, staff, false);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        verify(notificationRepository, times(3)).save(captor.capture());
+        verify(notificationRepository, times(2)).save(captor.capture());
 
         List<Notification> saved = captor.getAllValues();
+        // Citizen notification
         assertThat(saved.get(0).getTitle()).isEqualTo("Tiến độ sự cố: Hoàn thành bước xử lý");
         assertThat(saved.get(0).getContent()).contains("trong sự cố của bạn đã được nhân viên Nhân Viên Xử Lý hoàn thành");
-        assertThat(saved.get(1).getContent()).contains("của sự cố bạn theo dõi đã được nhân viên Nhân Viên Xử Lý hoàn thành");
-        assertThat(saved.get(2).getTitle()).isEqualTo("Tiến độ xử lý của nhân viên: Hoàn thành bước xử lý");
-        assertThat(saved.get(2).getContent()).contains("Nhân viên Nhân Viên Xử Lý đã hoàn thành bước 'Khảo sát hiện trường'");
+        assertThat(saved.get(0).getRecipients()).hasSize(2); // reporter + upvoter1
+
+        // Manager notification
+        assertThat(saved.get(1).getTitle()).isEqualTo("Tiến độ xử lý của nhân viên: Hoàn thành bước xử lý");
+        assertThat(saved.get(1).getContent()).contains("Nhân viên Nhân Viên Xử Lý đã hoàn thành bước 'Khảo sát hiện trường'");
+        assertThat(saved.get(1).getRecipients()).hasSize(1); // manager1
     }
 
     @Test
@@ -266,23 +274,21 @@ class NotificationServiceTest {
                 .thenReturn(List.of(department));
         when(userDepartmentRepository.findActiveManagersByDepartmentIds(any()))
                 .thenReturn(List.of(manager1));
-        when(userRepository.findActiveManagersByDepartmentIds(any()))
-                .thenReturn(Collections.emptyList());
+        when(departmentRepository.findById(department.getDepartmentId()))
+                .thenReturn(Optional.of(department));
         when(notificationRepository.save(any(Notification.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
         notificationService.notifyStepCompleted(ticketStep, staff, true);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        verify(notificationRepository, times(3)).save(captor.capture());
+        verify(notificationRepository, times(2)).save(captor.capture());
 
         List<Notification> saved = captor.getAllValues();
         assertThat(saved.get(0).getTitle()).isEqualTo("Sự cố đã được giải quyết");
         assertThat(saved.get(0).getContent()).contains("Toàn bộ các bước xử lý của sự cố đã hoàn tất");
-        assertThat(saved.get(1).getTitle()).isEqualTo("Sự cố đã được giải quyết");
-        assertThat(saved.get(1).getContent()).contains("Sự cố bạn theo dõi đã được xử lý hoàn tất");
-        assertThat(saved.get(2).getTitle()).isEqualTo("Sự cố đã được giải quyết hoàn tất");
-        assertThat(saved.get(2).getContent()).contains("Toàn bộ sự cố đã chuyển sang trạng thái Đã giải quyết");
+        assertThat(saved.get(1).getTitle()).isEqualTo("Sự cố đã được giải quyết hoàn tất");
+        assertThat(saved.get(1).getContent()).contains("Toàn bộ sự cố đã chuyển sang trạng thái Đã giải quyết");
     }
 
     @Test
@@ -291,9 +297,13 @@ class NotificationServiceTest {
         mockCurrentUser(manager1);
         Notification n = Notification.builder()
                 .notificationId(UUID.randomUUID())
-                .user(manager1)
                 .title("Test")
                 .content("Content")
+                .build();
+        UserNotification un = UserNotification.builder()
+                .id(UUID.randomUUID())
+                .notification(n)
+                .user(manager1)
                 .isRead(false)
                 .build();
         NotificationResponse resp = NotificationResponse.builder()
@@ -304,9 +314,9 @@ class NotificationServiceTest {
                 .isRead(false)
                 .build();
 
-        when(notificationRepository.findByUser_UserIdOrderByCreatedAtDesc(eq(manager1.getUserId()), any()))
-                .thenReturn(new PageImpl<>(List.of(n)));
-        when(notificationMapper.toResponse(n)).thenReturn(resp);
+        when(userNotificationRepository.findByUserIdOrderByCreatedAtDesc(eq(manager1.getUserId()), any()))
+                .thenReturn(new PageImpl<>(List.of(un)));
+        when(notificationMapper.toResponse(un)).thenReturn(resp);
 
         Page<NotificationResponse> result = notificationService.getMyNotifications(null, PageRequest.of(0, 10));
 
@@ -319,15 +329,12 @@ class NotificationServiceTest {
     void markAsRead_whenNotificationBelongsToAnotherUser_throwsForbidden() {
         mockCurrentUser(upvoter1);
         UUID notifId = UUID.randomUUID();
-        Notification n = Notification.builder()
-                .notificationId(notifId)
-                .user(reporter)
-                .title("Test")
-                .content("Content")
-                .isRead(false)
-                .build();
 
-        when(notificationRepository.findById(notifId)).thenReturn(Optional.of(n));
+        // User upvoter1 has no user_notification record for this notificationId
+        when(userNotificationRepository.findByNotificationIdAndUserId(notifId, upvoter1.getUserId()))
+                .thenReturn(Optional.empty());
+        // But notification exists in the system
+        when(notificationRepository.existsById(notifId)).thenReturn(true);
 
         assertThatThrownBy(() -> notificationService.markAsRead(notifId))
                 .isInstanceOf(AppException.class)
@@ -342,46 +349,52 @@ class NotificationServiceTest {
         UUID notifId = UUID.randomUUID();
         Notification n = Notification.builder()
                 .notificationId(notifId)
-                .user(reporter)
                 .title("Test")
                 .content("Content")
+                .build();
+        UserNotification un = UserNotification.builder()
+                .id(UUID.randomUUID())
+                .notification(n)
+                .user(reporter)
                 .isRead(false)
                 .build();
 
-        when(notificationRepository.findById(notifId)).thenReturn(Optional.of(n));
-        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(notificationMapper.toResponse(any(Notification.class))).thenReturn(
+        when(userNotificationRepository.findByNotificationIdAndUserId(notifId, reporter.getUserId()))
+                .thenReturn(Optional.of(un));
+        when(userNotificationRepository.save(any(UserNotification.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(notificationMapper.toResponse(any(UserNotification.class))).thenReturn(
                 NotificationResponse.builder().notificationId(notifId).isRead(true).build()
         );
 
         NotificationResponse res = notificationService.markAsRead(notifId);
 
-        assertThat(n.isRead()).isTrue();
+        assertThat(un.isRead()).isTrue();
+        assertThat(un.getReadAt()).isNotNull();
         assertThat(res.isRead()).isTrue();
-        verify(notificationRepository).save(n);
+        verify(userNotificationRepository).save(un);
     }
 
     @Test
     @DisplayName("markAllAsRead_invokesRepositoryMarkAllAsReadByUserId")
     void markAllAsRead_invokesRepositoryMarkAllAsReadByUserId() {
         mockCurrentUser(reporter);
-        when(notificationRepository.markAllAsReadByUserId(reporter.getUserId())).thenReturn(3);
+        when(userNotificationRepository.markAllAsReadByUserId(reporter.getUserId())).thenReturn(3);
 
         notificationService.markAllAsRead();
 
-        verify(notificationRepository).markAllAsReadByUserId(reporter.getUserId());
+        verify(userNotificationRepository).markAllAsReadByUserId(reporter.getUserId());
     }
 
     @Test
     @DisplayName("getUnreadCount_returnsUnreadCountFromRepository")
     void getUnreadCount_returnsUnreadCountFromRepository() {
         mockCurrentUser(manager1);
-        when(notificationRepository.countByUser_UserIdAndIsReadFalse(manager1.getUserId())).thenReturn(4L);
+        when(userNotificationRepository.countByUser_UserIdAndIsReadFalse(manager1.getUserId())).thenReturn(4L);
 
         long count = notificationService.getUnreadCount();
 
         assertThat(count).isEqualTo(4L);
-        verify(notificationRepository).countByUser_UserIdAndIsReadFalse(manager1.getUserId());
+        verify(userNotificationRepository).countByUser_UserIdAndIsReadFalse(manager1.getUserId());
     }
 
     @Test
@@ -408,10 +421,9 @@ class NotificationServiceTest {
 
         notificationService.notifyStepStarted(ticketStep, staffWithDeletedDept);
 
-        // Only reporter is notified, managers of deleted department are not notified
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         verify(notificationRepository, times(1)).save(captor.capture());
-        assertThat(captor.getValue().getUser().getUserId()).isEqualTo(reporter.getUserId());
+        assertThat(captor.getValue().getRecipients().get(0).getUser().getUserId()).isEqualTo(reporter.getUserId());
     }
 
     @Test

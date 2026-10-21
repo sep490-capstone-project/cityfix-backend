@@ -1,11 +1,9 @@
 package com.cityfix.backend.service;
 
-import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.TicketStatus;
-import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketHistoryRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
@@ -17,7 +15,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;

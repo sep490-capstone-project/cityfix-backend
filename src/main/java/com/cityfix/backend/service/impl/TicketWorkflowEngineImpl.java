@@ -2,13 +2,11 @@ package com.cityfix.backend.service.impl;
 
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
-import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.TicketStatus;
-import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketHistoryRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;

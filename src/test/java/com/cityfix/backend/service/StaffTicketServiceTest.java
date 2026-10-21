@@ -5,7 +5,6 @@ import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.EvidenceMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
-import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.model.dto.request.UpdateStaffTicketStatusRequest;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse;
@@ -23,7 +22,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -56,19 +54,13 @@ public class StaffTicketServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
-    private NotificationRepository notificationRepository;
-    @Mock
     private TicketMapper ticketMapper;
     @Mock
     private TicketHistoryMapper ticketHistoryMapper;
     @Mock
     private EvidenceMapper evidenceMapper;
     @Mock
-    private NotificationMapper notificationMapper;
-    @Mock
     private TicketService ticketService;
-    @Mock
-    private SimpMessagingTemplate messagingTemplate;
     @Mock
     private EmailService emailService;
     @Mock
