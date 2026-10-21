@@ -2,7 +2,6 @@ package com.cityfix.backend.service;
 
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
-import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
 import com.cityfix.backend.mapper.TicketStepMapper;
@@ -73,11 +72,7 @@ class ManagerTicketServiceImplTest {
     @Mock
     private UserDepartmentRepository userDepartmentRepository;
     @Mock
-    private NotificationRepository notificationRepository;
-    @Mock
-    private NotificationMapper notificationMapper;
-    @Mock
-    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    private NotificationService notificationService;
     @Mock
     private EmailService emailService;
     @Mock
@@ -288,7 +283,7 @@ class ManagerTicketServiceImplTest {
         assertThat(ticket.getSteps().get(0).getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
         assertThat(ticket.getSteps().get(0).getOrderIndex()).isEqualTo(0);
 
-        verify(notificationRepository).save(any());
+        verify(notificationService).createAndSendNotification(eq(ticket), any(), any(), any());
         verify(ticketHistoryRepository).save(argThat(h ->
                 h != null
                         && h.getActionType() == com.cityfix.backend.model.enums.ActionType.MANUAL_APPROVED

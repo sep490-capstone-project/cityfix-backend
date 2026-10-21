@@ -50,6 +50,11 @@ public class Ticket {
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<Rating> ratings = new java.util.ArrayList<>();
 
+    @BatchSize(size = 20)
+    @Builder.Default
+    @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<Notification> notifications = new java.util.ArrayList<>();
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
 

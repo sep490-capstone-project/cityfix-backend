@@ -9,13 +9,16 @@ import com.cityfix.backend.model.entity.Notification;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.entity.UserNotification;
 import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
+import com.cityfix.backend.repository.UserNotificationRepository;
 import com.cityfix.backend.repository.UserRepository;
 import com.cityfix.backend.service.NotificationService;
+import com.cityfix.backend.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -23,15 +26,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.cityfix.backend.util.SecurityUtils;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -47,6 +48,7 @@ import java.util.UUID;
 public class NotificationServiceImpl implements NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final UserNotificationRepository userNotificationRepository;
     private final TicketVoteRepository ticketVoteRepository;
     private final UserDepartmentRepository userDepartmentRepository;
     private final UserRepository userRepository;
@@ -152,24 +154,50 @@ public class NotificationServiceImpl implements NotificationService {
         return new ArrayList<>(managers.values());
     }
 
-    private void saveAndSendNotification(User recipient, String title, String content) {
-        UUID recipientId = recipient.getUserId();
+    @Override
+    @Transactional
+    public void createAndSendNotification(Collection<User> recipients, String title, String content) {
+        createAndSendNotification(null, recipients, title, content);
+    }
+
+    @Override
+    @Transactional
+    public void createAndSendNotification(Ticket ticket, Collection<User> recipients, String title, String content) {
+        if (recipients == null || recipients.isEmpty()) {
+            log.warn("createAndSendNotification called with empty or null recipients. ticketId={}, title={}",
+                    ticket != null ? ticket.getTicketId() : null, title);
+            return;
+        }
+
         Notification notification = Notification.builder()
-                .user(recipient)
+                .ticket(ticket)
                 .title(title)
                 .content(content)
-                .isRead(false)
                 .build();
-        notification = notificationRepository.save(notification);
 
-        try {
-            NotificationResponse response = notificationMapper.toResponse(notification);
-            if (response != null && response.getUserId() == null) {
-                response.setUserId(recipientId);
+        Set<UUID> addedUserIds = new HashSet<>();
+        for (User recipient : recipients) {
+            if (isEligibleRecipient(recipient, null) && addedUserIds.add(recipient.getUserId())) {
+                notification.addRecipient(recipient);
             }
-            messagingTemplate.convertAndSend("/topic/notifications/" + recipientId, response);
-        } catch (Exception e) {
-            log.error("Lỗi khi gửi WebSocket notification cho user {}: {}", recipientId, e.getMessage());
+        }
+
+        if (notification.getRecipients().isEmpty()) {
+            log.warn("No eligible active recipients found for notification. ticketId={}, title={}",
+                    ticket != null ? ticket.getTicketId() : null, title);
+            return;
+        }
+
+        Notification saved = notificationRepository.save(notification);
+        Notification target = saved != null ? saved : notification;
+
+        for (UserNotification un : target.getRecipients()) {
+            try {
+                NotificationResponse response = notificationMapper.toResponse(un);
+                messagingTemplate.convertAndSend("/topic/notifications/" + un.getUser().getUserId(), response);
+            } catch (Exception e) {
+                log.error("Lỗi khi gửi WebSocket notification cho user {}: {}", un.getUser().getUserId(), e.getMessage());
+            }
         }
     }
 
@@ -194,45 +222,52 @@ public class NotificationServiceImpl implements NotificationService {
                 ? ticket.getAddress()
                 : "";
 
-        Set<UUID> notifiedUserIds = new HashSet<>();
+        Set<UUID> notifiedCitizenIds = new HashSet<>();
+        List<User> citizenRecipients = new ArrayList<>();
 
         // 1. Người báo cáo (Reporter)
         User reporter = ticket.getUser();
-        if (isEligibleRecipient(reporter, actorId) && notifiedUserIds.add(reporter.getUserId())) {
-            String title = "Tiến độ sự cố: Bắt đầu bước xử lý";
-            String content = "Sự cố của bạn đang được nhân viên " + staffName + " thực hiện tại bước '" + stepName + "'.";
-            saveAndSendNotification(reporter, title, content);
+        if (isEligibleRecipient(reporter, actorId) && notifiedCitizenIds.add(reporter.getUserId())) {
+            citizenRecipients.add(reporter);
         }
 
         // 2. Người upvote (Upvoters)
         if (ticket.getTicketId() != null) {
             List<User> upvoters = ticketVoteRepository.findUpvotersByTicketId(ticket.getTicketId());
             if (upvoters != null) {
-                String title = "Tiến độ sự cố: Bắt đầu bước xử lý";
-                String content = "Sự cố bạn theo dõi đang được nhân viên " + staffName + " thực hiện tại bước '" + stepName + "'.";
                 for (User upvoter : upvoters) {
-                    if (isEligibleRecipient(upvoter, actorId) && notifiedUserIds.add(upvoter.getUserId())) {
-                        saveAndSendNotification(upvoter, title, content);
+                    if (isEligibleRecipient(upvoter, actorId) && notifiedCitizenIds.add(upvoter.getUserId())) {
+                        citizenRecipients.add(upvoter);
                     }
                 }
             }
         }
 
+        if (!citizenRecipients.isEmpty()) {
+            String title = "Tiến độ sự cố: Bắt đầu bước xử lý";
+            String content = "Sự cố của bạn đang được nhân viên " + staffName + " thực hiện tại bước '" + stepName + "'.";
+            createAndSendNotification(ticket, citizenRecipients, title, content);
+        }
+
         // 3. Manager cùng phòng ban với Staff
         List<User> managers = resolveDepartmentManagers(effectiveStaff);
-        if (!managers.isEmpty()) {
-            String title = "Tiến độ xử lý của nhân viên: Bắt đầu bước xử lý";
-            String content = "Nhân viên " + staffName + " đã bắt đầu thực hiện bước '" + stepName + "'"
-                    + (address.isEmpty() ? "." : " (Sự cố tại: " + address + ").");
-            for (User manager : managers) {
-                if (isEligibleRecipient(manager, actorId) && notifiedUserIds.add(manager.getUserId())) {
-                    saveAndSendNotification(manager, title, content);
-                }
+        List<User> managerRecipients = new ArrayList<>();
+        Set<UUID> notifiedManagerIds = new HashSet<>();
+        for (User manager : managers) {
+            if (isEligibleRecipient(manager, actorId) && notifiedManagerIds.add(manager.getUserId())) {
+                managerRecipients.add(manager);
             }
         }
 
-        log.info("Sent step-started notifications for ticketId={}, stepId={}, actorId={}, recipientCount={}",
-                ticket.getTicketId(), step.getId(), actorId, notifiedUserIds.size());
+        if (!managerRecipients.isEmpty()) {
+            String title = "Tiến độ xử lý của nhân viên: Bắt đầu bước xử lý";
+            String content = "Nhân viên " + staffName + " đã bắt đầu thực hiện bước '" + stepName + "'"
+                    + (address.isEmpty() ? "." : " (Sự cố tại: " + address + ").");
+            createAndSendNotification(ticket, managerRecipients, title, content);
+        }
+
+        log.info("Sent step-started notifications for ticketId={}, stepId={}, actorId={}, citizenCount={}, managerCount={}",
+                ticket.getTicketId(), step.getId(), actorId, citizenRecipients.size(), managerRecipients.size());
     }
 
     @Override
@@ -256,41 +291,48 @@ public class NotificationServiceImpl implements NotificationService {
                 ? ticket.getAddress()
                 : "";
 
-        Set<UUID> notifiedUserIds = new HashSet<>();
+        Set<UUID> notifiedCitizenIds = new HashSet<>();
+        List<User> citizenRecipients = new ArrayList<>();
 
         // 1. Người báo cáo (Reporter)
         User reporter = ticket.getUser();
-        if (isEligibleRecipient(reporter, actorId) && notifiedUserIds.add(reporter.getUserId())) {
-            String title = isTicketResolved
-                    ? "Sự cố đã được giải quyết"
-                    : "Tiến độ sự cố: Hoàn thành bước xử lý";
-            String content = isTicketResolved
-                    ? "Nhân viên " + staffName + " đã hoàn thành bước '" + stepName + "'. Toàn bộ các bước xử lý của sự cố đã hoàn tất. Vui lòng kiểm tra và đánh giá kết quả."
-                    : "Bước '" + stepName + "' trong sự cố của bạn đã được nhân viên " + staffName + " hoàn thành.";
-            saveAndSendNotification(reporter, title, content);
+        if (isEligibleRecipient(reporter, actorId) && notifiedCitizenIds.add(reporter.getUserId())) {
+            citizenRecipients.add(reporter);
         }
 
         // 2. Người upvote (Upvoters)
         if (ticket.getTicketId() != null) {
             List<User> upvoters = ticketVoteRepository.findUpvotersByTicketId(ticket.getTicketId());
             if (upvoters != null) {
-                String title = isTicketResolved
-                        ? "Sự cố đã được giải quyết"
-                        : "Tiến độ sự cố: Hoàn thành bước xử lý";
-                String content = isTicketResolved
-                        ? "Nhân viên " + staffName + " đã hoàn thành bước '" + stepName + "'. Sự cố bạn theo dõi đã được xử lý hoàn tất."
-                        : "Bước '" + stepName + "' của sự cố bạn theo dõi đã được nhân viên " + staffName + " hoàn thành.";
                 for (User upvoter : upvoters) {
-                    if (isEligibleRecipient(upvoter, actorId) && notifiedUserIds.add(upvoter.getUserId())) {
-                        saveAndSendNotification(upvoter, title, content);
+                    if (isEligibleRecipient(upvoter, actorId) && notifiedCitizenIds.add(upvoter.getUserId())) {
+                        citizenRecipients.add(upvoter);
                     }
                 }
             }
         }
 
+        if (!citizenRecipients.isEmpty()) {
+            String title = isTicketResolved
+                    ? "Sự cố đã được giải quyết"
+                    : "Tiến độ sự cố: Hoàn thành bước xử lý";
+            String content = isTicketResolved
+                    ? "Nhân viên " + staffName + " đã hoàn thành bước '" + stepName + "'. Toàn bộ các bước xử lý của sự cố đã hoàn tất. Vui lòng kiểm tra và đánh giá kết quả."
+                    : "Bước '" + stepName + "' trong sự cố của bạn đã được nhân viên " + staffName + " hoàn thành.";
+            createAndSendNotification(ticket, citizenRecipients, title, content);
+        }
+
         // 3. Manager cùng phòng ban với Staff
         List<User> managers = resolveDepartmentManagers(effectiveStaff);
-        if (!managers.isEmpty()) {
+        List<User> managerRecipients = new ArrayList<>();
+        Set<UUID> notifiedManagerIds = new HashSet<>();
+        for (User manager : managers) {
+            if (isEligibleRecipient(manager, actorId) && notifiedManagerIds.add(manager.getUserId())) {
+                managerRecipients.add(manager);
+            }
+        }
+
+        if (!managerRecipients.isEmpty()) {
             String title = isTicketResolved
                     ? "Sự cố đã được giải quyết hoàn tất"
                     : "Tiến độ xử lý của nhân viên: Hoàn thành bước xử lý";
@@ -300,15 +342,11 @@ public class NotificationServiceImpl implements NotificationService {
                             + ". Toàn bộ sự cố đã chuyển sang trạng thái Đã giải quyết."
                     : "Nhân viên " + staffName + " đã hoàn thành bước '" + stepName + "'"
                             + (address.isEmpty() ? "." : " (Sự cố tại: " + address + ").");
-            for (User manager : managers) {
-                if (isEligibleRecipient(manager, actorId) && notifiedUserIds.add(manager.getUserId())) {
-                    saveAndSendNotification(manager, title, content);
-                }
-            }
+            createAndSendNotification(ticket, managerRecipients, title, content);
         }
 
-        log.info("Sent step-completed notifications for ticketId={}, stepId={}, actorId={}, isTicketResolved={}, recipientCount={}",
-                ticket.getTicketId(), step.getId(), actorId, isTicketResolved, notifiedUserIds.size());
+        log.info("Sent step-completed notifications for ticketId={}, stepId={}, actorId={}, isTicketResolved={}, citizenCount={}, managerCount={}",
+                ticket.getTicketId(), step.getId(), actorId, isTicketResolved, citizenRecipients.size(), managerRecipients.size());
     }
 
     @Override
@@ -319,48 +357,50 @@ public class NotificationServiceImpl implements NotificationService {
                 ? Pageable.unpaged()
                 : PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.unsorted());
 
-        Page<Notification> notifications;
+        Page<UserNotification> userNotifications;
         if (isRead != null) {
-            notifications = notificationRepository.findByUser_UserIdAndIsReadOrderByCreatedAtDesc(
+            userNotifications = userNotificationRepository.findByUserIdAndIsReadOrderByCreatedAtDesc(
                     currentUser.getUserId(), isRead, effectivePageable);
         } else {
-            notifications = notificationRepository.findByUser_UserIdOrderByCreatedAtDesc(
+            userNotifications = userNotificationRepository.findByUserIdOrderByCreatedAtDesc(
                     currentUser.getUserId(), effectivePageable);
         }
-        return notifications.map(notificationMapper::toResponse);
+        return userNotifications.map(notificationMapper::toResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
     public long getUnreadCount() {
         User currentUser = getCurrentUser();
-        return notificationRepository.countByUser_UserIdAndIsReadFalse(currentUser.getUserId());
+        return userNotificationRepository.countByUser_UserIdAndIsReadFalse(currentUser.getUserId());
     }
 
     @Override
     @Transactional
     public NotificationResponse markAsRead(UUID notificationId) {
         User currentUser = getCurrentUser();
-        Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new AppException(ErrorCode.NOTIFICATION_NOT_FOUND));
+        UserNotification userNotification = userNotificationRepository.findByNotificationIdAndUserId(notificationId, currentUser.getUserId())
+                .orElse(null);
 
-        if (notification.getUser() == null
-                || notification.getUser().getUserId() == null
-                || !notification.getUser().getUserId().equals(currentUser.getUserId())) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+        if (userNotification == null) {
+            if (notificationRepository.existsById(notificationId)) {
+                throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            throw new AppException(ErrorCode.NOTIFICATION_NOT_FOUND);
         }
 
-        if (!notification.isRead()) {
-            notification.setRead(true);
-            notification = notificationRepository.save(notification);
+        if (!userNotification.isRead()) {
+            userNotification.setRead(true);
+            userNotification.setReadAt(ZonedDateTime.now());
+            userNotification = userNotificationRepository.save(userNotification);
         }
-        return notificationMapper.toResponse(notification);
+        return notificationMapper.toResponse(userNotification);
     }
 
     @Override
     @Transactional
     public void markAllAsRead() {
         User currentUser = getCurrentUser();
-        notificationRepository.markAllAsReadByUserId(currentUser.getUserId());
+        userNotificationRepository.markAllAsReadByUserId(currentUser.getUserId());
     }
 }

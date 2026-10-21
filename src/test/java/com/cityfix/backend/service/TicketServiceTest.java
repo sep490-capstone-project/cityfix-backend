@@ -109,12 +109,7 @@ class TicketServiceTest {
     @Mock
     private com.cityfix.backend.mapper.TicketHistoryMapper ticketHistoryMapper;
     
-    @Mock
-    private com.cityfix.backend.repository.NotificationRepository notificationRepository;
-    
-    @Mock
-    private com.cityfix.backend.mapper.NotificationMapper notificationMapper;
-    
+
     @Mock
     private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     

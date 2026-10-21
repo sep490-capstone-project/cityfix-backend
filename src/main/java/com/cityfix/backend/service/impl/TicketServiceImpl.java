@@ -3,7 +3,6 @@ package com.cityfix.backend.service.impl;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.ImageMapper;
-import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.mapper.SubCategoryMapper;
 import com.cityfix.backend.mapper.TicketHistoryMapper;
 import com.cityfix.backend.mapper.TicketMapper;
@@ -75,8 +74,6 @@ public class TicketServiceImpl implements TicketService {
     private final LocationService locationService;
     private final TicketStepMapper ticketStepMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
-    private final NotificationRepository notificationRepository;
-    private final NotificationMapper notificationMapper;
     private final EmailService emailService;
     private final SimpMessagingTemplate messagingTemplate;
 
