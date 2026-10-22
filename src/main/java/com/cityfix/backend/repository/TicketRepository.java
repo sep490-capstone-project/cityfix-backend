@@ -3,7 +3,7 @@ package com.cityfix.backend.repository;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
 import com.cityfix.backend.model.enums.Priority;
-import com.cityfix.backend.model.enums.SeverityLevel;
+
 import com.cityfix.backend.model.enums.TicketStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
@@ -142,7 +142,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                 )
             )
         )
-        AND (:severity IS NULL OR t.severity = :severity)
+
         AND (:priority IS NULL OR t.priority = :priority)
         AND (:status IS NULL OR t.status = :status)
         """,
@@ -171,13 +171,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                 )
             )
         )
-        AND (:severity IS NULL OR t.severity = :severity)
+
         AND (:priority IS NULL OR t.priority = :priority)
         AND (:status IS NULL OR t.status = :status)
         """)
     Page<Ticket> findTicketsByDepartmentAndCriteria(
             @Param("departmentId") UUID departmentId,
-            @Param("severity") SeverityLevel severity,
+
             @Param("priority") Priority priority,
             @Param("status") TicketStatus status,
             Pageable pageable

@@ -17,7 +17,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.Priority;
-import com.cityfix.backend.model.enums.SeverityLevel;
+
 import com.cityfix.backend.model.enums.TicketStatus;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -75,14 +75,14 @@ public class ManagerTicketController {
 
     @GetMapping("/department")
     @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
-    @Operation(summary = "Lấy danh sách vé theo phòng ban và bộ lọc", description = "Manager lọc vé theo phòng ban phụ trách (tự detect nếu null), mức độ nguy hiểm (severity), mức độ ưu tiên (priority) và trạng thái.")
+    @Operation(summary = "Lấy danh sách vé theo phòng ban và bộ lọc", description = "Manager lọc vé theo phòng ban phụ trách (tự detect nếu null), mức độ ưu tiên (priority) và trạng thái (status).")
     public ResponseEntity<BaseResponse<Page<TicketResponse>>> getDepartmentTickets(
             @RequestParam(value = "departmentId", required = false) UUID departmentId,
-            @RequestParam(value = "severity", required = false) SeverityLevel severity,
+
             @RequestParam(value = "priority", required = false) Priority priority,
             @RequestParam(value = "status", required = false) TicketStatus status,
             @PageableDefault(size = 20) Pageable pageable) {
-        Page<TicketResponse> response = managerTicketService.getDepartmentTickets(departmentId, severity, priority, status, pageable);
+        Page<TicketResponse> response = managerTicketService.getDepartmentTickets(departmentId, priority, status, pageable);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé phòng ban thành công", response));
     }
 

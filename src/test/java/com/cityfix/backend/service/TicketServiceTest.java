@@ -13,7 +13,7 @@ import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.LocationMethod;
-import com.cityfix.backend.model.enums.SeverityLevel;
+
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
@@ -159,7 +159,7 @@ class TicketServiceTest {
         createRequest = new CreateTicketRequest();
         createRequest.setDescription("Mặt đường bị sụt hố sâu lớn");
         createRequest.setImageUrl("https://cloudinary.com/image.jpg");
-        createRequest.setSeverity(SeverityLevel.HIGH);
+        createRequest.setPriorityReasoning("Test reasoning");
         createRequest.setPriority(Priority.HIGH);
         createRequest.setLocationMethod(LocationMethod.AUTO_GPS);
         createRequest.setAddress("268 Lý Thường Kiệt, Q10");
@@ -169,7 +169,7 @@ class TicketServiceTest {
         mockTicket = Ticket.builder()
                 .ticketId(UUID.randomUUID())
                 .description(createRequest.getDescription())
-                .severity(createRequest.getSeverity())
+                .priorityReasoning(createRequest.getPriorityReasoning())
                 .priority(createRequest.getPriority())
                 .locationMethod(createRequest.getLocationMethod())
                 .address(createRequest.getAddress())
@@ -186,7 +186,7 @@ class TicketServiceTest {
 
             return Ticket.builder()
                     .description(req.getDescription())
-                    .severity(req.getSeverity())
+                    .priorityReasoning(req.getPriorityReasoning())
                     .priority(req.getPriority())
                     .locationMethod(req.getLocationMethod())
                     .address(req.getAddress())
@@ -242,7 +242,7 @@ class TicketServiceTest {
                 .description(mockTicket.getDescription())
                 .imageUrl(createRequest.getImageUrl())
                 .categoryId(categoryId)
-                .severity(createRequest.getSeverity())
+                .priorityReasoning(createRequest.getPriorityReasoning())
                 .priority(createRequest.getPriority())
                 .locationMethod(createRequest.getLocationMethod())
                 .address(createRequest.getAddress())
@@ -303,7 +303,7 @@ class TicketServiceTest {
         UUID subId2 = UUID.randomUUID();
         createRequest.setSubCategoryIds(List.of(subId1, subId2));
         createRequest.setPriority(Priority.LOW);
-        createRequest.setSeverity(SeverityLevel.LOW);
+
         createRequest.setConfidenceScore(95.0);
 
         SubCategory sub1 = SubCategory.builder().subCategoryId(subId1).category(mockCategory).isActive(true).build();
@@ -393,7 +393,7 @@ class TicketServiceTest {
         UUID subId = UUID.randomUUID();
         createRequest.setSubCategoryIds(List.of(subId));
         createRequest.setPriority(Priority.LOW);
-        createRequest.setSeverity(SeverityLevel.LOW);
+
         createRequest.setConfidenceScore(95.0);
 
         SubCategory validSub = SubCategory.builder()
@@ -436,7 +436,7 @@ class TicketServiceTest {
         UUID subId = UUID.randomUUID();
         createRequest.setSubCategoryIds(List.of(subId));
         createRequest.setPriority(Priority.LOW);
-        createRequest.setSeverity(SeverityLevel.LOW);
+
         createRequest.setConfidenceScore(95.0);
         createRequest.setLatitude(10.776530);
         createRequest.setLongitude(106.700980);
@@ -485,7 +485,7 @@ class TicketServiceTest {
         UUID subId = UUID.randomUUID();
         createRequest.setSubCategoryIds(List.of(subId));
         createRequest.setPriority(Priority.LOW);
-        createRequest.setSeverity(SeverityLevel.LOW);
+
         createRequest.setConfidenceScore(95.0);
         createRequest.setLatitude(10.776530);
         createRequest.setLongitude(106.700980);
@@ -815,7 +815,7 @@ class TicketServiceTest {
     @DisplayName("createTicket_noRoutingRuleMatches_setsInitiatedAndNeedsManualReview")
     void createTicket_noRoutingRuleMatches_setsInitiatedAndNeedsManualReview() {
         createRequest.setPriority(Priority.LOW);
-        createRequest.setSeverity(SeverityLevel.LOW);
+
         createRequest.setConfidenceScore(95.0);
         UUID subId = UUID.randomUUID();
         createRequest.setSubCategoryIds(List.of(subId));

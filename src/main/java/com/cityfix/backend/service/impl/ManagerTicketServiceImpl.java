@@ -16,7 +16,7 @@ import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.Priority;
-import com.cityfix.backend.model.enums.SeverityLevel;
+
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.service.EmailService;
@@ -206,7 +206,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     @Transactional(readOnly = true)
     public Page<TicketResponse> getDepartmentTickets(
             UUID departmentId,
-            SeverityLevel severity,
+
             Priority priority,
             TicketStatus status,
             Pageable pageable) {
@@ -248,7 +248,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
 
         Page<Ticket> tickets = ticketRepository.findTicketsByDepartmentAndCriteria(
-                targetDeptId, severity, priority, status, pageable
+                targetDeptId, priority, status, pageable
         );
         Page<TicketResponse> responses = tickets.map(ticketMapper::toTicketResponse);
 

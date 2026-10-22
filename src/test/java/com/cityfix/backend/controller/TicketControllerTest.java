@@ -7,7 +7,7 @@ import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.LocationMethod;
-import com.cityfix.backend.model.enums.SeverityLevel;
+
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.service.AiService;
 import com.cityfix.backend.service.TicketService;
@@ -83,7 +83,7 @@ class TicketControllerTest {
         validCreateRequest.setDescription("Mặt đường xuất hiện ổ gà lớn");
         validCreateRequest.setImageUrl("https://cloudinary.com/test.jpg");
         validCreateRequest.setSubCategoryIds(List.of(UUID.randomUUID()));
-        validCreateRequest.setSeverity(SeverityLevel.MEDIUM);
+        validCreateRequest.setPriorityReasoning("Hố sụt nguy hiểm");
         validCreateRequest.setPriority(Priority.MEDIUM);
         validCreateRequest.setLocationMethod(LocationMethod.AUTO_GPS);
         validCreateRequest.setAddress("123 Nguyễn Huệ, Q1");
@@ -95,7 +95,7 @@ class TicketControllerTest {
                 .description(validCreateRequest.getDescription())
                 .imageUrl(validCreateRequest.getImageUrl())
                 .categoryId(categoryId)
-                .severity(validCreateRequest.getSeverity())
+                .priorityReasoning(validCreateRequest.getPriorityReasoning())
                 .priority(validCreateRequest.getPriority())
                 .locationMethod(validCreateRequest.getLocationMethod())
                 .address(validCreateRequest.getAddress())
@@ -376,5 +376,37 @@ class TicketControllerTest {
         assertThat(response.getBody().getData().getContent()).hasSize(1);
 
         verify(ticketService, times(1)).getMyReportedTickets(any());
+    }
+
+    @Test
+    @DisplayName("analyzeMedia_validRequest_returnsAiAnalyzeResponse")
+    void analyzeMedia_validRequest_returnsAiAnalyzeResponse() {
+        com.cityfix.backend.model.dto.request.AiAnalyzeRequest request = new com.cityfix.backend.model.dto.request.AiAnalyzeRequest();
+        request.setMediaUrls(List.of("https://example.com/pothole1.jpg", "https://example.com/pothole2.jpg"));
+
+        com.cityfix.backend.model.dto.response.AiAnalyzeResponse mockAiResponse = com.cityfix.backend.model.dto.response.AiAnalyzeResponse.builder()
+                .isValidIssue(true)
+                .subCategoryIds(List.of(UUID.randomUUID()))
+                .subCategoryNames(List.of("Ổ gà"))
+                .urgency(9.0)
+                .impact(9.0)
+                .severityScore(8.0)
+                .context(8.0)
+                .baseScore(3.0)
+                .finalPriorityScore(6.95)
+                .priority(Priority.MEDIUM)
+                .build();
+
+        when(aiService.analyze(request)).thenReturn(mockAiResponse);
+
+        ResponseEntity<BaseResponse<com.cityfix.backend.model.dto.response.AiAnalyzeResponse>> response = ticketController.analyzeMedia(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData().getFinalPriorityScore()).isEqualTo(6.95);
+        assertThat(response.getBody().getData().getPriority()).isEqualTo(Priority.MEDIUM);
+
+        verify(aiService, times(1)).analyze(request);
     }
 }
