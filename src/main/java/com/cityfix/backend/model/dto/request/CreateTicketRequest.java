@@ -18,12 +18,11 @@ public class CreateTicketRequest {
     @NotEmpty(message = "At least one subcategory is required")
     private java.util.List<java.util.UUID> subCategoryIds;
 
-    @NotNull(message = "Severity is required")
-    private com.cityfix.backend.model.enums.SeverityLevel severity;
-
     @NotNull(message = "Priority is required")
     private com.cityfix.backend.model.enums.Priority priority;
     
+    private String priorityReasoning;
+
     @NotNull(message = "Location method is required")
     private com.cityfix.backend.model.enums.LocationMethod locationMethod;
     

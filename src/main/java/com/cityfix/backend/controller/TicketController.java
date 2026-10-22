@@ -81,7 +81,7 @@ public class TicketController {
     public ResponseEntity<BaseResponse<AiAnalyzeResponse>> analyzeMedia(
             @Valid @RequestBody AiAnalyzeRequest request) {
         
-        AiAnalyzeResponse response = aiService.analyzeMedia(request.getMediaUrl());
+        AiAnalyzeResponse response = aiService.analyze(request);
         return ResponseEntity.ok(BaseResponse.success("Success", response));
     }
 

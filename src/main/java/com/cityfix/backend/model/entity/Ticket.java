@@ -1,7 +1,6 @@
 package com.cityfix.backend.model.entity;
 
 import com.cityfix.backend.model.enums.LocationMethod;
-import com.cityfix.backend.model.enums.SeverityLevel;
 import com.cityfix.backend.model.enums.TicketStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -28,7 +27,6 @@ public class Ticket {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
 
     @BatchSize(size = 20)
     @Builder.Default
@@ -59,9 +57,8 @@ public class Ticket {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String description;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 20)
-    private SeverityLevel severity;
+    @Column(name = "priority_reasoning", columnDefinition = "TEXT")
+    private String priorityReasoning;
     
     @Enumerated(EnumType.STRING)
     @Column(name = "priority", length = 20)
