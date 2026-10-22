@@ -10,7 +10,7 @@ import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.Priority;
-import com.cityfix.backend.model.enums.SeverityLevel;
+
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.service.impl.ManagerTicketServiceImpl;
@@ -414,13 +414,13 @@ class ManagerTicketServiceImplTest {
         t.setTicketId(UUID.randomUUID());
         Page<Ticket> ticketPage = new PageImpl<>(List.of(t));
 
-        when(ticketRepository.findTicketsByDepartmentAndCriteria(deptId, SeverityLevel.HIGH, Priority.HIGH, TicketStatus.IN_PROGRESS, pageable))
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(deptId, Priority.HIGH, TicketStatus.IN_PROGRESS, pageable))
                 .thenReturn(ticketPage);
         when(ticketMapper.toTicketResponse(t)).thenReturn(TicketResponse.builder().id(t.getTicketId()).build());
         when(departmentRepository.findById(deptId)).thenReturn(Optional.of(dept));
 
         Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
-                deptId, SeverityLevel.HIGH, Priority.HIGH, TicketStatus.IN_PROGRESS, pageable);
+                deptId, Priority.HIGH, TicketStatus.IN_PROGRESS, pageable);
 
         assertThat(result).isNotNull();
         assertThat(result.getContent()).hasSize(1);
@@ -438,15 +438,15 @@ class ManagerTicketServiceImplTest {
         Pageable pageable = PageRequest.of(0, 10);
         Page<Ticket> emptyPage = new PageImpl<>(Collections.emptyList());
 
-        when(ticketRepository.findTicketsByDepartmentAndCriteria(deptId, null, null, null, pageable))
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(deptId, null, null, pageable))
                 .thenReturn(emptyPage);
 
         Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
-                null, null, null, null, pageable);
+                null, null, null, pageable);
 
         assertThat(result).isNotNull();
         assertThat(result.getContent()).isEmpty();
-        verify(ticketRepository).findTicketsByDepartmentAndCriteria(deptId, null, null, null, pageable);
+        verify(ticketRepository).findTicketsByDepartmentAndCriteria(deptId, null, null, pageable);
     }
 
     @Test
@@ -457,7 +457,7 @@ class ManagerTicketServiceImplTest {
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(null, null, null, null, pageable))
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(null, null, null, pageable))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
@@ -470,7 +470,7 @@ class ManagerTicketServiceImplTest {
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(UUID.randomUUID(), null, null, null, pageable))
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(UUID.randomUUID(), null, null, pageable))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FORBIDDEN);
@@ -489,7 +489,7 @@ class ManagerTicketServiceImplTest {
 
         Pageable pageable = PageRequest.of(0, 10);
 
-        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(otherDeptId, null, null, null, pageable))
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(otherDeptId, null, null, pageable))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FORBIDDEN);
@@ -508,15 +508,15 @@ class ManagerTicketServiceImplTest {
         Pageable pageable = PageRequest.of(0, 10);
         Page<Ticket> emptyPage = new PageImpl<>(Collections.emptyList(), pageable, 0);
 
-        when(ticketRepository.findTicketsByDepartmentAndCriteria(myDeptId, null, null, null, pageable))
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(myDeptId, null, null, pageable))
                 .thenReturn(emptyPage);
         when(departmentRepository.findById(myDeptId)).thenReturn(Optional.of(myDept));
 
         Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
-                myDeptId, null, null, null, pageable);
+                myDeptId, null, null, pageable);
 
         assertThat(result).isNotNull();
-        verify(ticketRepository).findTicketsByDepartmentAndCriteria(myDeptId, null, null, null, pageable);
+        verify(ticketRepository).findTicketsByDepartmentAndCriteria(myDeptId, null, null, pageable);
     }
 
     @Test
@@ -536,15 +536,15 @@ class ManagerTicketServiceImplTest {
         Pageable pageable = PageRequest.of(0, 10);
         Page<Ticket> emptyPage = new PageImpl<>(Collections.emptyList(), pageable, 0);
 
-        when(ticketRepository.findTicketsByDepartmentAndCriteria(anyDeptId, null, null, null, pageable))
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(anyDeptId, null, null, pageable))
                 .thenReturn(emptyPage);
         when(departmentRepository.findById(anyDeptId)).thenReturn(Optional.of(anyDept));
 
         Page<TicketResponse> result = managerTicketService.getDepartmentTickets(
-                anyDeptId, null, null, null, pageable);
+                anyDeptId, null, null, pageable);
 
         assertThat(result).isNotNull();
-        verify(ticketRepository).findTicketsByDepartmentAndCriteria(anyDeptId, null, null, null, pageable);
+        verify(ticketRepository).findTicketsByDepartmentAndCriteria(anyDeptId, null, null, pageable);
     }
 
     @Test

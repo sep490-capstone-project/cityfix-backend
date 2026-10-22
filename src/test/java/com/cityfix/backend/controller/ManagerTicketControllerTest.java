@@ -226,11 +226,11 @@ class ManagerTicketControllerTest {
         TicketResponse mockResponse = TicketResponse.builder().id(UUID.randomUUID()).description("Test").build();
         Page<TicketResponse> page = new PageImpl<>(List.of(mockResponse));
 
-        when(managerTicketService.getDepartmentTickets(any(), any(), any(), any(), any(Pageable.class)))
+        when(managerTicketService.getDepartmentTickets(any(), any(), any(), any(Pageable.class)))
                 .thenReturn(page);
 
         ResponseEntity<BaseResponse<Page<TicketResponse>>> response = managerTicketController.getDepartmentTickets(
-                UUID.randomUUID(), null, null, null, PageRequest.of(0, 20)
+                UUID.randomUUID(), null, null, PageRequest.of(0, 20)
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);

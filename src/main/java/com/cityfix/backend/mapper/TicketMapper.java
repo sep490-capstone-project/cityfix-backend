@@ -183,7 +183,7 @@ public interface TicketMapper {
     @Mapping(target = "needsManualReview", source = "needsManualReview")
     @Mapping(target = "isLifeThreatening", constant = "false")
     @Mapping(target = "description", source = "request.description")
-    @Mapping(target = "severity", source = "request.severity")
+    @Mapping(target = "priorityReasoning", source = "request.priorityReasoning")
     @Mapping(target = "priority", source = "request.priority")
     @Mapping(target = "locationMethod", source = "request.locationMethod")
     @Mapping(target = "address", source = "request.address")

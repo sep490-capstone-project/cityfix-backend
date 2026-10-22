@@ -16,8 +16,8 @@ public class TicketResponse {
     private String categoryName;
     private java.util.List<TicketCategoryResponse> categories;
     private java.util.List<SubCategoryResponse> subCategories;
-    private com.cityfix.backend.model.enums.SeverityLevel severity;
     private com.cityfix.backend.model.enums.Priority priority;
+    private String priorityReasoning;
     private com.cityfix.backend.model.enums.LocationMethod locationMethod;
     private String address;
     private com.cityfix.backend.model.enums.TicketStatus status;
