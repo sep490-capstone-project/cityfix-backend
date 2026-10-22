@@ -37,7 +37,7 @@ public class AiServiceImpl implements AiService {
     @Value("${gemini.api.key:GEMINI_API_KEY}")
     private String apiKey;
 
-    @Value("${gemini.model:gemini-2.0-flash}")
+    @Value("${gemini.model:gemini-3.5-flash}")
     private String geminiModel;
 
     private final RestTemplate restTemplate = new RestTemplate();
