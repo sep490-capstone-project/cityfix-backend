@@ -27,6 +27,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.cityfix.backend.util.SecurityUtils;
 
+import com.cityfix.backend.mapper.EvidenceMapper;
+import com.cityfix.backend.model.dto.response.ImageUploadResponse;
+import com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse;
+import com.cityfix.backend.model.entity.ResolutionEvidence;
+import org.springframework.web.multipart.MultipartFile;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +50,7 @@ public class TicketStepServiceImpl implements TicketStepService {
     private final ResolutionEvidenceRepository resolutionEvidenceRepository;
     private final TicketStepMapper ticketStepMapper;
     private final TicketHistoryMapper ticketHistoryMapper;
+    private final EvidenceMapper evidenceMapper;
     private final TicketService ticketService;
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
     private final com.cityfix.backend.service.NotificationService notificationService;
@@ -66,7 +73,20 @@ public class TicketStepServiceImpl implements TicketStepService {
         if (step.getAssignee() == null
                 || currentUser.getUserId() == null
                 || !currentUser.getUserId().equals(step.getAssignee().getUserId())) {
-            throw new AppException(ErrorCode.FORBIDDEN);
+            throw new AppException(ErrorCode.FORBIDDEN, "Bạn không được phân công xử lý bước này.");
+        }
+    }
+
+    private void validateStepPrerequisites(TicketStep targetStep) {
+        if (targetStep == null || targetStep.getDependsOn() == null || targetStep.getDependsOn().isEmpty()) {
+            return;
+        }
+        boolean prerequisitesResolved = targetStep.getDependsOn().stream()
+                .filter(dep -> dep != null && !dep.isDeleted() && dep.getStatus() != AssignmentStatus.CANCELLED)
+                .allMatch(dep -> dep.getStatus() == AssignmentStatus.RESOLVED 
+                              || dep.getStatus() == AssignmentStatus.COMPLETED);
+        if (!prerequisitesResolved) {
+            throw new AppException(ErrorCode.STEP_PREREQUISITES_NOT_MET);
         }
     }
 
@@ -78,6 +98,10 @@ public class TicketStepServiceImpl implements TicketStepService {
 
         User currentUser = getCurrentUser();
         validateStepPermission(step, currentUser);
+
+        if (status == AssignmentStatus.IN_PROGRESS || status == AssignmentStatus.RESOLVED || status == AssignmentStatus.COMPLETED) {
+            validateStepPrerequisites(step);
+        }
 
         AssignmentStatus prevStatus = step.getStatus();
 
@@ -188,5 +212,45 @@ public class TicketStepServiceImpl implements TicketStepService {
         if (!stepsToCancel.isEmpty()) {
             ticketStepRepository.saveAll(stepsToCancel);
         }
+    }
+
+    @Override
+    @Transactional
+    public List<ResolutionEvidenceResponse> uploadEvidences(UUID stepId, List<MultipartFile> files, String resolutionNote) {
+        TicketStep step = ticketStepRepository.findById(stepId)
+                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        User currentUser = getCurrentUser();
+        if (step.getAssignee() == null || !step.getAssignee().getUserId().equals(currentUser.getUserId())) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Bạn không được phân công xử lý bước này.");
+        }
+
+        validateStepPrerequisites(step);
+
+        List<ImageUploadResponse> uploadResponses = ticketService.uploadImage(files, "cityfix/evidences");
+
+        List<ResolutionEvidence> evidences = uploadResponses.stream()
+                .map(res -> evidenceMapper.toResolutionEvidence(step, currentUser, res.getSecureUrl(), resolutionNote))
+                .toList();
+
+        evidences = resolutionEvidenceRepository.saveAll(evidences);
+
+        Ticket ticket = step.getTicket();
+        if (ticket != null && ticketHistoryMapper != null && ticketHistoryRepository != null) {
+            TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                    ticket, currentUser, ActionType.EVIDENCE_SUBMITTED, ticket.getStatus(), ticket.getStatus(), "Đã tải lên bằng chứng xử lý"
+            );
+            if (history != null) {
+                ticketHistoryRepository.save(history);
+            }
+        }
+
+        return evidenceMapper.toResponseList(evidences);
+    }
+
+    @Override
+    @Transactional
+    public List<ResolutionEvidenceResponse> submitEvidence(UUID stepId, List<MultipartFile> files, String resolutionNote) {
+        return uploadEvidences(stepId, files, resolutionNote);
     }
 }

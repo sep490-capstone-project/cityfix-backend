@@ -31,6 +31,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.cityfix.backend.util.SecurityUtils;
+import com.cityfix.backend.util.StepDagValidator;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -105,7 +106,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     }
 
     private TicketStep createOrUpdateTicketStep(
-            Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex) {
+            Ticket ticket, Step step, User assignee, AssignmentStatus status) {
         TicketStep existingStep = ticketStepRepository
                 .findByTicketTicketIdAndStepStepId(ticket.getTicketId(), step.getStepId())
                 .orElse(null);
@@ -113,12 +114,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         if (existingStep != null) {
             existingStep.setAssignee(assignee);
             existingStep.setStatus(status);
-            if (orderIndex != null) {
-                existingStep.setOrderIndex(orderIndex);
-            }
             return ticketStepRepository.save(existingStep);
         } else {
-            TicketStep newStep = ticketStepMapper.toTicketStep(ticket, step, assignee, status, orderIndex);
+            TicketStep newStep = ticketStepMapper.toTicketStep(ticket, step, assignee, status);
             return ticketStepRepository.save(newStep);
         }
     }
@@ -195,7 +193,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 List<TicketStep> allSteps = (ticket.getSteps() != null ? ticket.getSteps() : Collections.<TicketStep>emptyList())
                         .stream()
                         .filter(s -> s != null && !s.isDeleted())
-                        .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
                         .toList();
                 response.setSteps(ticketStepMapper.toTicketStepResponseList(allSteps));
             }
@@ -414,6 +412,21 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         Map<UUID, User> assigneeMap = validateAndFetchAssignees(request.getSteps());
 
         // =========================================================================
+        // 4.1 Validate cấu trúc DAG của các bước xử lý
+        // =========================================================================
+        Set<UUID> allMasterStepIds = request.getSteps().stream()
+                .map(ReviewTicketRequest.StepAssignmentRequest::getStepId)
+                .collect(Collectors.toSet());
+        Map<UUID, Set<UUID>> adjacencyMap = new HashMap<>();
+        for (ReviewTicketRequest.StepAssignmentRequest stepReq : request.getSteps()) {
+            Set<UUID> deps = stepReq.getDependsOnStepIds() != null
+                    ? new HashSet<>(stepReq.getDependsOnStepIds())
+                    : Collections.emptySet();
+            adjacencyMap.put(stepReq.getStepId(), deps);
+        }
+        StepDagValidator.validateDag(allMasterStepIds, adjacencyMap);
+
+        // =========================================================================
         // 5. Cập nhật SOS và Review Note (KHÔNG đổi categoryId theo thiết kế mới)
         // =========================================================================
         if (request.getIsLifeThreatening() != null) {
@@ -429,15 +442,15 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         updateTicketSubCategories(ticket, subCategories);
 
         // =========================================================================
-        // 7. Xử lý Hibernate Collection: Ticket_Step (orphanRemoval = true)
+        // 7. Xử lý Hibernate Collection: Ticket_Step (Quy trình 2 pha & kích hoạt Anchor Steps)
         // =========================================================================
-        updateTicketSteps(ticket, request.getSteps(), stepMap, assigneeMap);
+        List<TicketStep> anchorSteps = updateTicketSteps(ticket, request.getSteps(), stepMap, assigneeMap);
 
         // =========================================================================
-        // 8. Chuyển trạng thái vé: ASSIGNED sau khi đã định tuyến / phân công
+        // 8. Chuyển trạng thái vé: IN_PROGRESS sau khi kích hoạt các anchor step
         // =========================================================================
         TicketStatus prevStatus = ticket.getStatus();
-        ticket.setStatus(TicketStatus.ASSIGNED);
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
         ticket.setNeedsManualReview(false);
 
         // =========================================================================
@@ -455,11 +468,21 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         // =========================================================================
         String historyNote = (request.getReviewNote() != null && !request.getReviewNote().isBlank())
                 ? request.getReviewNote()
-                : "Duyệt thủ công vé thành công, chuyển sang Đã phân công";
+                : "Duyệt thủ công vé thành công, chuyển sang Đang xử lý";
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.MANUAL_APPROVED, prevStatus, TicketStatus.ASSIGNED, historyNote
+                ticket, currentUser, ActionType.MANUAL_APPROVED, prevStatus, TicketStatus.IN_PROGRESS, historyNote
         );
         ticketHistoryRepository.save(history);
+
+        // Kích hoạt thông báo và log TicketHistory cho từng Anchor Step
+        for (TicketStep anchorStep : anchorSteps) {
+            TicketHistory stepHistory = ticketHistoryMapper.toTicketHistory(
+                    ticket, currentUser, ActionType.WORK_STARTED, TicketStatus.IN_PROGRESS, TicketStatus.IN_PROGRESS,
+                    "Bắt đầu thực hiện bước mốc: " + (anchorStep.getStep() != null ? anchorStep.getStep().getStepName() : anchorStep.getId())
+            );
+            ticketHistoryRepository.save(stepHistory);
+            notificationService.notifyStepStarted(anchorStep, currentUser);
+        }
 
         // =========================================================================
         // 12. Gửi thông báo WebSocket & Email cho người tạo vé (Creator)
@@ -592,8 +615,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
     }
 
-    private void updateTicketSteps(Ticket ticket, List<ReviewTicketRequest.StepAssignmentRequest> stepRequests,
-                                   Map<UUID, Step> stepMap, Map<UUID, User> assigneeMap) {
+    private List<TicketStep> updateTicketSteps(Ticket ticket, List<ReviewTicketRequest.StepAssignmentRequest> stepRequests,
+                                               Map<UUID, Step> stepMap, Map<UUID, User> assigneeMap) {
         if (ticket.getSteps() == null) {
             ticket.setSteps(new ArrayList<>());
         }
@@ -609,40 +632,25 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 .filter(ts -> ts.getStep() != null)
                 .collect(Collectors.toMap(ts -> ts.getStep().getStepId(), Function.identity(), (a, b) -> a));
 
-        // 2. Sắp xếp theo orderIndex tăng dần để tính nối tiếp startedAt và deadline
-        List<ReviewTicketRequest.StepAssignmentRequest> sortedRequests = stepRequests.stream()
-                .sorted(Comparator.comparing(ReviewTicketRequest.StepAssignmentRequest::getOrderIndex,
-                        Comparator.nullsLast(Comparator.naturalOrder())))
-                .toList();
-
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime prevDeadline = now;
 
-        for (ReviewTicketRequest.StepAssignmentRequest stepReq : sortedRequests) {
+        // Pha 1: Tạo/Cập nhật các entity TicketStep để có ID thực tế
+        for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
             Step step = stepMap.get(stepReq.getStepId());
             User assignee = assigneeMap.get(stepReq.getAssigneeId());
-            LocalDateTime stepStart = prevDeadline;
             LocalDateTime deadline = stepReq.getDeadline();
-            if (deadline == null && step != null && step.getDuration() != null && step.getDuration() > 0) {
-                deadline = stepStart.plusHours(step.getDuration());
-            }
-            if (deadline != null) {
-                prevDeadline = deadline;
-            }
 
             TicketStep ticketStep = existingStepMap.get(stepReq.getStepId());
             if (ticketStep != null) {
                 ticketStep.setAssignee(assignee);
                 ticketStep.setStatus(AssignmentStatus.ASSIGNED);
-                ticketStep.setOrderIndex(stepReq.getOrderIndex());
-                ticketStep.setStartedAt(stepStart);
                 ticketStep.setDeadline(deadline);
                 ticketStep.setNotes(stepReq.getNotes());
                 ticketStep.setUpdatedAt(now);
             } else {
                 ticketStep = ticketStepMapper.toTicketStepWithTimeline(
                         ticket, step, assignee, AssignmentStatus.ASSIGNED,
-                        stepReq.getOrderIndex(), stepStart, deadline, stepReq.getNotes()
+                        null, deadline, stepReq.getNotes()
                 );
                 if (ticketStep == null) {
                     ticketStep = TicketStep.builder()
@@ -650,19 +658,82 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                             .step(step)
                             .assignee(assignee)
                             .status(AssignmentStatus.ASSIGNED)
-                            .orderIndex(stepReq.getOrderIndex())
-                            .startedAt(stepStart)
                             .deadline(deadline)
                             .notes(stepReq.getNotes())
+                            .dependsOn(new HashSet<>())
                             .build();
                 } else {
-                    ticketStep.setStartedAt(stepStart);
                     ticketStep.setDeadline(deadline);
                     ticketStep.setNotes(stepReq.getNotes());
+                    if (ticketStep.getDependsOn() == null) {
+                        ticketStep.setDependsOn(new HashSet<>());
+                    }
                 }
                 ticket.getSteps().add(ticketStep);
             }
         }
+
+        // Lưu các entity TicketStep xuống DB để sinh ID thực tế
+        List<TicketStep> savedSteps = ticketStepRepository.saveAll(ticket.getSteps());
+        if (ticket.getSteps() == null) {
+            ticket.setSteps(new ArrayList<>(savedSteps));
+        } else if (ticket.getSteps() != savedSteps) {
+            List<TicketStep> copy = new ArrayList<>(savedSteps);
+            ticket.getSteps().clear();
+            ticket.getSteps().addAll(copy);
+        }
+
+        // Lưu map tra cứu Map<UUID, TicketStep> masterStepToTicketStepMap
+        Map<UUID, TicketStep> masterStepToTicketStepMap = new HashMap<>();
+        for (TicketStep ts : ticket.getSteps()) {
+            if (ts.getStep() != null && ts.getStep().getStepId() != null) {
+                masterStepToTicketStepMap.put(ts.getStep().getStepId(), ts);
+            }
+        }
+
+        // Pha 2: Dựa trên dependsOnStepIds (danh sách master step ID), map sang TicketStep thực thể tương ứng và nạp vào step.getDependsOn()
+        for (ReviewTicketRequest.StepAssignmentRequest stepReq : stepRequests) {
+            TicketStep currentStep = masterStepToTicketStepMap.get(stepReq.getStepId());
+            if (currentStep != null) {
+                Set<TicketStep> dependsOnSet = new HashSet<>();
+                if (stepReq.getDependsOnStepIds() != null) {
+                    for (UUID masterDepId : stepReq.getDependsOnStepIds()) {
+                        TicketStep depTicketStep = masterStepToTicketStepMap.get(masterDepId);
+                        if (depTicketStep != null) {
+                            dependsOnSet.add(depTicketStep);
+                        }
+                    }
+                }
+                currentStep.setDependsOn(dependsOnSet);
+            }
+        }
+
+        // Kích hoạt Anchor Steps: Quét tất cả các TicketStep có dependsOn.isEmpty(), chuyển ngay sang IN_PROGRESS, set deadline
+        List<TicketStep> anchorSteps = new ArrayList<>();
+        for (TicketStep step : ticket.getSteps()) {
+            if (step.getDependsOn() == null || step.getDependsOn().isEmpty()) {
+                step.setStatus(AssignmentStatus.IN_PROGRESS);
+                step.setStartedAt(now);
+                if (step.getDeadline() == null && step.getStep() != null && step.getStep().getDuration() != null && step.getStep().getDuration() > 0) {
+                    step.setDeadline(now.plusHours(step.getStep().getDuration()));
+                }
+                anchorSteps.add(step);
+            } else {
+                step.setStatus(AssignmentStatus.ASSIGNED);
+                step.setStartedAt(null);
+            }
+            step.setUpdatedAt(now);
+        }
+
+        savedSteps = ticketStepRepository.saveAll(ticket.getSteps());
+        if (ticket.getSteps() == null) {
+            ticket.setSteps(new ArrayList<>(savedSteps));
+        } else if (ticket.getSteps() != savedSteps) {
+            List<TicketStep> copy = new ArrayList<>(savedSteps);
+            ticket.getSteps().clear();
+            ticket.getSteps().addAll(copy);
+        }
+        return anchorSteps;
     }
 
     private void sendReviewSuccessNotification(Ticket ticket) {
@@ -762,7 +833,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         if (ticket != null) {
             List<TicketStep> steps = null;
             if (ticket.getTicketId() != null) {
-                steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticket.getTicketId());
+                steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticket.getTicketId());
             }
             if (steps == null || steps.isEmpty()) {
                 steps = ticket.getSteps();
@@ -772,7 +843,12 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 if (!cascaded.isEmpty()) {
                     ticketStepRepository.saveAll(cascaded);
                 }
-                ticket.setSteps(steps);
+                if (ticket.getSteps() == null) {
+                    ticket.setSteps(new ArrayList<>(steps));
+                } else if (ticket.getSteps() != steps) {
+                    ticket.getSteps().clear();
+                    ticket.getSteps().addAll(steps);
+                }
             }
             ticket.setDeadline(resolveTicketDeadline(ticket));
             ticketRepository.save(ticket);
@@ -792,7 +868,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         Map<UUID, TicketStep> stepMap = steps.stream()
                 .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
 
@@ -810,7 +886,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         LocalDateTime now = LocalDateTime.now();
         List<TicketStep> sortedSteps = steps.stream()
-                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
                 .collect(Collectors.toList());
 
         boolean cascade = false;
@@ -843,7 +919,12 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         steps = ticketStepRepository.saveAll(steps);
 
-        ticket.setSteps(steps);
+        if (ticket.getSteps() == null) {
+            ticket.setSteps(new ArrayList<>(steps));
+        } else if (ticket.getSteps() != steps) {
+            ticket.getSteps().clear();
+            ticket.getSteps().addAll(steps);
+        }
         ticket.setDeadline(resolveTicketDeadline(ticket));
         ticketRepository.save(ticket);
 
@@ -862,7 +943,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         List<TicketStep> sortedSteps = steps.stream()
                 .filter(Objects::nonNull)
                 .filter(s -> !s.isDeleted())
-                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
         boolean foundTarget = false;
@@ -896,6 +977,100 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
     @Override
     @Transactional
+    public TicketStepResponse updateTicketStepDependencies(UUID ticketStepId, UpdateTicketStepDependenciesRequest request) {
+        User currentUser = getCurrentUser();
+        if (!isManager(currentUser)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        TicketStep targetStep = ticketStepRepository.findById(ticketStepId)
+                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        if (targetStep.isDeleted()) {
+            throw new AppException(ErrorCode.STEP_NOT_FOUND);
+        }
+
+        Ticket ticket = targetStep.getTicket();
+        if (ticket == null) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        List<TicketStep> allSteps = ticketStepRepository.findByTicketTicketId(ticket.getTicketId())
+                .stream()
+                .filter(s -> !s.isDeleted())
+                .toList();
+
+        Map<UUID, TicketStep> stepByIdMap = allSteps.stream()
+                .collect(Collectors.toMap(TicketStep::getId, Function.identity()));
+
+        List<UUID> requestedDepIds = request.getDependsOnStepIds() != null
+                ? request.getDependsOnStepIds()
+                : Collections.emptyList();
+
+        // 1. Kiểm tra không tự phụ thuộc
+        if (requestedDepIds.contains(ticketStepId)) {
+            throw new AppException(ErrorCode.INVALID_STEP_DEPENDENCY);
+        }
+
+        // 2. Kiểm tra các bước phụ thuộc phải cùng thuộc một vé
+        for (UUID depId : requestedDepIds) {
+            if (!stepByIdMap.containsKey(depId)) {
+                throw new AppException(ErrorCode.INVALID_STEP_DEPENDENCY);
+            }
+        }
+
+        // 3. Xây dựng adjacency map mô phỏng sau khi cập nhật
+        Set<UUID> allStepIds = stepByIdMap.keySet();
+        Map<UUID, Set<UUID>> adjacencyMap = new HashMap<>();
+        for (TicketStep s : allSteps) {
+            if (s.getId().equals(ticketStepId)) {
+                adjacencyMap.put(s.getId(), new HashSet<>(requestedDepIds));
+            } else {
+                Set<UUID> existingDeps = (s.getDependsOn() != null)
+                        ? s.getDependsOn().stream()
+                                .filter(dep -> !dep.isDeleted())
+                                .map(TicketStep::getId)
+                                .collect(Collectors.toSet())
+                        : Collections.emptySet();
+                adjacencyMap.put(s.getId(), existingDeps);
+            }
+        }
+
+        // 4. Kiểm tra chu trình và đảm bảo sau khi sửa vẫn còn ít nhất 1 anchor step
+        StepDagValidator.validateDag(allStepIds, adjacencyMap);
+
+        // 5. Cập nhật lại trường dependsOn cho stepId
+        Set<TicketStep> newDependsOn = requestedDepIds.stream()
+                .map(stepByIdMap::get)
+                .collect(Collectors.toSet());
+
+        targetStep.setDependsOn(newDependsOn);
+        LocalDateTime now = LocalDateTime.now();
+        targetStep.setUpdatedAt(now);
+
+        // Nếu vé đang IN_PROGRESS và step đang ASSIGNED mà các điều kiện tiên quyết đã hoàn tất, tự kích hoạt
+        if (ticket.getStatus() == TicketStatus.IN_PROGRESS && targetStep.getStatus() == AssignmentStatus.ASSIGNED) {
+            boolean allPrerequisitesResolved = newDependsOn.stream()
+                    .filter(dep -> !dep.isDeleted() && dep.getStatus() != AssignmentStatus.CANCELLED)
+                    .allMatch(dep -> dep.getStatus() == AssignmentStatus.RESOLVED 
+                                  || dep.getStatus() == AssignmentStatus.COMPLETED);
+            if (allPrerequisitesResolved) {
+                targetStep.setStatus(AssignmentStatus.IN_PROGRESS);
+                targetStep.setStartedAt(now);
+                if (targetStep.getDeadline() == null && targetStep.getStep() != null && targetStep.getStep().getDuration() != null && targetStep.getStep().getDuration() > 0) {
+                    targetStep.setDeadline(now.plusHours(targetStep.getStep().getDuration()));
+                }
+                notificationService.notifyStepStarted(targetStep, currentUser);
+            }
+        }
+
+        targetStep = ticketStepRepository.save(targetStep);
+        return ticketStepMapper.toTicketStepResponse(targetStep);
+    }
+
+    @Override
+    @Transactional
+    @Deprecated(since = "v2.0", forRemoval = false)
     public TicketStepResponse updateTicketStepOrderIndex(UUID ticketStepId, UpdateTicketStepOrderRequest request) {
         User currentUser = getCurrentUser();
         if (!isManager(currentUser)) {
@@ -905,14 +1080,12 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
-        ticketStepMapper.updateOrderIndex(request, ticketStep);
-        ticketStep = ticketStepRepository.save(ticketStep);
-
         return ticketStepMapper.toTicketStepResponse(ticketStep);
     }
 
     @Override
     @Transactional
+    @Deprecated(since = "v2.0", forRemoval = false)
     public List<TicketStepResponse> reorderTicketSteps(UUID ticketId, ReorderTicketStepsRequest request) {
         User currentUser = getCurrentUser();
         if (!isManager(currentUser)) {
@@ -923,24 +1096,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.TICKET_NOT_FOUND);
         }
 
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
-        Map<UUID, TicketStep> stepMap = steps.stream()
-                .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
-
-        for (StepOrderItem item : request.getStepOrders()) {
-            TicketStep step = stepMap.get(item.getTicketStepId());
-            if (step == null) {
-                throw new AppException(ErrorCode.STEP_NOT_FOUND);
-            }
-            step.setOrderIndex(item.getOrderIndex());
-        }
-
-        List<TicketStep> sortedSteps = steps.stream()
-                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
-                .collect(Collectors.toList());
-        sortedSteps = ticketStepRepository.saveAll(sortedSteps);
-
-        return ticketStepMapper.toTicketStepResponseList(sortedSteps);
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
+        return ticketStepMapper.toTicketStepResponseList(steps);
     }
 
     @Override
@@ -958,12 +1115,12 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             if (response != null) {
                 List<TicketStep> steps = ticket.getSteps();
                 if ((steps == null || steps.isEmpty()) && ticket.getTicketId() != null) {
-                    steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticket.getTicketId());
+                    steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticket.getTicketId());
                 }
                 List<TicketStep> allSteps = (steps != null ? steps : Collections.<TicketStep>emptyList())
                         .stream()
                         .filter(s -> s != null && !s.isDeleted())
-                        .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
                         .toList();
                 response.setSteps(ticketStepMapper.toTicketStepResponseList(allSteps));
             }

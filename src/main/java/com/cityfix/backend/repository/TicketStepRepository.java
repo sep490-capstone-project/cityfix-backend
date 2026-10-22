@@ -5,6 +5,7 @@ import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,15 +15,23 @@ import java.util.UUID;
 
 public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
+    @Override
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    java.util.Optional<TicketStep> findById(UUID id);
+
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
     List<TicketStep> findByTicketTicketId(UUID ticketId);
+
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    List<TicketStep> findByTicket_TicketId(UUID ticketId);
 
     java.util.Optional<TicketStep> findByTicketTicketIdAndStepStepId(UUID ticketId, UUID stepId);
 
-    List<TicketStep> findByTicketTicketIdOrderByOrderIndexAsc(UUID ticketId);
+    List<TicketStep> findByTicketTicketIdOrderByCreatedAtAsc(UUID ticketId);
 
     List<TicketStep> findByTicketTicketIdAndStatusIn(UUID ticketId, List<AssignmentStatus> statuses);
 
-    List<TicketStep> findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(UUID ticketId, List<AssignmentStatus> statuses);
+    List<TicketStep> findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(UUID ticketId, List<AssignmentStatus> statuses);
 
     Page<TicketStep> findByAssigneeUserIdAndStatusIn(UUID assigneeId, List<AssignmentStatus> statuses, Pageable pageable);
 

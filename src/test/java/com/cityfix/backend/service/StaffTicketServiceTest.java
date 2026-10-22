@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -118,7 +119,7 @@ public class StaffTicketServiceTest {
         step.setAssignee(staffUser);
         step.setTicket(ticket);
         ticket.getSteps().add(step);
-        lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(any(), any()))
+        lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(any(), any()))
                 .thenReturn(List.of(step));
         lenient().when(ticketStepRepository.findByTicketTicketIdAndStatusIn(any(), any()))
                 .thenReturn(List.of(step));
@@ -221,32 +222,6 @@ public class StaffTicketServiceTest {
                 .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
     }
 
-    @Test
-    @DisplayName("submitEvidence_multipart_success")
-    void submitEvidence_multipart_success() {
-        setupSecurityContext();
-        setupActiveAssignment();
-
-        MultipartFile mockFile = mock(MultipartFile.class);
-        List<MultipartFile> files = List.of(mockFile);
-        
-        ImageUploadResponse uploadRes = ImageUploadResponse.builder().secureUrl("http://image.url").build();
-        ResolutionEvidence mockEvidence = new ResolutionEvidence();
-
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(ticketService.uploadImage(any(), eq("cityfix/evidences"))).thenReturn(List.of(uploadRes));
-        when(evidenceMapper.toResolutionEvidence(any(), any(), any(), any())).thenReturn(mockEvidence);
-        when(resolutionEvidenceRepository.saveAll(any())).thenReturn(new ArrayList<>());
-        
-        staffTicketService.submitEvidence(ticketId, files, "Note");
-
-        verify(ticketService).uploadImage(any(), eq("cityfix/evidences"));
-        verify(evidenceMapper).toResolutionEvidence(any(), any(), eq("http://image.url"), eq("Note"));
-        verify(resolutionEvidenceRepository).saveAll(anyList());
-        verify(ticketHistoryRepository).save(any());
-        verify(ticketWorkflowEngine, never()).handleStepCompletion(any());
-        assertThat(ticket.getSteps().get(0).getStatus()).isEqualTo(AssignmentStatus.ASSIGNED);
-    }
 
     @Test
     @DisplayName("updateTicketStatus_stepOfDifferentDepartment_throwsFORBIDDEN")
@@ -431,5 +406,91 @@ public class StaffTicketServiceTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("startStep_whenPrerequisitesNotMet_throwsStepPrerequisitesNotMet")
+    void startStep_whenPrerequisitesNotMet_throwsStepPrerequisitesNotMet() {
+        setupSecurityContext();
+
+        TicketStep prereqStep = new TicketStep();
+        prereqStep.setId(UUID.randomUUID());
+        prereqStep.setStatus(AssignmentStatus.IN_PROGRESS);
+
+        TicketStep targetStep = new TicketStep();
+        targetStep.setId(UUID.randomUUID());
+        targetStep.setStatus(AssignmentStatus.ASSIGNED);
+        targetStep.setAssignee(staffUser);
+        targetStep.setTicket(ticket);
+        targetStep.setDependsOn(Set.of(prereqStep));
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setSteps(new ArrayList<>(List.of(prereqStep, targetStep)));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+        request.setStepId(targetStep.getId());
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.IN_PROGRESS, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.STEP_PREREQUISITES_NOT_MET);
+    }
+
+    @Test
+    @DisplayName("completeStep_whenPrerequisitesNotMet_throwsStepPrerequisitesNotMet")
+    void completeStep_whenPrerequisitesNotMet_throwsStepPrerequisitesNotMet() {
+        setupSecurityContext();
+
+        TicketStep prereqStep = new TicketStep();
+        prereqStep.setId(UUID.randomUUID());
+        prereqStep.setStatus(AssignmentStatus.ASSIGNED);
+
+        TicketStep targetStep = new TicketStep();
+        targetStep.setId(UUID.randomUUID());
+        targetStep.setStatus(AssignmentStatus.IN_PROGRESS);
+        targetStep.setAssignee(staffUser);
+        targetStep.setTicket(ticket);
+        targetStep.setDependsOn(Set.of(prereqStep));
+
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+        ticket.setSteps(new ArrayList<>(List.of(prereqStep, targetStep)));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        UpdateStaffTicketStatusRequest request = new UpdateStaffTicketStatusRequest();
+        request.setStepId(targetStep.getId());
+
+        assertThatThrownBy(() -> staffTicketService.updateTicketStatus(ticketId, TicketStatus.RESOLVED, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.STEP_PREREQUISITES_NOT_MET);
+    }
+
+    @Test
+    @DisplayName("submitEvidence_whenPrerequisitesNotMet_throwsStepPrerequisitesNotMet")
+    void submitEvidence_whenPrerequisitesNotMet_throwsStepPrerequisitesNotMet() {
+        setupSecurityContext();
+
+        TicketStep prereqStep = new TicketStep();
+        prereqStep.setId(UUID.randomUUID());
+        prereqStep.setStatus(AssignmentStatus.IN_PROGRESS);
+
+        TicketStep targetStep = new TicketStep();
+        targetStep.setId(UUID.randomUUID());
+        targetStep.setStatus(AssignmentStatus.ASSIGNED);
+        targetStep.setAssignee(staffUser);
+        targetStep.setTicket(ticket);
+        targetStep.setDependsOn(Set.of(prereqStep));
+
+        when(ticketStepRepository.findById(targetStep.getId())).thenReturn(Optional.of(targetStep));
+
+        MultipartFile file = mock(MultipartFile.class);
+
+        assertThatThrownBy(() -> staffTicketService.submitEvidence(targetStep.getId(), List.of(file), "Bằng chứng"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.STEP_PREREQUISITES_NOT_MET);
     }
 }

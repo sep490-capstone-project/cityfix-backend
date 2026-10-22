@@ -45,6 +45,12 @@ class TicketStepServiceImplTest {
     @Mock
     private TicketStepMapper ticketStepMapper;
     @Mock
+    private com.cityfix.backend.mapper.EvidenceMapper evidenceMapper;
+    @Mock
+    private com.cityfix.backend.mapper.TicketHistoryMapper ticketHistoryMapper;
+    @Mock
+    private com.cityfix.backend.repository.TicketHistoryRepository ticketHistoryRepository;
+    @Mock
     private TicketService ticketService;
     @Mock
     private TicketWorkflowEngine ticketWorkflowEngine;
@@ -358,5 +364,62 @@ class TicketStepServiceImplTest {
             List<TicketStep> saved = (List<TicketStep>) iterable;
             return saved.size() == 2;
         }));
+    }
+
+    @Test
+    @DisplayName("submitEvidence_whenCurrentUserIsAssignee_success")
+    void submitEvidence_whenCurrentUserIsAssignee_success() {
+        mockCurrentUser(staffUser);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        org.springframework.web.multipart.MultipartFile file = mock(org.springframework.web.multipart.MultipartFile.class);
+        List<org.springframework.web.multipart.MultipartFile> files = List.of(file);
+        com.cityfix.backend.model.dto.response.ImageUploadResponse uploadRes =
+                com.cityfix.backend.model.dto.response.ImageUploadResponse.builder().secureUrl("https://image.url/pic.jpg").build();
+        when(ticketService.uploadImage(files, "cityfix/evidences")).thenReturn(List.of(uploadRes));
+
+        ResolutionEvidence evidence = ResolutionEvidence.builder()
+                .evidenceId(UUID.randomUUID())
+                .ticketStep(step)
+                .staff(staffUser)
+                .imageUrl("https://image.url/pic.jpg")
+                .resolutionNote("Đã xử lý xong")
+                .build();
+        when(evidenceMapper.toResolutionEvidence(eq(step), eq(staffUser), eq("https://image.url/pic.jpg"), eq("Đã xử lý xong")))
+                .thenReturn(evidence);
+        when(resolutionEvidenceRepository.saveAll(anyList())).thenReturn(List.of(evidence));
+
+        com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse evidenceRes =
+                com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse.builder()
+                        .evidenceId(evidence.getEvidenceId())
+                        .imageUrl("https://image.url/pic.jpg")
+                        .resolutionNote("Đã xử lý xong")
+                        .build();
+        when(evidenceMapper.toResponseList(List.of(evidence))).thenReturn(List.of(evidenceRes));
+
+        List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> result =
+                ticketStepService.submitEvidence(stepId, files, "Đã xử lý xong");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getImageUrl()).isEqualTo("https://image.url/pic.jpg");
+        verify(resolutionEvidenceRepository).saveAll(anyList());
+    }
+
+    @Test
+    @DisplayName("submitEvidence_whenCurrentUserIsNotAssignee_throwsForbidden")
+    void submitEvidence_whenCurrentUserIsNotAssignee_throwsForbidden() {
+        mockCurrentUser(otherStaffUser);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        org.springframework.web.multipart.MultipartFile file = mock(org.springframework.web.multipart.MultipartFile.class);
+        List<org.springframework.web.multipart.MultipartFile> files = List.of(file);
+
+        assertThatThrownBy(() -> ticketStepService.submitEvidence(stepId, files, "Ghi chú"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketService, never()).uploadImage(any(), any());
+        verify(resolutionEvidenceRepository, never()).saveAll(any());
     }
 }

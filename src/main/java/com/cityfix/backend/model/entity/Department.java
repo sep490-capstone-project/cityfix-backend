@@ -41,7 +41,4 @@ public class Department extends BaseEntity {
     @Builder.Default
     private List<UserDepartment> userDepartments = new java.util.ArrayList<>();
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "manager_id")
-    private User manager;
 }

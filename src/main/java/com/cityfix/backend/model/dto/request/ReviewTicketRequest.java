@@ -40,8 +40,8 @@ public class ReviewTicketRequest {
         @NotNull(message = "Mã nhân viên phân công (assigneeId) không được để trống")
         private UUID assigneeId;
 
-        @NotNull(message = "Thứ tự thực hiện (orderIndex) không được để trống")
-        private Integer orderIndex;
+
+        private List<UUID> dependsOnStepIds;
 
         private LocalDateTime deadline;
 

@@ -134,7 +134,6 @@ class NotificationServiceTest {
         department = Department.builder()
                 .departmentId(UUID.randomUUID())
                 .name("Phòng Quản Lý Đô Thị")
-                .manager(manager1)
                 .build();
 
         staff = User.builder()
@@ -403,7 +402,6 @@ class NotificationServiceTest {
         Department deletedDept = Department.builder()
                 .departmentId(UUID.randomUUID())
                 .name("Phòng Đã Xóa")
-                .manager(manager1)
                 .build();
         deletedDept.setDeleted(true);
 

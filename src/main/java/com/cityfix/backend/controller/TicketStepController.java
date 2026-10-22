@@ -58,7 +58,7 @@ public class TicketStepController {
             @PathVariable UUID stepId,
             @RequestPart("files") List<MultipartFile> files,
             @RequestParam(value = "resolutionNote", required = false) String resolutionNote) {
-        List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> response = staffTicketService.submitEvidence(stepId, files, resolutionNote);
+        List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> response = ticketStepService.submitEvidence(stepId, files, resolutionNote);
         return ResponseEntity.ok(BaseResponse.success("Nộp bằng chứng xử lý cho bước thành công", response));
     }
 }

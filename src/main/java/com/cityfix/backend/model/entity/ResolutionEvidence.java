@@ -35,7 +35,7 @@ public class ResolutionEvidence {
     @Column(name = "resolution_note", columnDefinition = "TEXT")
     private String resolutionNote;
 
-    @CreationTimestamp
+    @Builder.Default
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt = LocalDateTime.now();
 }
