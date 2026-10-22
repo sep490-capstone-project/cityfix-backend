@@ -34,8 +34,12 @@ public interface ManagerTicketService {
 
     List<TicketStepResponse> updateTicketStepDeadlines(UUID ticketId, UpdateTicketStepDeadlinesRequest request);
 
+    TicketStepResponse updateTicketStepDependencies(UUID ticketStepId, UpdateTicketStepDependenciesRequest request);
+
+    @Deprecated(since = "v2.0", forRemoval = false)
     TicketStepResponse updateTicketStepOrderIndex(UUID ticketStepId, UpdateTicketStepOrderRequest request);
 
+    @Deprecated(since = "v2.0", forRemoval = false)
     List<TicketStepResponse> reorderTicketSteps(UUID ticketId, ReorderTicketStepsRequest request);
 
     Page<TicketResponse> getResolvedTickets(Pageable pageable);

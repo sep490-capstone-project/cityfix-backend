@@ -20,7 +20,7 @@ public class TicketStepResponse {
     private UUID assigneeId;
     private String assigneeName;
     private AssignmentStatus status;
-    private Integer orderIndex;
+    private java.util.List<UUID> dependsOnStepIds;
     private LocalDateTime startedAt;
     private LocalDateTime completedAt;
     private LocalDateTime deadline;

@@ -156,15 +156,15 @@ public class TicketServiceImpl implements TicketService {
         }
     }
 
-    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex) {
-        createOrUpdateTicketStep(ticket, step, assignee, status, orderIndex, null, null);
+    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status) {
+        createOrUpdateTicketStep(ticket, step, assignee, status, null, null);
     }
 
-    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex, LocalDateTime deadline) {
-        createOrUpdateTicketStep(ticket, step, assignee, status, orderIndex, null, deadline);
+    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, LocalDateTime deadline) {
+        createOrUpdateTicketStep(ticket, step, assignee, status, null, deadline);
     }
 
-    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, Integer orderIndex, LocalDateTime startedAt, LocalDateTime deadline) {
+    private void createOrUpdateTicketStep(Ticket ticket, Step step, User assignee, AssignmentStatus status, LocalDateTime startedAt, LocalDateTime deadline) {
         if (ticket.getSteps() == null) {
             ticket.setSteps(new ArrayList<>());
         }
@@ -176,9 +176,6 @@ public class TicketServiceImpl implements TicketService {
         if (existingStep != null) {
             existingStep.setAssignee(assignee);
             existingStep.setStatus(status);
-            if (orderIndex != null) {
-                existingStep.setOrderIndex(orderIndex);
-            }
             if (startedAt != null) {
                 existingStep.setStartedAt(startedAt);
             }
@@ -187,9 +184,9 @@ public class TicketServiceImpl implements TicketService {
             }
             ticketStepRepository.save(existingStep);
         } else {
-            TicketStep ts = ticketStepMapper.toTicketStepWithTimeline(ticket, step, assignee, status, orderIndex, startedAt, deadline, null);
+            TicketStep ts = ticketStepMapper.toTicketStepWithTimeline(ticket, step, assignee, status, startedAt, deadline, null);
             if (ts == null) {
-                ts = ticketStepMapper.toTicketStep(ticket, step, assignee, status, orderIndex);
+                ts = ticketStepMapper.toTicketStep(ticket, step, assignee, status);
             }
             if (ts == null) {
                 ts = TicketStep.builder()
@@ -197,7 +194,6 @@ public class TicketServiceImpl implements TicketService {
                         .step(step)
                         .assignee(assignee)
                         .status(status)
-                        .orderIndex(orderIndex)
                         .startedAt(startedAt)
                         .deadline(deadline)
                         .build();
@@ -374,7 +370,6 @@ public class TicketServiceImpl implements TicketService {
         }
         ticket = ticketRepository.save(ticket);
 
-        int currentOrder = 1;
         LocalDateTime currentStart = ticket.getCreatedAt() != null ? ticket.getCreatedAt() : LocalDateTime.now();
         for (SubCategory subCat : subCategories) {
             TicketSubCategory tsc = TicketSubCategory.builder()
@@ -384,7 +379,7 @@ public class TicketServiceImpl implements TicketService {
             ticketSubCategoryRepository.save(tsc);
             ticket.getSubCategories().add(tsc);
 
-            // Persist corresponding TicketStep rows with autoStaff and incrementing orderIndex
+            // Persist corresponding TicketStep rows with autoStaff
             if (!finalNeedsReview && autoStaff != null) {
                 List<Step> steps = stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCat.getSubCategoryId());
                 for (Step s : steps) {
@@ -394,7 +389,7 @@ public class TicketServiceImpl implements TicketService {
                         stepDeadline = stepStart.plusHours(s.getDuration());
                         currentStart = stepDeadline;
                     }
-                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.ASSIGNED, currentOrder++, stepStart, stepDeadline);
+                    createOrUpdateTicketStep(ticket, s, autoStaff, AssignmentStatus.ASSIGNED, stepStart, stepDeadline);
                 }
             }
         }
@@ -532,11 +527,11 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID categoryId) {
-        if (latitude == null || longitude == null || categoryId == null) {
+    public List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID subCategoryId) {
+        if (latitude == null || longitude == null || subCategoryId == null) {
             throw new AppException(ErrorCode.VALIDATION_ERROR);
         }
-        List<DuplicateTicketProjection> projections = ticketRepository.findDuplicateTickets(latitude, longitude, categoryId);
+        List<DuplicateTicketProjection> projections = ticketRepository.findDuplicateTickets(latitude, longitude, subCategoryId);
         return ticketMapper.toDuplicateTicketResponseList(projections);
     }
     
@@ -577,7 +572,7 @@ public class TicketServiceImpl implements TicketService {
 
         // Reset old active steps to ASSIGNED before re-assigning
         List<TicketStep> activeSteps =
-                ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
+                ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(
                         ticketId,
                         List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS)
                 );
@@ -587,7 +582,6 @@ public class TicketServiceImpl implements TicketService {
             ticketStepRepository.save(oldStep);
         }
 
-        int index = ticket.getSteps() != null ? ticket.getSteps().size() : 0;
         if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
             LocalDateTime currentStart = LocalDateTime.now();
             for (TicketSubCategory tsc : ticket.getSubCategories()) {
@@ -600,7 +594,7 @@ public class TicketServiceImpl implements TicketService {
                             stepDeadline = stepStart.plusHours(s.getDuration());
                             currentStart = stepDeadline;
                         }
-                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.ASSIGNED, index++, stepStart, stepDeadline);
+                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.ASSIGNED, stepStart, stepDeadline);
                     }
                 }
             }
@@ -651,7 +645,8 @@ public class TicketServiceImpl implements TicketService {
                         .filter(s -> s != null && !s.isDeleted())
                         .filter(s -> s.getAssignee() != null && currentUser.getUserId().equals(s.getAssignee().getUserId()))
                         .filter(s -> targetStatuses.contains(s.getStatus()))
-                        .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                         .toList();
                 response.setSteps(ticketStepMapper.toTicketStepResponseList(staffSteps));
             }
@@ -673,7 +668,7 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
         }
 
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(
                 ticketId, List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS));
 
         TicketStep stepToAssign;
@@ -854,7 +849,7 @@ public class TicketServiceImpl implements TicketService {
 
         Ticket ticket = ticketStep.getTicket();
         if (ticket != null && ticket.getTicketId() != null) {
-            List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticket.getTicketId());
+            List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticket.getTicketId());
             if (steps == null || steps.isEmpty()) {
                 steps = ticket.getSteps();
             }
@@ -883,7 +878,7 @@ public class TicketServiceImpl implements TicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         Map<UUID, TicketStep> stepMap = steps.stream()
                 .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
 
@@ -901,7 +896,8 @@ public class TicketServiceImpl implements TicketService {
 
         LocalDateTime now = LocalDateTime.now();
         List<TicketStep> sortedSteps = steps.stream()
-                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .collect(Collectors.toList());
 
         boolean cascade = false;
@@ -953,7 +949,8 @@ public class TicketServiceImpl implements TicketService {
         List<TicketStep> sortedSteps = steps.stream()
                 .filter(Objects::nonNull)
                 .filter(s -> !s.isDeleted())
-                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
         boolean foundTarget = false;
@@ -996,9 +993,6 @@ public class TicketServiceImpl implements TicketService {
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
-        ticketStepMapper.updateOrderIndex(request, ticketStep);
-        ticketStep = ticketStepRepository.save(ticketStep);
-
         return ticketStepMapper.toTicketStepResponse(ticketStep);
     }
 
@@ -1014,24 +1008,8 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.TICKET_NOT_FOUND);
         }
 
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
-        Map<UUID, TicketStep> stepMap = steps.stream()
-                .collect(Collectors.toMap(TicketStep::getId, java.util.function.Function.identity()));
-
-        for (StepOrderItem item : request.getStepOrders()) {
-            TicketStep step = stepMap.get(item.getTicketStepId());
-            if (step == null) {
-                throw new AppException(ErrorCode.STEP_NOT_FOUND);
-            }
-            step.setOrderIndex(item.getOrderIndex());
-        }
-
-        List<TicketStep> sortedSteps = steps.stream()
-                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
-                .collect(Collectors.toList());
-        sortedSteps = ticketStepRepository.saveAll(sortedSteps);
-
-        return ticketStepMapper.toTicketStepResponseList(sortedSteps);
+        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
+        return ticketStepMapper.toTicketStepResponseList(steps);
     }
 
     @Override

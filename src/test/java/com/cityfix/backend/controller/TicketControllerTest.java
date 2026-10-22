@@ -64,6 +64,7 @@ class TicketControllerTest {
     private CreateTicketRequest validCreateRequest;
     private TicketResponse mockTicketResponse;
     private UUID categoryId;
+    private UUID subCategoryId;
     private String email;
 
     @BeforeAll
@@ -76,6 +77,7 @@ class TicketControllerTest {
     void setUp() {
         email = "resident@cityfix.com";
         categoryId = UUID.randomUUID();
+        subCategoryId = UUID.randomUUID();
 
         validCreateRequest = new CreateTicketRequest();
         validCreateRequest.setDescription("Mặt đường xuất hiện ổ gà lớn");
@@ -234,11 +236,11 @@ class TicketControllerTest {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        when(ticketService.findDuplicateTickets(latitude, longitude, categoryId))
+        when(ticketService.findDuplicateTickets(latitude, longitude, subCategoryId))
                 .thenReturn(List.of(mockDuplicateResponse));
 
         ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> response =
-                ticketController.checkDuplicates(null, latitude, longitude, categoryId);
+                ticketController.checkDuplicates(null, latitude, longitude, subCategoryId);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -248,7 +250,7 @@ class TicketControllerTest {
         assertThat(response.getBody().getData().get(0).getTicketId()).isEqualTo(mockDuplicateResponse.getTicketId());
         assertThat(response.getBody().getData().get(0).getImageUrl()).isEqualTo("https://cloudinary.com/image.jpg");
 
-        verify(ticketService, times(1)).findDuplicateTickets(latitude, longitude, categoryId);
+        verify(ticketService, times(1)).findDuplicateTickets(latitude, longitude, subCategoryId);
     }
 
     @Test
@@ -270,11 +272,11 @@ class TicketControllerTest {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        when(ticketService.findDuplicateTickets(latitude, longitude, categoryId))
+        when(ticketService.findDuplicateTickets(latitude, longitude, subCategoryId))
                 .thenReturn(List.of(mockDuplicateResponse));
 
         ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> response =
-                ticketController.checkDuplicates(locationStr, null, null, categoryId);
+                ticketController.checkDuplicates(locationStr, null, null, subCategoryId);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -282,7 +284,7 @@ class TicketControllerTest {
         assertThat(response.getBody().getMessage()).isEqualTo("Kiểm tra vé trùng lặp thành công.");
         assertThat(response.getBody().getData()).hasSize(1);
 
-        verify(ticketService, times(1)).findDuplicateTickets(latitude, longitude, categoryId);
+        verify(ticketService, times(1)).findDuplicateTickets(latitude, longitude, subCategoryId);
     }
 
     @Test
@@ -297,18 +299,18 @@ class TicketControllerTest {
                 .status("INITIATED")
                 .build();
 
-        when(ticketService.findDuplicateTickets(any(Double.class), any(Double.class), eq(categoryId)))
+        when(ticketService.findDuplicateTickets(any(Double.class), any(Double.class), eq(subCategoryId)))
                 .thenReturn(List.of(mockDuplicateResponse));
 
         ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> response =
-                ticketController.checkDuplicates(hexEwkb, null, null, categoryId);
+                ticketController.checkDuplicates(hexEwkb, null, null, subCategoryId);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getData()).hasSize(1);
 
-        verify(ticketService, times(1)).findDuplicateTickets(any(Double.class), any(Double.class), eq(categoryId));
+        verify(ticketService, times(1)).findDuplicateTickets(any(Double.class), any(Double.class), eq(subCategoryId));
     }
 
     // ==========================================

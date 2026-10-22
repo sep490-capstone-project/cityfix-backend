@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/tickets/{ticketId}/ratings")
+@RequestMapping("/api/v1/user/tickets/{ticketId}/ratings")
 @RequiredArgsConstructor
 @Tag(name = "Rating Management", description = "APIs for rating tickets")
 public class RatingController {

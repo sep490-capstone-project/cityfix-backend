@@ -175,7 +175,6 @@ class TicketMapperTest {
                 .assignee(staff)
                 .status(AssignmentStatus.IN_PROGRESS)
                 .isDeleted(false)
-                .orderIndex(1)
                 .build();
 
         ticket.setSteps(List.of(step));
@@ -243,16 +242,18 @@ class TicketMapperTest {
     }
 
     @Test
-    @DisplayName("toTicketResponse_mapsAndSortsStepsByOrderIndex")
-    void toTicketResponse_mapsAndSortsStepsByOrderIndex() {
-        TicketStep step2 = TicketStep.builder().id(UUID.randomUUID()).orderIndex(2).build();
-        TicketStep step1 = TicketStep.builder().id(UUID.randomUUID()).orderIndex(1).build();
+    @DisplayName("toTicketResponse_mapsAndSortsStepsByCreatedAt")
+    void toTicketResponse_mapsAndSortsStepsByCreatedAt() {
+        java.time.LocalDateTime t1 = java.time.LocalDateTime.now().minusHours(2);
+        java.time.LocalDateTime t2 = java.time.LocalDateTime.now().minusHours(1);
+        TicketStep step2 = TicketStep.builder().id(UUID.randomUUID()).createdAt(t2).build();
+        TicketStep step1 = TicketStep.builder().id(UUID.randomUUID()).createdAt(t1).build();
         ticket.setSteps(List.of(step2, step1));
 
         com.cityfix.backend.model.dto.response.TicketStepResponse res2 =
-                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step2.getId()).orderIndex(2).build();
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step2.getId()).createdAt(t2).build();
         com.cityfix.backend.model.dto.response.TicketStepResponse res1 =
-                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step1.getId()).orderIndex(1).build();
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step1.getId()).createdAt(t1).build();
 
         when(ticketStepMapper.toTicketStepResponseList(ticket.getSteps())).thenReturn(List.of(res2, res1));
 
@@ -260,7 +261,7 @@ class TicketMapperTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getSteps()).hasSize(2);
-        assertThat(response.getSteps().get(0).getOrderIndex()).isEqualTo(1);
-        assertThat(response.getSteps().get(1).getOrderIndex()).isEqualTo(2);
+        assertThat(response.getSteps().get(0).getId()).isEqualTo(step1.getId());
+        assertThat(response.getSteps().get(1).getId()).isEqualTo(step2.getId());
     }
 }

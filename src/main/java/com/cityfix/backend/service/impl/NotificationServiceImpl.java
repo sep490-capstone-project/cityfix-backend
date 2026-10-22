@@ -110,9 +110,6 @@ public class NotificationServiceImpl implements NotificationService {
                 for (Department dept : staffDepts) {
                     if (dept != null && !dept.isDeleted() && dept.getDepartmentId() != null) {
                         departmentIds.add(dept.getDepartmentId());
-                        if (dept.getManager() != null && dept.getManager().getUserId() != null) {
-                            managers.put(dept.getManager().getUserId(), dept.getManager());
-                        }
                     }
                 }
             }
@@ -126,9 +123,6 @@ public class NotificationServiceImpl implements NotificationService {
                 return Collections.emptyList();
             }
             departmentIds.add(dept.getDepartmentId());
-            if (dept.getManager() != null && dept.getManager().getUserId() != null) {
-                managers.put(dept.getManager().getUserId(), dept.getManager());
-            }
         }
 
         if (!departmentIds.isEmpty()) {

@@ -9,7 +9,9 @@ import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -49,8 +51,19 @@ public class TicketStep {
     @Column(name = "assignment_status", nullable = false, length = 20)
     private AssignmentStatus status = AssignmentStatus.ASSIGNED;
 
-    @Column(name = "order_index")
-    private Integer orderIndex;
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "ticket_step_dependency",
+        joinColumns = @JoinColumn(name = "step_id", referencedColumnName = "id"),
+        inverseJoinColumns = @JoinColumn(name = "depends_on_step_id", referencedColumnName = "id")
+    )
+    @Builder.Default
+    private Set<TicketStep> dependsOn = new HashSet<>();
+
+    @ManyToMany(mappedBy = "dependsOn", fetch = FetchType.LAZY)
+    @Builder.Default
+    private Set<TicketStep> dependentSteps = new HashSet<>();
+
 
     @Builder.Default
     @Column(name = "is_deleted", nullable = false)

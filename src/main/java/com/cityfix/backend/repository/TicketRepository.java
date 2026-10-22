@@ -39,12 +39,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
                (SELECT ri.image_url FROM report_image ri WHERE ri.ticket_id = t.ticket_id ORDER BY ri.created_at ASC LIMIT 1) AS imageUrl,
                t.created_at AS createdAt
         FROM ticket t
-        JOIN category c ON c.category_id = :categoryId
+        JOIN sub_category sc ON sc.sub_category_id = :subCategoryId
+        JOIN category c ON c.category_id = sc.category_id
         WHERE t.status IN ('INITIATED', 'ASSIGNED', 'IN_PROGRESS')
           AND EXISTS (
               SELECT 1 FROM ticket_subcategory tsc
-              JOIN sub_category sc ON tsc.sub_category_id = sc.sub_category_id
-              WHERE tsc.ticket_id = t.ticket_id AND sc.category_id = :categoryId
+              WHERE tsc.ticket_id = t.ticket_id 
+                AND tsc.sub_category_id = :subCategoryId
           )
           AND ST_DWithin(
                 t.location::geography,
@@ -56,7 +57,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
     List<DuplicateTicketProjection> findDuplicateTickets(
             @Param("latitude") Double latitude,
             @Param("longitude") Double longitude,
-            @Param("categoryId") UUID categoryId
+            @Param("subCategoryId") UUID subCategoryId
     );
 
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})

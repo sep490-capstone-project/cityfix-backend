@@ -96,16 +96,16 @@ public class TicketController {
     }
 
     @GetMapping("/check-duplicates")
-    @Operation(summary = "Kiểm tra vé trùng lặp theo bán kính không gian (PostGIS ST_DWithin)", description = "Tìm các vé đang mở trong bán kính R mét (mặc định 50m) cùng categoryId.")
+    @Operation(summary = "Kiểm tra vé trùng lặp theo bán kính không gian (PostGIS ST_DWithin)", description = "Tìm các vé đang mở trong bán kính R mét (mặc định 50m) cùng subCategoryId.")
     public ResponseEntity<BaseResponse<List<DuplicateTicketResponse>>> checkDuplicates(
             @RequestParam(value = "location", required = false) String location,
             @RequestParam(value = "latitude", required = false) Double latitude,
             @RequestParam(value = "longitude", required = false) Double longitude,
-            @RequestParam("categoryId") UUID categoryId) {
+            @RequestParam("subCategoryId") UUID subCategoryId) {
         
         LocationCoords coords = parseLocation(location, latitude, longitude);
 
-        List<DuplicateTicketResponse> duplicates = ticketService.findDuplicateTickets(coords.latitude(), coords.longitude(), categoryId);
+        List<DuplicateTicketResponse> duplicates = ticketService.findDuplicateTickets(coords.latitude(), coords.longitude(), subCategoryId);
         return ResponseEntity.ok(BaseResponse.success("Kiểm tra vé trùng lặp thành công.", duplicates));
     }
 

@@ -206,6 +206,26 @@ public enum ErrorCode {
     NOTIFICATION_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "Không tìm thấy thông báo"
+    ),
+
+    STEP_CYCLE_DETECTED(
+            HttpStatus.BAD_REQUEST,
+            "Phát hiện vòng lặp phụ thuộc khép kín giữa các bước xử lý (Dependency Cycle Detected)"
+    ),
+
+    ANCHOR_STEP_REQUIRED(
+            HttpStatus.BAD_REQUEST,
+            "Vé phải có ít nhất 1 bước mở đầu không phụ thuộc vào bước nào khác (Anchor Step Required)"
+    ),
+
+    INVALID_STEP_DEPENDENCY(
+            HttpStatus.BAD_REQUEST,
+            "Phụ thuộc bước xử lý không hợp lệ (không thuộc cùng vé hoặc tự phụ thuộc)"
+    ),
+
+    STEP_PREREQUISITES_NOT_MET(
+            HttpStatus.BAD_REQUEST,
+            "Chưa thể thực hiện bước này do các bước phụ thuộc tiên quyết chưa hoàn thành"
     );
 
     private final HttpStatus status;

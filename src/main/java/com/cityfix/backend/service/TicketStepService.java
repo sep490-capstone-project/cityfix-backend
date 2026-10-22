@@ -14,4 +14,8 @@ public interface TicketStepService {
     void deleteTicketStep(UUID stepId);
 
     void cascadeCancelTicketSteps(UUID ticketId);
+
+    List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> uploadEvidences(UUID stepId, List<org.springframework.web.multipart.MultipartFile> files, String resolutionNote);
+
+    List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse> submitEvidence(UUID stepId, List<org.springframework.web.multipart.MultipartFile> files, String resolutionNote);
 }

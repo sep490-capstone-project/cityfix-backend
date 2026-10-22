@@ -147,6 +147,18 @@ public class ManagerTicketController {
         return ResponseEntity.ok(BaseResponse.success("Cập nhật deadline các bước xử lý thành công", response));
     }
 
+    @PutMapping("/steps/{stepId}/dependencies")
+    @PreAuthorize("hasRole('MANAGER')")
+    @Operation(summary = "Cập nhật danh sách bước phụ thuộc (DAG dependencies) cho bước xử lý",
+               description = "Manager cập nhật danh sách các ticket step mà bước này phụ thuộc (phải hoàn tất trước khi bước này có thể bắt đầu)")
+    public ResponseEntity<BaseResponse<TicketStepResponse>> updateTicketStepDependencies(
+            @PathVariable UUID stepId,
+            @Valid @RequestBody UpdateTicketStepDependenciesRequest request) {
+        TicketStepResponse response = managerTicketService.updateTicketStepDependencies(stepId, request);
+        return ResponseEntity.ok(BaseResponse.success("Cập nhật bước phụ thuộc thành công", response));
+    }
+
+    @Deprecated(since = "v2.0", forRemoval = false)
     @PutMapping("/steps/{stepId}/order-index")
     @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Cập nhật thứ tự thực hiện (order_index) cho bước xử lý", description = "Manager cập nhật order_index cho một bước trong bảng ticket_step")
@@ -157,6 +169,7 @@ public class ManagerTicketController {
         return ResponseEntity.ok(BaseResponse.success("Cập nhật thứ tự bước xử lý thành công", response));
     }
 
+    @Deprecated(since = "v2.0", forRemoval = false)
     @PutMapping("/{ticketId}/steps/reorder")
     @PreAuthorize("hasRole('MANAGER')")
     @Operation(summary = "Sắp xếp lại thứ tự các bước xử lý của vé", description = "Manager thay đổi toàn bộ thứ tự thực hiện order_index của các bước trong bảng ticket_step")

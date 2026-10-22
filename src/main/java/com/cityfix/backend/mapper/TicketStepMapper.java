@@ -11,6 +11,7 @@ import org.mapstruct.MappingTarget;
 import org.mapstruct.NullValuePropertyMappingStrategy;
 
 import java.util.List;
+import java.util.UUID;
 
 @Mapper(componentModel = "spring", uses = {EvidenceMapper.class})
 public interface TicketStepMapper {
@@ -19,16 +20,29 @@ public interface TicketStepMapper {
     @Mapping(target = "stepName", source = "step.stepName")
     @Mapping(target = "assigneeId", source = "assignee.userId")
     @Mapping(target = "assigneeName", source = "assignee.fullName")
+    @Mapping(target = "dependsOnStepIds", source = "dependsOn")
     TicketStepResponse toTicketStepResponse(TicketStep ticketStep);
 
     List<TicketStepResponse> toTicketStepResponseList(List<TicketStep> ticketSteps);
+
+    default List<UUID> mapDependsOnToIds(java.util.Set<TicketStep> dependsOn) {
+        if (dependsOn == null || dependsOn.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        return dependsOn.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(TicketStep::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "ticket", source = "ticket")
     @Mapping(target = "step", source = "step")
     @Mapping(target = "assignee", source = "assignee")
     @Mapping(target = "status", source = "status")
-    @Mapping(target = "orderIndex", source = "orderIndex")
+    @Mapping(target = "dependsOn", ignore = true)
+    @Mapping(target = "dependentSteps", ignore = true)
     @Mapping(target = "startedAt", ignore = true)
     @Mapping(target = "completedAt", ignore = true)
     @Mapping(target = "deadline", ignore = true)
@@ -40,8 +54,7 @@ public interface TicketStepMapper {
             com.cityfix.backend.model.entity.Ticket ticket,
             com.cityfix.backend.model.entity.Step step,
             com.cityfix.backend.model.entity.User assignee,
-            com.cityfix.backend.model.enums.AssignmentStatus status,
-            Integer orderIndex
+            com.cityfix.backend.model.enums.AssignmentStatus status
     );
 
     @Mapping(target = "id", ignore = true)
@@ -49,7 +62,8 @@ public interface TicketStepMapper {
     @Mapping(target = "step", source = "step")
     @Mapping(target = "assignee", source = "assignee")
     @Mapping(target = "status", source = "status")
-    @Mapping(target = "orderIndex", source = "orderIndex")
+    @Mapping(target = "dependsOn", ignore = true)
+    @Mapping(target = "dependentSteps", ignore = true)
     @Mapping(target = "startedAt", source = "startedAt")
     @Mapping(target = "completedAt", ignore = true)
     @Mapping(target = "deadline", source = "deadline")
@@ -62,7 +76,6 @@ public interface TicketStepMapper {
             com.cityfix.backend.model.entity.Step step,
             com.cityfix.backend.model.entity.User assignee,
             com.cityfix.backend.model.enums.AssignmentStatus status,
-            Integer orderIndex,
             java.time.LocalDateTime startedAt,
             java.time.LocalDateTime deadline,
             String notes
@@ -70,9 +83,6 @@ public interface TicketStepMapper {
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateDeadline(UpdateTicketStepDeadlineRequest request, @MappingTarget TicketStep ticketStep);
-
-    @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
-    void updateOrderIndex(UpdateTicketStepOrderRequest request, @MappingTarget TicketStep ticketStep);
 
     @BeanMapping(ignoreByDefault = true)
     @Mapping(target = "startedAt", source = "startedAt")

@@ -29,11 +29,10 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import com.cityfix.backend.model.dto.request.ReviewTicketRequest;
+import com.cityfix.backend.model.dto.request.UpdateTicketStepDependenciesRequest;
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -131,7 +130,7 @@ class ManagerTicketServiceImplTest {
                 .id(stepId1)
                 .ticket(ticket)
                 .step(s1)
-                .orderIndex(1)
+                .createdAt(LocalDateTime.now())
                 .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
                 .deadline(LocalDateTime.now().plusHours(6))
                 .build();
@@ -140,7 +139,7 @@ class ManagerTicketServiceImplTest {
                 .id(stepId2)
                 .ticket(ticket)
                 .step(s2)
-                .orderIndex(2)
+                .createdAt(LocalDateTime.now().plusSeconds(1))
                 .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
                 .startedAt(LocalDateTime.now().plusHours(6))
                 .deadline(LocalDateTime.now().plusHours(18))
@@ -151,7 +150,7 @@ class ManagerTicketServiceImplTest {
 
         when(ticketStepRepository.findById(stepId1)).thenReturn(Optional.of(ts1));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(ts1, ts2));
+        when(ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(List.of(ts1, ts2));
         when(ticketStepRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
         when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(
@@ -246,14 +245,15 @@ class ManagerTicketServiceImplTest {
         when(stepRepository.findAllById(any())).thenReturn(List.of(mockStep));
         when(userRepository.findAllById(any())).thenReturn(List.of(staffInDept));
         when(ticketService.calculateTicketDeadline(any(Ticket.class))).thenReturn(LocalDateTime.now().plusHours(12));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.ASSIGNED).build();
+        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.IN_PROGRESS).build();
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
 
         TicketHistory mockHistory = TicketHistory.builder()
                 .actionType(com.cityfix.backend.model.enums.ActionType.MANUAL_APPROVED)
-                .currentStatus(TicketStatus.ASSIGNED)
+                .currentStatus(TicketStatus.IN_PROGRESS)
                 .build();
         when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any())).thenReturn(mockHistory);
 
@@ -264,7 +264,6 @@ class ManagerTicketServiceImplTest {
                 .steps(List.of(com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
                         .stepId(stepId)
                         .assigneeId(staffInDept.getUserId())
-                        .orderIndex(0)
                         .deadline(LocalDateTime.now().plusHours(12))
                         .notes("Giao khảo sát")
                         .build()))
@@ -273,21 +272,20 @@ class ManagerTicketServiceImplTest {
         TicketResponse response = managerTicketService.reviewTicket(ticketId, request);
 
         assertThat(response).isNotNull();
-        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.ASSIGNED);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         assertThat(ticket.getNeedsManualReview()).isFalse();
         assertThat(ticket.getIsLifeThreatening()).isTrue();
         assertThat(ticket.getReviewNote()).isEqualTo("Duyệt khẩn cấp");
         assertThat(ticket.getSubCategories()).hasSize(1);
         assertThat(ticket.getSteps()).hasSize(1);
         assertThat(ticket.getSteps().get(0).getAssignee()).isEqualTo(staffInDept);
-        assertThat(ticket.getSteps().get(0).getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
-        assertThat(ticket.getSteps().get(0).getOrderIndex()).isEqualTo(0);
+        assertThat(ticket.getSteps().get(0).getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
 
         verify(notificationService).createAndSendNotification(eq(ticket), any(), any(), any());
-        verify(ticketHistoryRepository).save(argThat(h ->
+        verify(ticketHistoryRepository, atLeastOnce()).save(argThat(h ->
                 h != null
                         && h.getActionType() == com.cityfix.backend.model.enums.ActionType.MANUAL_APPROVED
-                        && h.getCurrentStatus() == TicketStatus.ASSIGNED
+                        && h.getCurrentStatus() == TicketStatus.IN_PROGRESS
         ));
     }
 
@@ -346,9 +344,9 @@ class ManagerTicketServiceImplTest {
                 .subCategoryIds(List.of(subCatId))
                 .steps(List.of(
                         com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
-                                .stepId(stepId).assigneeId(UUID.randomUUID()).orderIndex(0).build(),
+                                .stepId(stepId).assigneeId(UUID.randomUUID()).build(),
                         com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
-                                .stepId(stepId).assigneeId(UUID.randomUUID()).orderIndex(1).build()
+                                .stepId(stepId).assigneeId(UUID.randomUUID()).build()
                 ))
                 .build();
 
@@ -381,7 +379,6 @@ class ManagerTicketServiceImplTest {
                         com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
                                 .stepId(stepId)
                                 .assigneeId(UUID.randomUUID())
-                                .orderIndex(0)
                                 .deadline(LocalDateTime.now().minusDays(1)) // Past deadline
                                 .build()
                 ))
@@ -629,14 +626,15 @@ class ManagerTicketServiceImplTest {
         when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
         when(stepRepository.findAllById(any())).thenReturn(List.of(mockStep));
         when(userRepository.findAllById(any())).thenReturn(List.of(staffInDept));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.ASSIGNED).build();
+        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.IN_PROGRESS).build();
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
 
         TicketHistory mockHistory = TicketHistory.builder()
                 .actionType(com.cityfix.backend.model.enums.ActionType.MANUAL_APPROVED)
-                .currentStatus(TicketStatus.ASSIGNED)
+                .currentStatus(TicketStatus.IN_PROGRESS)
                 .build();
         when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any())).thenReturn(mockHistory);
 
@@ -645,7 +643,6 @@ class ManagerTicketServiceImplTest {
                 .steps(List.of(com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
                         .stepId(stepId)
                         .assigneeId(staffInDept.getUserId())
-                        .orderIndex(0)
                         .deadline(null) // Không truyền deadline
                         .build()))
                 .build();
@@ -662,8 +659,8 @@ class ManagerTicketServiceImplTest {
     }
 
     @Test
-    @DisplayName("reviewTicket_multipleSteps_chainsStartedAtAndDeadline")
-    void reviewTicket_multipleSteps_chainsStartedAtAndDeadline() {
+    @DisplayName("reviewTicket_multipleSteps_dagDependenciesAndAnchorActivation")
+    void reviewTicket_multipleSteps_dagDependenciesAndAnchorActivation() {
         mockCurrentUser(managerUser);
         ticket.setStatus(TicketStatus.INITIATED);
 
@@ -699,14 +696,15 @@ class ManagerTicketServiceImplTest {
         when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
         when(stepRepository.findAllById(any())).thenReturn(List.of(mockStep1, mockStep2));
         when(userRepository.findAllById(any())).thenReturn(List.of(staffInDept));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.ASSIGNED).build();
+        TicketResponse mockResponse = TicketResponse.builder().id(ticketId).status(TicketStatus.IN_PROGRESS).build();
         when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
 
         TicketHistory mockHistory = TicketHistory.builder()
                 .actionType(com.cityfix.backend.model.enums.ActionType.MANUAL_APPROVED)
-                .currentStatus(TicketStatus.ASSIGNED)
+                .currentStatus(TicketStatus.IN_PROGRESS)
                 .build();
         when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any())).thenReturn(mockHistory);
 
@@ -716,13 +714,13 @@ class ManagerTicketServiceImplTest {
                         com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
                                 .stepId(stepId1)
                                 .assigneeId(staffInDept.getUserId())
-                                .orderIndex(1)
+                                .dependsOnStepIds(Collections.emptyList())
                                 .deadline(null)
                                 .build(),
                         com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
                                 .stepId(stepId2)
                                 .assigneeId(staffInDept.getUserId())
-                                .orderIndex(2)
+                                .dependsOnStepIds(List.of(stepId1))
                                 .deadline(null)
                                 .build()
                 ))
@@ -733,10 +731,11 @@ class ManagerTicketServiceImplTest {
         assertThat(ticket.getSteps()).hasSize(2);
         TicketStep ts1 = ticket.getSteps().get(0);
         TicketStep ts2 = ticket.getSteps().get(1);
+        assertThat(ts1.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
         assertThat(ts1.getDeadline()).isEqualTo(ts1.getStartedAt().plusHours(6));
-        assertThat(ts2.getStartedAt()).isEqualTo(ts1.getDeadline());
-        assertThat(ts2.getDeadline()).isEqualTo(ts2.getStartedAt().plusHours(12));
-        assertThat(ticket.getDeadline()).isEqualTo(ts2.getDeadline());
+        assertThat(ts2.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
+        assertThat(ts2.getDependsOn()).contains(ts1);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
     }
 
     @Test
@@ -746,14 +745,15 @@ class ManagerTicketServiceImplTest {
         Department dept = Department.builder().departmentId(deptId).name("Phòng Quản lý Đô thị").build();
         mockCurrentUser(managerUser);
 
-        TicketStep step2 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).orderIndex(2).build();
-        TicketStep step1 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).orderIndex(1).build();
+        LocalDateTime now = LocalDateTime.now();
+        TicketStep step2 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).createdAt(now.plusSeconds(1)).build();
+        TicketStep step1 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).createdAt(now).build();
         ticket.setSteps(List.of(step2, step1));
 
         com.cityfix.backend.model.dto.response.TicketStepResponse stepRes1 =
-                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step1.getId()).orderIndex(1).build();
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step1.getId()).build();
         com.cityfix.backend.model.dto.response.TicketStepResponse stepRes2 =
-                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step2.getId()).orderIndex(2).build();
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(step2.getId()).build();
 
         Pageable pageable = PageRequest.of(0, 20);
         Page<Ticket> ticketPage = new PageImpl<>(List.of(ticket), pageable, 1);
@@ -804,7 +804,6 @@ class ManagerTicketServiceImplTest {
         TicketStep step1 = TicketStep.builder()
                 .id(UUID.randomUUID())
                 .ticket(ticket)
-                .orderIndex(1)
                 .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
                 .build();
         ticket.setSteps(List.of(step1));
@@ -812,7 +811,6 @@ class ManagerTicketServiceImplTest {
         com.cityfix.backend.model.dto.response.TicketStepResponse stepRes1 =
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
                         .id(step1.getId())
-                        .orderIndex(1)
                         .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
                         .build();
 
@@ -923,5 +921,229 @@ class ManagerTicketServiceImplTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_twoPhaseDag_activatesAnchorStepsAndSetsTicketInProgress")
+    void reviewTicket_twoPhaseDag_activatesAnchorStepsAndSetsTicketInProgress() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        SubCategory sc = SubCategory.builder()
+                .subCategoryId(UUID.randomUUID())
+                .name("Ổ gà đường phố")
+                .isActive(true)
+                .build();
+        when(subCategoryRepository.findAllById(any())).thenReturn(List.of(sc));
+
+        Step s1 = Step.builder().stepId(UUID.randomUUID()).stepName("Khảo sát").duration(2).build();
+        Step s2 = Step.builder().stepId(UUID.randomUUID()).stepName("Trám vá").duration(4).build();
+        when(stepRepository.findAllById(any())).thenReturn(List.of(s1, s2));
+
+        staffUser.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
+        staffUser.setDepartment(new Department());
+        when(userRepository.findAllById(any())).thenReturn(List.of(staffUser));
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketStepRepository.saveAll(anyList())).thenAnswer(inv -> {
+            List<TicketStep> steps = inv.getArgument(0);
+            for (TicketStep st : steps) {
+                if (st.getId() == null) st.setId(UUID.randomUUID());
+            }
+            return steps;
+        });
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TicketHistory());
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(
+                TicketResponse.builder().id(ticketId).status(TicketStatus.IN_PROGRESS).build()
+        );
+
+        ReviewTicketRequest request = new ReviewTicketRequest();
+        request.setSubCategoryIds(List.of(sc.getSubCategoryId()));
+        request.setSteps(List.of(
+                ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(s1.getStepId())
+                        .assigneeId(staffUser.getUserId())
+                        .dependsOnStepIds(Collections.emptyList())
+                        .build(),
+                ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(s2.getStepId())
+                        .assigneeId(staffUser.getUserId())
+                        .dependsOnStepIds(List.of(s1.getStepId()))
+                        .build()
+        ));
+
+        TicketResponse response = managerTicketService.reviewTicket(ticketId, request);
+
+        assertThat(response).isNotNull();
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+
+        // Kiểm tra bước 1 (Anchor) được kích hoạt IN_PROGRESS
+        TicketStep anchorStep = ticket.getSteps().stream()
+                .filter(ts -> ts.getStep().getStepId().equals(s1.getStepId()))
+                .findFirst().orElseThrow();
+        assertThat(anchorStep.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
+        assertThat(anchorStep.getStartedAt()).isNotNull();
+        assertThat(anchorStep.getDeadline()).isNotNull();
+        verify(notificationService).notifyStepStarted(eq(anchorStep), eq(managerUser));
+
+        // Kiểm tra bước 2 ở trạng thái ASSIGNED và phụ thuộc vào bước 1
+        TicketStep dependentStep = ticket.getSteps().stream()
+                .filter(ts -> ts.getStep().getStepId().equals(s2.getStepId()))
+                .findFirst().orElseThrow();
+        assertThat(dependentStep.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
+        assertThat(dependentStep.getDependsOn()).contains(anchorStep);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_whenDagHasCycle_throwsStepCycleDetected")
+    void reviewTicket_whenDagHasCycle_throwsStepCycleDetected() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        SubCategory sc = SubCategory.builder().subCategoryId(UUID.randomUUID()).isActive(true).build();
+        when(subCategoryRepository.findAllById(any())).thenReturn(List.of(sc));
+
+        Step s0 = Step.builder().stepId(UUID.randomUUID()).build();
+        Step s1 = Step.builder().stepId(UUID.randomUUID()).build();
+        Step s2 = Step.builder().stepId(UUID.randomUUID()).build();
+        when(stepRepository.findAllById(any())).thenReturn(List.of(s0, s1, s2));
+
+        staffUser.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
+        staffUser.setDepartment(new Department());
+        when(userRepository.findAllById(any())).thenReturn(List.of(staffUser));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        ReviewTicketRequest request = new ReviewTicketRequest();
+        request.setSubCategoryIds(List.of(sc.getSubCategoryId()));
+        // s0 is anchor, s1 depends on s2, s2 depends on s1 (cycle)
+        request.setSteps(List.of(
+                ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(s0.getStepId()).assigneeId(staffUser.getUserId()).dependsOnStepIds(Collections.emptyList()).build(),
+                ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(s1.getStepId()).assigneeId(staffUser.getUserId()).dependsOnStepIds(List.of(s2.getStepId())).build(),
+                ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(s2.getStepId()).assigneeId(staffUser.getUserId()).dependsOnStepIds(List.of(s1.getStepId())).build()
+        ));
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.STEP_CYCLE_DETECTED);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_whenNoAnchorStep_throwsAnchorStepRequired")
+    void reviewTicket_whenNoAnchorStep_throwsAnchorStepRequired() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        SubCategory sc = SubCategory.builder().subCategoryId(UUID.randomUUID()).isActive(true).build();
+        when(subCategoryRepository.findAllById(any())).thenReturn(List.of(sc));
+
+        Step s1 = Step.builder().stepId(UUID.randomUUID()).build();
+        Step s2 = Step.builder().stepId(UUID.randomUUID()).build();
+        when(stepRepository.findAllById(any())).thenReturn(List.of(s1, s2));
+
+        staffUser.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
+        staffUser.setDepartment(new Department());
+        when(userRepository.findAllById(any())).thenReturn(List.of(staffUser));
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        ReviewTicketRequest request = new ReviewTicketRequest();
+        request.setSubCategoryIds(List.of(sc.getSubCategoryId()));
+        // both have dependencies -> no anchor
+        request.setSteps(List.of(
+                ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(s1.getStepId()).assigneeId(staffUser.getUserId()).dependsOnStepIds(List.of(s2.getStepId())).build(),
+                ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(s2.getStepId()).assigneeId(staffUser.getUserId()).dependsOnStepIds(List.of(s1.getStepId())).build()
+        ));
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ANCHOR_STEP_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDependencies_success")
+    void updateTicketStepDependencies_success() {
+        mockCurrentUser(managerUser);
+
+        TicketStep ts1 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).dependsOn(new HashSet<>()).build();
+        TicketStep ts2 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).dependsOn(new HashSet<>(Set.of(ts1))).build();
+        TicketStep ts3 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).dependsOn(new HashSet<>(Set.of(ts2))).build();
+
+        when(ticketStepRepository.findById(ts3.getId())).thenReturn(Optional.of(ts3));
+        when(ticketStepRepository.findByTicketTicketId(ticketId)).thenReturn(List.of(ts1, ts2, ts3));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(ts3.getId()).dependsOnStepIds(List.of(ts1.getId())).build()
+        );
+
+        UpdateTicketStepDependenciesRequest request = new UpdateTicketStepDependenciesRequest(List.of(ts1.getId()));
+        com.cityfix.backend.model.dto.response.TicketStepResponse response =
+                managerTicketService.updateTicketStepDependencies(ts3.getId(), request);
+
+        assertThat(response).isNotNull();
+        assertThat(ts3.getDependsOn()).containsExactly(ts1);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDependencies_selfDependency_throwsInvalidStepDependency")
+    void updateTicketStepDependencies_selfDependency_throwsInvalidStepDependency() {
+        mockCurrentUser(managerUser);
+
+        TicketStep ts1 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).dependsOn(new HashSet<>()).build();
+
+        when(ticketStepRepository.findById(ts1.getId())).thenReturn(Optional.of(ts1));
+
+        UpdateTicketStepDependenciesRequest request = new UpdateTicketStepDependenciesRequest(List.of(ts1.getId()));
+
+        assertThatThrownBy(() -> managerTicketService.updateTicketStepDependencies(ts1.getId(), request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STEP_DEPENDENCY);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDependencies_cycleDetected_throwsStepCycleDetected")
+    void updateTicketStepDependencies_cycleDetected_throwsStepCycleDetected() {
+        mockCurrentUser(managerUser);
+
+        TicketStep ts1 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).dependsOn(new HashSet<>()).build();
+        TicketStep ts2 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).dependsOn(new HashSet<>(Set.of(ts1))).build();
+
+        when(ticketStepRepository.findById(ts1.getId())).thenReturn(Optional.of(ts1));
+        when(ticketStepRepository.findByTicketTicketId(ticketId)).thenReturn(List.of(ts1, ts2));
+
+        // Making ts1 depend on ts2 creates a cycle ts1 -> ts2 -> ts1 and leaves no anchor step!
+        UpdateTicketStepDependenciesRequest request = new UpdateTicketStepDependenciesRequest(List.of(ts2.getId()));
+
+        assertThatThrownBy(() -> managerTicketService.updateTicketStepDependencies(ts1.getId(), request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isIn(ErrorCode.STEP_CYCLE_DETECTED, ErrorCode.ANCHOR_STEP_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDependencies_crossTicket_throwsInvalidStepDependency")
+    void updateTicketStepDependencies_crossTicket_throwsInvalidStepDependency() {
+        mockCurrentUser(managerUser);
+
+        TicketStep ts1 = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).dependsOn(new HashSet<>()).build();
+        UUID outsideStepId = UUID.randomUUID();
+
+        when(ticketStepRepository.findById(ts1.getId())).thenReturn(Optional.of(ts1));
+        when(ticketStepRepository.findByTicketTicketId(ticketId)).thenReturn(List.of(ts1));
+
+        UpdateTicketStepDependenciesRequest request = new UpdateTicketStepDependenciesRequest(List.of(outsideStepId));
+
+        assertThatThrownBy(() -> managerTicketService.updateTicketStepDependencies(ts1.getId(), request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STEP_DEPENDENCY);
     }
 }
