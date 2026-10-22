@@ -169,7 +169,10 @@ public class TicketStepServiceImpl implements TicketStepService {
         if (!ticketRepository.existsById(ticketId)) {
             throw new AppException(ErrorCode.TICKET_NOT_FOUND);
         }
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketId(ticketId);
+        List<TicketStep> steps = ticketStepRepository.findByTicket_TicketIdOrderByCreatedAtAscIdAsc(ticketId);
+        if (steps == null || steps.isEmpty()) {
+            steps = ticketStepRepository.findByTicketTicketId(ticketId);
+        }
         return ticketStepMapper.toTicketStepResponseList(steps);
     }
 

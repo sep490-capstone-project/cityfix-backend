@@ -62,7 +62,10 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
         ticketStepRepository.save(completedStep);
 
         // Fetch all steps for this ticket with dependencies eager-loaded
-        List<TicketStep> steps = ticketStepRepository.findByTicket_TicketId(ticketId);
+        List<TicketStep> steps = ticketStepRepository.findByTicket_TicketIdOrderByCreatedAtAscIdAsc(ticketId);
+        if (steps == null || steps.isEmpty()) {
+            steps = ticketStepRepository.findByTicket_TicketId(ticketId);
+        }
         if (steps == null || steps.isEmpty()) {
             steps = ticketStepRepository.findByTicketTicketId(ticketId);
         }

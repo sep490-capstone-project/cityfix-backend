@@ -645,7 +645,8 @@ public class TicketServiceImpl implements TicketService {
                         .filter(s -> s != null && !s.isDeleted())
                         .filter(s -> s.getAssignee() != null && currentUser.getUserId().equals(s.getAssignee().getUserId()))
                         .filter(s -> targetStatuses.contains(s.getStatus()))
-                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                         .toList();
                 response.setSteps(ticketStepMapper.toTicketStepResponseList(staffSteps));
             }
@@ -895,7 +896,8 @@ public class TicketServiceImpl implements TicketService {
 
         LocalDateTime now = LocalDateTime.now();
         List<TicketStep> sortedSteps = steps.stream()
-                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .collect(Collectors.toList());
 
         boolean cascade = false;
@@ -947,7 +949,8 @@ public class TicketServiceImpl implements TicketService {
         List<TicketStep> sortedSteps = steps.stream()
                 .filter(Objects::nonNull)
                 .filter(s -> !s.isDeleted())
-                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
         boolean foundTarget = false;

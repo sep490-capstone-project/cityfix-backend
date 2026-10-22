@@ -193,7 +193,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 List<TicketStep> allSteps = (ticket.getSteps() != null ? ticket.getSteps() : Collections.<TicketStep>emptyList())
                         .stream()
                         .filter(s -> s != null && !s.isDeleted())
-                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                         .toList();
                 response.setSteps(ticketStepMapper.toTicketStepResponseList(allSteps));
             }
@@ -886,7 +887,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         LocalDateTime now = LocalDateTime.now();
         List<TicketStep> sortedSteps = steps.stream()
-                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .collect(Collectors.toList());
 
         boolean cascade = false;
@@ -943,7 +945,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         List<TicketStep> sortedSteps = steps.stream()
                 .filter(Objects::nonNull)
                 .filter(s -> !s.isDeleted())
-                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
 
         boolean foundTarget = false;
@@ -1120,7 +1123,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 List<TicketStep> allSteps = (steps != null ? steps : Collections.<TicketStep>emptyList())
                         .stream()
                         .filter(s -> s != null && !s.isDeleted())
-                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                        .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
                         .toList();
                 response.setSteps(ticketStepMapper.toTicketStepResponseList(allSteps));
             }

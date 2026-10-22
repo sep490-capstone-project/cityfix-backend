@@ -27,6 +27,14 @@ public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
     java.util.Optional<TicketStep> findByTicketTicketIdAndStepStepId(UUID ticketId, UUID stepId);
 
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    List<TicketStep> findByTicket_TicketIdOrderByCreatedAtAscIdAsc(UUID ticketId);
+
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    List<TicketStep> findByTicketTicketIdOrderByCreatedAtAscIdAsc(UUID ticketId);
+
+    List<TicketStep> findByTicketTicketIdAndStatusInOrderByCreatedAtAscIdAsc(UUID ticketId, List<AssignmentStatus> statuses);
+
     List<TicketStep> findByTicketTicketIdOrderByCreatedAtAsc(UUID ticketId);
 
     List<TicketStep> findByTicketTicketIdAndStatusIn(UUID ticketId, List<AssignmentStatus> statuses);

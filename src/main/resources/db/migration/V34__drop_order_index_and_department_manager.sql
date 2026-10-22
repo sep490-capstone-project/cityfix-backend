@@ -3,14 +3,14 @@
 -- 1. Xóa hoàn toàn cột order_index khỏi bảng ticket_step
 ALTER TABLE "ticket_step" DROP COLUMN IF EXISTS "order_index";
 
--- 2. Tách rời hoàn toàn Manager khỏi phòng ban:
--- Xóa khóa ngoại và cột manager_id trong bảng department
+-- 2. Tách rời hoàn toàn Manager khỏi bảng department:
+-- Xóa khóa ngoại và cột manager_id trong bảng department (Manager không còn là trưởng phòng cố định gắn cứng vào 1 department)
 ALTER TABLE "department" DROP CONSTRAINT IF EXISTS "fk_department_manager";
 ALTER TABLE "department" DROP COLUMN IF EXISTS "manager_id";
 
--- Dọn sạch các bản ghi liên kết của tài khoản Manager trong bảng user_department
-DELETE FROM "user_department" WHERE user_id IN (
-    SELECT u.user_id FROM "user_account" u 
-    JOIN "role" r ON u.role_id = r.role_id 
-    WHERE r.role_name IN ('MANAGER', 'ROLE_MANAGER')
-);
+-- GHI CHÚ (Rà soát Data Scope):
+-- Giữ nguyên bảng trung gian "user_department" cho tài khoản Manager.
+-- Các API xem danh sách vé của Manager (GET /api/v1/manager/tickets, GET /api/v1/manager/tickets/department)
+-- vẫn phụ thuộc vào user_department để xác định các phòng ban mà Manager phụ trách.
+-- Do đó không xóa các bản ghi trong user_department để tránh làm Manager mất dữ liệu vé.
+

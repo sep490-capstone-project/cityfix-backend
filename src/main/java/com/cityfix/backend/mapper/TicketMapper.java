@@ -153,7 +153,8 @@ public interface TicketMapper {
                 // Ưu tiên step chưa bị CANCELLED theo createdAt nhỏ nhất
                 Optional<TicketStep> notCancelled = validSteps.stream()
                         .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
-                        .min(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+                        .min(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())));
                 if (notCancelled.isPresent()) {
                     TicketStep s = notCancelled.get();
                     Department dept = s.getAssignee().getDepartment();

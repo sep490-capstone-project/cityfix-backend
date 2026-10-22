@@ -275,7 +275,7 @@ class TicketStepServiceImplTest {
     void getTicketStepsByTicketId_success() {
         UUID ticketId = UUID.randomUUID();
         when(ticketRepository.existsById(ticketId)).thenReturn(true);
-        when(ticketStepRepository.findByTicketTicketId(ticketId)).thenReturn(List.of(step));
+        when(ticketStepRepository.findByTicket_TicketIdOrderByCreatedAtAscIdAsc(ticketId)).thenReturn(List.of(step));
 
         TicketStepResponse mockResponse = TicketStepResponse.builder().id(stepId).build();
         when(ticketStepMapper.toTicketStepResponseList(List.of(step))).thenReturn(List.of(mockResponse));

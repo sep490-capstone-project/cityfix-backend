@@ -38,6 +38,7 @@ public class Ticket {
     @BatchSize(size = 20)
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("createdAt ASC, id ASC")
     private java.util.List<TicketStep> steps = new java.util.ArrayList<>();
 
     @BatchSize(size = 20)
