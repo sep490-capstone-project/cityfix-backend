@@ -14,7 +14,7 @@ public interface TicketService {
     TicketResponse createTicket(CreateTicketRequest request);
     void upvoteTicket(UUID ticketId);
     List<ImageUploadResponse> uploadImage(List<MultipartFile> files, String folder);
-    List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID categoryId);
+    List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID subCategoryId);
     
     org.springframework.data.domain.Page<TicketResponse> getInitiatedTickets(org.springframework.data.domain.Pageable pageable);
     org.springframework.data.domain.Page<TicketResponse> getMyReportedTickets(org.springframework.data.domain.Pageable pageable);

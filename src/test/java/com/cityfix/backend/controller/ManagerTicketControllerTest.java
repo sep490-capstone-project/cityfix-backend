@@ -94,7 +94,6 @@ class ManagerTicketControllerTest {
                 .steps(List.of(ReviewTicketRequest.StepAssignmentRequest.builder()
                         .stepId(UUID.randomUUID())
                         .assigneeId(UUID.randomUUID())
-                        .orderIndex(1)
                         .build()))
                 .isLifeThreatening(true)
                 .reviewNote("Duyệt vé khẩn cấp")
@@ -186,7 +185,6 @@ class ManagerTicketControllerTest {
 
         TicketStepResponse mockResponse = TicketStepResponse.builder()
                 .id(stepId)
-                .orderIndex(3)
                 .build();
 
         when(managerTicketService.updateTicketStepOrderIndex(eq(stepId), any(UpdateTicketStepOrderRequest.class)))
@@ -196,7 +194,7 @@ class ManagerTicketControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().getData().getOrderIndex()).isEqualTo(3);
+        assertThat(response.getBody().getData().getId()).isEqualTo(stepId);
     }
 
     @Test
@@ -209,8 +207,8 @@ class ManagerTicketControllerTest {
                 .stepOrders(List.of(new StepOrderItem(stepId1, 1), new StepOrderItem(stepId2, 0)))
                 .build();
 
-        TicketStepResponse mock1 = TicketStepResponse.builder().id(stepId1).orderIndex(1).build();
-        TicketStepResponse mock2 = TicketStepResponse.builder().id(stepId2).orderIndex(0).build();
+        TicketStepResponse mock1 = TicketStepResponse.builder().id(stepId1).build();
+        TicketStepResponse mock2 = TicketStepResponse.builder().id(stepId2).build();
 
         when(managerTicketService.reorderTicketSteps(eq(ticketId), any(ReorderTicketStepsRequest.class)))
                 .thenReturn(List.of(mock2, mock1));
@@ -247,7 +245,6 @@ class ManagerTicketControllerTest {
         TicketStepResponse stepResponse = TicketStepResponse.builder()
                 .id(UUID.randomUUID())
                 .stepName("Xử lý hiện trường")
-                .orderIndex(1)
                 .build();
         TicketResponse mockResponse = TicketResponse.builder()
                 .id(UUID.randomUUID())
@@ -268,5 +265,29 @@ class ManagerTicketControllerTest {
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getData().getContent()).hasSize(1);
         assertThat(response.getBody().getData().getContent().get(0).getSteps()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDependencies_validRequest_returnsUpdatedStep")
+    void updateTicketStepDependencies_validRequest_returnsUpdatedStep() {
+        UUID stepId = UUID.randomUUID();
+        UUID prereqId = UUID.randomUUID();
+        UpdateTicketStepDependenciesRequest request = UpdateTicketStepDependenciesRequest.builder()
+                .dependsOnStepIds(List.of(prereqId))
+                .build();
+
+        TicketStepResponse mockResponse = TicketStepResponse.builder()
+                .id(stepId)
+                .dependsOnStepIds(List.of(prereqId))
+                .build();
+
+        when(managerTicketService.updateTicketStepDependencies(eq(stepId), any(UpdateTicketStepDependenciesRequest.class)))
+                .thenReturn(mockResponse);
+
+        ResponseEntity<BaseResponse<TicketStepResponse>> response = managerTicketController.updateTicketStepDependencies(stepId, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData().getDependsOnStepIds()).containsExactly(prereqId);
     }
 }

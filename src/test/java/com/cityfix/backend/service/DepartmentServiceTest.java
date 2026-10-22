@@ -219,89 +219,7 @@ class DepartmentServiceTest {
         assertThat(mockDepartment.getDeletedAt()).isNotNull();
     }
 
-    @Test
-    @DisplayName("createDepartment_withManager_success")
-    void createDepartment_withManager_success() {
-        UUID managerId = UUID.randomUUID();
-        User manager = new User();
-        manager.setUserId(managerId);
 
-        CreateDepartmentRequest req = new CreateDepartmentRequest(
-                "Phòng Mới", DepartmentLevel.CITY, "moi@cityfix.vn", "0912345678", managerId
-        );
-        Department dept = new Department();
-
-        when(departmentRepository.existsByNameAndIsDeletedFalse("Phòng Mới")).thenReturn(false);
-        when(departmentMapper.toEntity(req)).thenReturn(dept);
-        when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-        when(departmentRepository.save(dept)).thenReturn(dept);
-        when(departmentMapper.toResponse(dept)).thenReturn(mockResponse);
-
-        DepartmentResponse res = departmentService.createDepartment(req);
-
-        assertThat(res).isNotNull();
-        assertThat(dept.getManager()).isEqualTo(manager);
-        verify(userRepository).findById(managerId);
-    }
-
-    @Test
-    @DisplayName("createDepartment_withInvalidManager_throwsNotFound")
-    void createDepartment_withInvalidManager_throwsNotFound() {
-        UUID managerId = UUID.randomUUID();
-        CreateDepartmentRequest req = new CreateDepartmentRequest(
-                "Phòng Mới", DepartmentLevel.CITY, "moi@cityfix.vn", "0912345678", managerId
-        );
-
-        when(departmentRepository.existsByNameAndIsDeletedFalse("Phòng Mới")).thenReturn(false);
-        when(userRepository.findById(managerId)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> departmentService.createDepartment(req))
-                .isInstanceOf(AppException.class)
-                .extracting(e -> ((AppException) e).getErrorCode())
-                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
-    }
-
-    @Test
-    @DisplayName("updateDepartment_withManager_success")
-    void updateDepartment_withManager_success() {
-        UUID managerId = UUID.randomUUID();
-        User manager = new User();
-        manager.setUserId(managerId);
-
-        UpdateDepartmentRequest req = new UpdateDepartmentRequest(
-                "Phòng Sửa", DepartmentLevel.CITY, "sua@cityfix.vn", "0912345679", true, managerId
-        );
-
-        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
-        when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse("Phòng Sửa", departmentId)).thenReturn(false);
-        when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-        when(departmentRepository.save(mockDepartment)).thenReturn(mockDepartment);
-        when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
-
-        DepartmentResponse res = departmentService.updateDepartment(departmentId, req);
-
-        assertThat(res).isNotNull();
-        assertThat(mockDepartment.getManager()).isEqualTo(manager);
-        verify(userRepository).findById(managerId);
-    }
-
-    @Test
-    @DisplayName("updateDepartment_withInvalidManager_throwsNotFound")
-    void updateDepartment_withInvalidManager_throwsNotFound() {
-        UUID managerId = UUID.randomUUID();
-        UpdateDepartmentRequest req = new UpdateDepartmentRequest(
-                "Phòng Sửa", DepartmentLevel.CITY, "sua@cityfix.vn", "0912345679", true, managerId
-        );
-
-        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
-        when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse("Phòng Sửa", departmentId)).thenReturn(false);
-        when(userRepository.findById(managerId)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> departmentService.updateDepartment(departmentId, req))
-                .isInstanceOf(AppException.class)
-                .extracting(e -> ((AppException) e).getErrorCode())
-                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
-    }
 
     @Test
     @DisplayName("assignUsersToDepartment_validRequest_success")
@@ -380,7 +298,6 @@ class DepartmentServiceTest {
                 .userId(staffId)
                 .department(mockDepartment)
                 .build();
-        mockDepartment.setManager(staff);
 
         when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
         when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
@@ -390,9 +307,7 @@ class DepartmentServiceTest {
 
         verify(userDepartmentRepository).deleteByUserUserIdAndDepartmentDepartmentId(staffId, departmentId);
         verify(userRepository).save(staff);
-        verify(departmentRepository).save(mockDepartment);
         assertThat(staff.getDepartment()).isNull();
-        assertThat(mockDepartment.getManager()).isNull();
     }
 
     @Test

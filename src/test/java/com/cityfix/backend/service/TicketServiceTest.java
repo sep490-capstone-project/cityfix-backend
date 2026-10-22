@@ -133,11 +133,13 @@ class TicketServiceTest {
     private Ticket mockTicket;
     private TicketResponse mockResponse;
     private UUID categoryId;
+    private UUID subCategoryId;
 
     @BeforeEach
     void setUp() {
         email = "resident@cityfix.com";
         categoryId = UUID.randomUUID();
+        subCategoryId = UUID.randomUUID();
 
         mockUser = new User();
         mockUser.setUserId(UUID.randomUUID());
@@ -222,18 +224,16 @@ class TicketServiceTest {
                     .build();
         });
 
-        lenient().when(ticketStepMapper.toTicketStep(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        lenient().when(ticketStepMapper.toTicketStep(any(), any(), any(), any())).thenAnswer(invocation -> {
             Ticket t = invocation.getArgument(0);
             Step s = invocation.getArgument(1);
             User staff = invocation.getArgument(2);
             AssignmentStatus st = invocation.getArgument(3);
-            Integer idx = invocation.getArgument(4);
             return TicketStep.builder()
                     .ticket(t)
                     .step(s)
                     .assignee(staff)
                     .status(st)
-                    .orderIndex(idx)
                     .build();
         });
 
@@ -427,7 +427,7 @@ class TicketServiceTest {
 
         assertThat(response).isNotNull();
         verify(ticketSubCategoryRepository, atLeastOnce()).save(any());
-        verify(ticketStepRepository, atLeastOnce()).save(argThat(ts -> ts != null && ts.getAssignee() != null && ts.getOrderIndex() != null && ts.getOrderIndex() == 1 && !ts.isDeleted()));
+        verify(ticketStepRepository, atLeastOnce()).save(argThat(ts -> ts != null && ts.getAssignee() != null && !ts.isDeleted()));
     }
 
     @Test
@@ -744,25 +744,36 @@ class TicketServiceTest {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        when(ticketRepository.findDuplicateTickets(latitude, longitude, categoryId))
+        when(ticketRepository.findDuplicateTickets(latitude, longitude, subCategoryId))
                 .thenReturn(List.of(mockProjection));
         when(ticketMapper.toDuplicateTicketResponseList(List.of(mockProjection)))
                 .thenReturn(List.of(mockDuplicateResponse));
 
-        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(latitude, longitude, categoryId);
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(latitude, longitude, subCategoryId);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getTicketId()).isEqualTo(mockDuplicateResponse.getTicketId());
         assertThat(result.get(0).getDistanceMeters()).isEqualTo(18.5);
         assertThat(result.get(0).getImageUrl()).isEqualTo("https://cloudinary.com/image.jpg");
 
-        verify(ticketRepository, times(1)).findDuplicateTickets(latitude, longitude, categoryId);
+        verify(ticketRepository, times(1)).findDuplicateTickets(latitude, longitude, subCategoryId);
     }
 
     @Test
     @DisplayName("findDuplicateTickets_missingLatitude_throwsValidationAppException")
     void findDuplicateTickets_missingLatitude_throwsValidationAppException() {
-        assertThatThrownBy(() -> ticketService.findDuplicateTickets(null, 106.660172, categoryId))
+        assertThatThrownBy(() -> ticketService.findDuplicateTickets(null, 106.660172, subCategoryId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.VALIDATION_ERROR);
+
+        verify(ticketRepository, never()).findDuplicateTickets(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_missingSubCategoryId_throwsValidationAppException")
+    void findDuplicateTickets_missingSubCategoryId_throwsValidationAppException() {
+        assertThatThrownBy(() -> ticketService.findDuplicateTickets(10.762622, 106.660172, null))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.VALIDATION_ERROR);
@@ -881,9 +892,8 @@ class TicketServiceTest {
                 .ticket(mockTicket)
                 .step(mockStepEntity)
                 .status(AssignmentStatus.ASSIGNED)
-                .orderIndex(0)
                 .build();
-        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), anyList()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(eq(mockTicket.getTicketId()), anyList()))
                 .thenReturn(List.of(activeStep));
 
         com.cityfix.backend.model.entity.Department targetDept = new com.cityfix.backend.model.entity.Department();
@@ -954,13 +964,14 @@ class TicketServiceTest {
         User otherStaff = new User();
         otherStaff.setUserId(UUID.randomUUID());
 
+        LocalDateTime now = LocalDateTime.now();
         com.cityfix.backend.model.entity.TicketStep myStep2 =
                 com.cityfix.backend.model.entity.TicketStep.builder()
                         .id(UUID.randomUUID())
                         .ticket(mockTicket)
                         .assignee(mockUser)
-                        .orderIndex(2)
                         .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                        .createdAt(now.plusSeconds(1))
                         .build();
 
         com.cityfix.backend.model.entity.TicketStep myStep1 =
@@ -968,8 +979,8 @@ class TicketServiceTest {
                         .id(UUID.randomUUID())
                         .ticket(mockTicket)
                         .assignee(mockUser)
-                        .orderIndex(1)
                         .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
+                        .createdAt(now)
                         .build();
 
         com.cityfix.backend.model.entity.TicketStep otherStaffStep =
@@ -977,7 +988,6 @@ class TicketServiceTest {
                         .id(UUID.randomUUID())
                         .ticket(mockTicket)
                         .assignee(otherStaff)
-                        .orderIndex(3)
                         .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
                         .build();
 
@@ -987,13 +997,11 @@ class TicketServiceTest {
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
                         .id(myStep1.getId())
                         .assigneeId(mockUser.getUserId())
-                        .orderIndex(1)
                         .build();
         com.cityfix.backend.model.dto.response.TicketStepResponse stepRes2 =
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
                         .id(myStep2.getId())
                         .assigneeId(mockUser.getUserId())
-                        .orderIndex(2)
                         .build();
 
         org.springframework.data.domain.Page<com.cityfix.backend.model.entity.Ticket> page =
@@ -1075,7 +1083,7 @@ class TicketServiceTest {
         mockTicket.setSteps(new ArrayList<>(List.of(step)));
 
         when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
-        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(eq(mockTicket.getTicketId()), any()))
                 .thenReturn(List.of(step));
         when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
 
@@ -1126,7 +1134,7 @@ class TicketServiceTest {
 
         when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(departmentRepository.findById(suggestedDeptId)).thenReturn(Optional.of(suggestedDept));
-        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(eq(mockTicket.getTicketId()), any()))
                 .thenReturn(List.of(step));
 
         TicketResponse mockResponse = TicketResponse.builder().build();
@@ -1231,7 +1239,7 @@ class TicketServiceTest {
             .thenReturn(List.of(com.cityfix.backend.model.entity.RoutingRule.builder().department(suggestedDept).build()));
 
         when(departmentRepository.findById(suggestedDeptId)).thenReturn(Optional.of(suggestedDept));
-        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(eq(mockTicket.getTicketId()), any()))
                 .thenReturn(List.of(step));
 
         TicketResponse mockResponse = TicketResponse.builder().build();
@@ -1281,7 +1289,7 @@ class TicketServiceTest {
                 .build();
 
         when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
-        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByOrderIndexAsc(eq(mockTicket.getTicketId()), any()))
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(eq(mockTicket.getTicketId()), any()))
                 .thenReturn(List.of(step));
         when(userRepository.findById(targetAssignee.getUserId())).thenReturn(Optional.of(targetAssignee));
 
@@ -1336,12 +1344,11 @@ class TicketServiceTest {
     void updateTicketStepOrderIndex_manager_success() {
         mockUser.setRole(new Role(UUID.randomUUID(), "MANAGER"));
         UUID stepId = UUID.randomUUID();
-        TicketStep step = TicketStep.builder().id(stepId).orderIndex(0).build();
+        TicketStep step = TicketStep.builder().id(stepId).build();
 
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
-        when(ticketStepRepository.save(any(TicketStep.class))).thenReturn(step);
         when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(
-                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId).orderIndex(3).build()
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId).build()
         );
 
         com.cityfix.backend.model.dto.request.UpdateTicketStepOrderRequest request =
@@ -1351,9 +1358,7 @@ class TicketServiceTest {
                 ticketService.updateTicketStepOrderIndex(stepId, request);
 
         assertThat(res).isNotNull();
-        assertThat(res.getOrderIndex()).isEqualTo(3);
-        verify(ticketStepMapper).updateOrderIndex(eq(request), eq(step));
-        verify(ticketStepRepository).save(step);
+        assertThat(res.getId()).isEqualTo(stepId);
     }
 
     @Test
@@ -1383,7 +1388,7 @@ class TicketServiceTest {
         LocalDateTime deadline2 = LocalDateTime.now().plusDays(3);
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
-        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
+        when(ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(List.of(step1, step2));
         when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).deadline(deadline1).build(),
@@ -1410,15 +1415,14 @@ class TicketServiceTest {
         UUID ticketId = UUID.randomUUID();
         UUID stepId1 = UUID.randomUUID();
         UUID stepId2 = UUID.randomUUID();
-        TicketStep step1 = TicketStep.builder().id(stepId1).orderIndex(0).build();
-        TicketStep step2 = TicketStep.builder().id(stepId2).orderIndex(1).build();
+        TicketStep step1 = TicketStep.builder().id(stepId1).build();
+        TicketStep step2 = TicketStep.builder().id(stepId2).build();
 
         when(ticketRepository.existsById(ticketId)).thenReturn(true);
-        when(ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId)).thenReturn(List.of(step1, step2));
-        when(ticketStepRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(List.of(step1, step2));
         when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
-                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).orderIndex(1).build(),
-                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId2).orderIndex(0).build()
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).build(),
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId2).build()
         ));
 
         com.cityfix.backend.model.dto.request.ReorderTicketStepsRequest request =
@@ -1431,7 +1435,6 @@ class TicketServiceTest {
                 ticketService.reorderTicketSteps(ticketId, request);
 
         assertThat(res).hasSize(2);
-        verify(ticketStepRepository).saveAll(anyList());
     }
 
     // ==========================================

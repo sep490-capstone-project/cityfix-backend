@@ -14,6 +14,7 @@ public interface EvidenceMapper {
 
     @Mapping(target = "staffName", source = "staff.fullName")
     @Mapping(target = "ticketStepId", source = "ticketStep.id")
+    @Mapping(target = "createdAt", source = "createdAt")
     ResolutionEvidenceResponse toResolutionEvidenceResponse(ResolutionEvidence evidence);
 
     List<ResolutionEvidenceResponse> toResponseList(List<ResolutionEvidence> evidences);
@@ -23,6 +24,6 @@ public interface EvidenceMapper {
     @Mapping(target = "staff", source = "staff")
     @Mapping(target = "imageUrl", source = "imageUrl")
     @Mapping(target = "resolutionNote", source = "resolutionNote")
-    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "createdAt", expression = "java(java.time.LocalDateTime.now())")
     ResolutionEvidence toResolutionEvidence(TicketStep ticketStep, User staff, String imageUrl, String resolutionNote);
 }

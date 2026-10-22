@@ -42,15 +42,7 @@ public class DepartmentServiceImpl implements DepartmentService {
         }
 
         Department department = departmentMapper.toEntity(request);
-        if (request.managerId() != null) {
-            User manager = userRepository.findById(request.managerId())
-                    .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
-            department.setManager(manager);
-        }
         Department savedDepartment = departmentRepository.save(department);
-        if (savedDepartment.getManager() != null) {
-            syncManagerDepartmentMapping(savedDepartment.getManager(), savedDepartment);
-        }
 
         return departmentMapper.toResponse(savedDepartment);
     }
@@ -68,15 +60,6 @@ public class DepartmentServiceImpl implements DepartmentService {
         }
 
         departmentMapper.updateEntityFromRequest(request, department);
-
-        if (request.managerId() != null) {
-            User manager = userRepository.findById(request.managerId())
-                    .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
-            department.setManager(manager);
-            syncManagerDepartmentMapping(manager, department);
-        } else {
-            department.setManager(null);
-        }
 
         if (request.isActive() != null) {
             if (Boolean.FALSE.equals(request.isActive())) {
@@ -190,10 +173,6 @@ public class DepartmentServiceImpl implements DepartmentService {
             userRepository.save(user);
         }
 
-        if (department.getManager() != null && department.getManager().getUserId().equals(userId)) {
-            department.setManager(null);
-            departmentRepository.save(department);
-        }
     }
 
     @Override
@@ -217,20 +196,5 @@ public class DepartmentServiceImpl implements DepartmentService {
                             .build();
                 })
                 .toList();
-    }
-
-    private void syncManagerDepartmentMapping(User manager, Department department) {
-        if (!userDepartmentRepository.existsByUserUserIdAndDepartmentDepartmentId(manager.getUserId(), department.getDepartmentId())) {
-            UserDepartment mapping = UserDepartment.builder()
-                    .user(manager)
-                    .department(department)
-                    .createdAt(LocalDateTime.now())
-                    .build();
-            userDepartmentRepository.save(mapping);
-        }
-        if (manager.getDepartment() == null) {
-            manager.setDepartment(department);
-            userRepository.save(manager);
-        }
     }
 }

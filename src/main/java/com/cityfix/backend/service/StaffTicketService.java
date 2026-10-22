@@ -13,7 +13,5 @@ public interface StaffTicketService {
 
     TicketResponse updateTicketStatus(UUID ticketId, TicketStatus targetStatus, UpdateStaffTicketStatusRequest request);
 
-    List<ResolutionEvidenceResponse> submitEvidence(UUID ticketId, List<MultipartFile> files, String resolutionNote);
-
-    List<ResolutionEvidenceResponse> submitEvidenceForStep(UUID stepId, List<MultipartFile> files, String resolutionNote);
+    List<ResolutionEvidenceResponse> submitEvidence(UUID stepId, List<MultipartFile> files, String resolutionNote);
 }

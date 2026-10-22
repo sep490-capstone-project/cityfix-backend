@@ -93,6 +93,19 @@ public class StaffTicketServiceImpl implements StaffTicketService {
                 && user.getDepartment().getDepartmentId().equals(step.getAssignee().getDepartment().getDepartmentId());
     }
 
+    private void validateStepPrerequisites(TicketStep targetStep) {
+        if (targetStep == null || targetStep.getDependsOn() == null || targetStep.getDependsOn().isEmpty()) {
+            return;
+        }
+        boolean prerequisitesResolved = targetStep.getDependsOn().stream()
+                .filter(dep -> dep != null && !dep.isDeleted() && dep.getStatus() != AssignmentStatus.CANCELLED)
+                .allMatch(dep -> dep.getStatus() == AssignmentStatus.RESOLVED 
+                              || dep.getStatus() == AssignmentStatus.COMPLETED);
+        if (!prerequisitesResolved) {
+            throw new AppException(ErrorCode.STEP_PREREQUISITES_NOT_MET);
+        }
+    }
+
     private boolean isActiveStatus(AssignmentStatus status) {
         return status == AssignmentStatus.ASSIGNED 
                 || status == AssignmentStatus.IN_PROGRESS;
@@ -125,6 +138,8 @@ public class StaffTicketServiceImpl implements StaffTicketService {
             }
 
             if (targetStatus == TicketStatus.RESOLVED || targetStatus == TicketStatus.COMPLETED) {
+                validateStepPrerequisites(targetStep);
+
                 if (!resolutionEvidenceRepository.existsByTicketStep_Id(targetStep.getId())) {
                     throw new AppException(ErrorCode.EVIDENCE_REQUIRED);
                 }
@@ -152,6 +167,8 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
                 return ticketMapper.toTicketResponse(ticket);
             } else if (targetStatus == TicketStatus.IN_PROGRESS) {
+                validateStepPrerequisites(targetStep);
+
                 targetStep.setStatus(AssignmentStatus.IN_PROGRESS);
                 if (targetStep.getStartedAt() == null) {
                     targetStep.setStartedAt(LocalDateTime.now());
@@ -228,6 +245,9 @@ public class StaffTicketServiceImpl implements StaffTicketService {
                     .toList();
             if (!admin && targetSteps.isEmpty()) {
                 throw new AppException(ErrorCode.FORBIDDEN);
+            }
+            for (TicketStep step : targetSteps) {
+                validateStepPrerequisites(step);
             }
             for (TicketStep step : targetSteps) {
                 step.setStatus(AssignmentStatus.IN_PROGRESS);
@@ -308,40 +328,18 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
     @Override
     @Transactional
-    public List<ResolutionEvidenceResponse> submitEvidence(UUID id, List<MultipartFile> files, String resolutionNote) {
+    public List<ResolutionEvidenceResponse> submitEvidence(UUID stepId, List<MultipartFile> files, String resolutionNote) {
         User currentUser = getCurrentUser();
 
-        TicketStep targetStep;
-        Ticket ticket;
+        TicketStep targetStep = ticketStepRepository.findById(stepId)
+                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+        Ticket ticket = targetStep.getTicket();
 
-        Optional<TicketStep> stepOpt = ticketStepRepository.findById(id);
-        if (stepOpt.isPresent()) {
-            targetStep = stepOpt.get();
-            ticket = targetStep.getTicket();
-        } else {
-            ticket = ticketRepository.findById(id)
-                    .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-            List<TicketStep> steps = ticket.getSteps() != null ? ticket.getSteps() : Collections.emptyList();
-            targetStep = steps.stream()
-                    .filter(step -> isAdmin(currentUser) || isStepAssignedToUserOrDepartment(step, currentUser))
-                    .filter(step -> step.getStatus() == AssignmentStatus.IN_PROGRESS 
-                            || step.getStatus() == AssignmentStatus.ASSIGNED)
-                    .findFirst()
-                    .orElse(null);
-            if (targetStep == null && !steps.isEmpty()) {
-                targetStep = steps.stream()
-                        .filter(step -> isAdmin(currentUser) || isStepAssignedToUserOrDepartment(step, currentUser))
-                        .findFirst()
-                        .orElse(null);
-            }
-            if (targetStep == null) {
-                throw new AppException(ErrorCode.STEP_NOT_FOUND);
-            }
+        if (targetStep.getAssignee() == null || !targetStep.getAssignee().getUserId().equals(currentUser.getUserId())) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Bạn không được phân công xử lý bước này.");
         }
 
-        if (!isAdmin(currentUser) && !isStepAssignedToUserOrDepartment(targetStep, currentUser)) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
+        validateStepPrerequisites(targetStep);
 
         List<ImageUploadResponse> uploadResponses = ticketService.uploadImage(files, "cityfix/evidences");
 
@@ -358,11 +356,5 @@ public class StaffTicketServiceImpl implements StaffTicketService {
         ticketHistoryRepository.save(history);
 
         return evidenceMapper.toResponseList(evidences);
-    }
-
-    @Override
-    @Transactional
-    public List<ResolutionEvidenceResponse> submitEvidenceForStep(UUID stepId, List<MultipartFile> files, String resolutionNote) {
-        return submitEvidence(stepId, files, resolutionNote);
     }
 }

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -60,18 +61,59 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
         completedStep.setUpdatedAt(now);
         ticketStepRepository.save(completedStep);
 
-        // Fetch all steps for this ticket ordered by orderIndex
-        List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByOrderIndexAsc(ticketId);
+        // Fetch all steps for this ticket with dependencies eager-loaded
+        List<TicketStep> steps = ticketStepRepository.findByTicket_TicketIdOrderByCreatedAtAscIdAsc(ticketId);
+        if (steps == null || steps.isEmpty()) {
+            steps = ticketStepRepository.findByTicket_TicketId(ticketId);
+        }
+        if (steps == null || steps.isEmpty()) {
+            steps = ticketStepRepository.findByTicketTicketId(ticketId);
+        }
 
-        // Lọc tất cả các bước chưa kết thúc (không phải COMPLETED, RESOLVED, CANCELLED)
-        List<TicketStep> remainingSteps = steps.stream()
-                .filter(s -> !s.getId().equals(completedStep.getId()))
-                .filter(s -> s.getStatus() != AssignmentStatus.COMPLETED
-                        && s.getStatus() != AssignmentStatus.RESOLVED
-                        && s.getStatus() != AssignmentStatus.CANCELLED)
-                .sorted(Comparator.comparing(TicketStep::getOrderIndex, Comparator.nullsLast(Comparator.naturalOrder())))
-                .toList();
+        // 1. Kích hoạt song song các bước con phụ thuộc nếu TẤT CẢ các bước tiên quyết đã RESOLVED/COMPLETED
+        List<TicketStep> activatedSteps = new ArrayList<>();
+        for (TicketStep candidateStep : steps) {
+            if (candidateStep.getId().equals(completedStep.getId())
+                    || candidateStep.isDeleted()
+                    || candidateStep.getStatus() == AssignmentStatus.COMPLETED
+                    || candidateStep.getStatus() == AssignmentStatus.RESOLVED
+                    || candidateStep.getStatus() == AssignmentStatus.CANCELLED
+                    || candidateStep.getStatus() == AssignmentStatus.IN_PROGRESS) {
+                continue;
+            }
 
+            boolean allPrerequisitesResolved = candidateStep.getDependsOn().stream()
+                    .filter(dep -> !dep.isDeleted() && dep.getStatus() != AssignmentStatus.CANCELLED)
+                    .allMatch(dep -> dep.getStatus() == AssignmentStatus.RESOLVED
+                            || dep.getStatus() == AssignmentStatus.COMPLETED);
+
+            if (allPrerequisitesResolved) {
+                candidateStep.setStatus(AssignmentStatus.IN_PROGRESS);
+                candidateStep.setStartedAt(now);
+                if (candidateStep.getStep() != null && candidateStep.getStep().getDuration() != null && candidateStep.getStep().getDuration() > 0) {
+                    candidateStep.setDeadline(now.plusHours(candidateStep.getStep().getDuration()));
+                }
+                candidateStep.setUpdatedAt(now);
+                ticketStepRepository.save(candidateStep);
+                activatedSteps.add(candidateStep);
+
+                // Record history for each activated step
+                User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();
+                TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                        ticket, actor, ActionType.WORK_STARTED, TicketStatus.IN_PROGRESS, TicketStatus.IN_PROGRESS,
+                        "Bước '" + (completedStep.getStep() != null ? completedStep.getStep().getStepName() : completedStep.getId())
+                                + "' hoàn thành. Tự động kích hoạt bước '"
+                                + (candidateStep.getStep() != null ? candidateStep.getStep().getStepName() : candidateStep.getId())
+                                + "' sang Đang xử lý."
+                );
+                ticketHistoryRepository.save(history);
+
+                notificationService.notifyStepStarted(candidateStep, candidateStep.getAssignee());
+                log.info("Ticket {} - Step {} completed. Activated downstream step {}.", ticketId, completedStep.getId(), candidateStep.getId());
+            }
+        }
+
+        // 2. Đánh giá trạng thái tổng thể của Ticket
         List<TicketStep> activeNonCancelledSteps = steps.stream()
                 .filter(s -> !s.isDeleted() && s.getStatus() != AssignmentStatus.CANCELLED)
                 .toList();
@@ -82,8 +124,7 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
         boolean allStepsResolved = !activeNonCancelledSteps.isEmpty() && activeNonCancelledSteps.stream()
                 .allMatch(s -> s.getStatus() == AssignmentStatus.RESOLVED || s.getStatus() == AssignmentStatus.COMPLETED);
 
-        if (remainingSteps.isEmpty() && allStepsCompleted) {
-            // Tất cả các bước đã được Manager xác nhận COMPLETED -> chuyển trạng thái vé sang COMPLETED
+        if (allStepsCompleted) {
             TicketStatus prevStatus = ticket.getStatus();
             ticket.setStatus(TicketStatus.COMPLETED);
             ticketRepository.save(ticket);
@@ -96,10 +137,8 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             ticketHistoryRepository.save(history);
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
-
             log.info("Ticket {} - All steps COMPLETED. Ticket marked as COMPLETED.", ticketId);
-        } else if (remainingSteps.isEmpty() && allStepsResolved) {
-            // Tất cả các bước đã hoàn tất (RESOLVED) -> chuyển trạng thái vé sang RESOLVED
+        } else if (allStepsResolved) {
             TicketStatus prevStatus = ticket.getStatus();
             if (ticket.getStatus() != TicketStatus.RESOLVED) {
                 ticket.setStatus(TicketStatus.RESOLVED);
@@ -114,96 +153,26 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             }
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
-
             log.info("Ticket {} - All steps RESOLVED. Ticket marked as RESOLVED.", ticketId);
-        } else if (!remainingSteps.isEmpty()) {
-            // Có ít nhất một bước chưa hoàn tất, chọn bước kế tiếp có orderIndex nhỏ nhất
-            TicketStep candidateNextStep = remainingSteps.get(0);
-            int candidateOrder = candidateNextStep.getOrderIndex() != null ? candidateNextStep.getOrderIndex() : 0;
-
-            // Tiền điều kiện nghiêm ngặt: Kiểm tra xem TẤT CẢ các bước có orderIndex < candidateOrder đều đã kết thúc
-            boolean allPriorStepsFinished = steps.stream()
-                    .filter(s -> !s.getId().equals(candidateNextStep.getId()))
-                    .filter(s -> s.getOrderIndex() != null && s.getOrderIndex() < candidateOrder)
-                    .allMatch(s -> s.getStatus() == AssignmentStatus.COMPLETED
-                            || s.getStatus() == AssignmentStatus.RESOLVED
-                            || s.getStatus() == AssignmentStatus.CANCELLED);
-
-            if (allPriorStepsFinished) {
-                // Đủ điều kiện kích hoạt: chỉ chuyển sang IN_PROGRESS nếu chưa ở trạng thái này
-                if (candidateNextStep.getStatus() != AssignmentStatus.IN_PROGRESS) {
-                    candidateNextStep.setStatus(AssignmentStatus.IN_PROGRESS);
-                    candidateNextStep.setStartedAt(now);
-                    if (candidateNextStep.getStep() != null && candidateNextStep.getStep().getDuration() != null && candidateNextStep.getStep().getDuration() > 0) {
-                        candidateNextStep.setDeadline(now.plusHours(candidateNextStep.getStep().getDuration()));
-                    }
-                    candidateNextStep.setUpdatedAt(now);
-                    ticketStepRepository.save(candidateNextStep);
-
-                    // Cascade deadlines cho các bước phía sau (orderIndex > candidateOrder)
-                    LocalDateTime prevDeadline = candidateNextStep.getDeadline();
-                    if (prevDeadline != null) {
-                        List<TicketStep> subsequentSteps = steps.stream()
-                                .filter(s -> !s.getId().equals(candidateNextStep.getId()))
-                                .filter(s -> !s.isDeleted())
-                                .filter(s -> s.getOrderIndex() != null && s.getOrderIndex() > candidateOrder)
-                                .filter(s -> s.getStatus() != AssignmentStatus.COMPLETED
-                                        && s.getStatus() != AssignmentStatus.RESOLVED
-                                        && s.getStatus() != AssignmentStatus.CANCELLED)
-                                .sorted(Comparator.comparing(TicketStep::getOrderIndex))
-                                .toList();
-
-                        for (TicketStep s : subsequentSteps) {
-                            int duration = (s.getStep() != null && s.getStep().getDuration() != null && s.getStep().getDuration() > 0)
-                                    ? s.getStep().getDuration()
-                                    : 0;
-                            LocalDateTime nextStart = prevDeadline;
-                            LocalDateTime nextDeadline = nextStart.plusHours(duration);
-                            s.setStartedAt(nextStart);
-                            s.setDeadline(nextDeadline);
-                            s.setUpdatedAt(now);
-                            ticketStepRepository.save(s);
-                            prevDeadline = nextDeadline;
-                        }
-                    }
-
-                    // Cập nhật lại deadline tổng của Ticket từ max deadline của các bước hợp lệ
-                    LocalDateTime ticketDeadline = steps.stream()
-                            .filter(Objects::nonNull)
-                            .filter(s -> !s.isDeleted())
-                            .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
-                            .map(TicketStep::getDeadline)
-                            .filter(Objects::nonNull)
-                            .max(LocalDateTime::compareTo)
-                            .orElse(null);
-                    if (ticketDeadline != null) {
-                        ticket.setDeadline(ticketDeadline);
-                    }
-
-                    // Ensure ticket is IN_PROGRESS
-                    TicketStatus prevStatus = ticket.getStatus();
-                    if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
-                        ticket.setStatus(TicketStatus.IN_PROGRESS);
-                    }
-                    ticketRepository.save(ticket);
-
-                    // Record history
-                    User actor = completedStep.getAssignee() != null ? completedStep.getAssignee() : ticket.getUser();
-                    TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                            ticket, actor, ActionType.WORK_STARTED, prevStatus, TicketStatus.IN_PROGRESS,
-                            "Bước '" + (completedStep.getStep() != null ? completedStep.getStep().getStepName() : completedStep.getId())
-                                    + "' hoàn thành. Tự động chuyển bước '"
-                                    + (candidateNextStep.getStep() != null ? candidateNextStep.getStep().getStepName() : candidateNextStep.getId())
-                                    + "' sang Đang xử lý."
-                    );
-                    ticketHistoryRepository.save(history);
-
-                    log.info("Ticket {} - Step {} completed. Activated next step {}.", ticketId, completedStep.getId(), candidateNextStep.getId());
-                }
-            } else {
-                log.warn("Ticket {} - Step {} completed, but cannot activate next step {} because prior steps are not completed yet.",
-                        ticketId, completedStep.getId(), candidateNextStep.getId());
+        } else {
+            // Còn bước đang chờ hoặc đang làm dở -> duy trì trạng thái IN_PROGRESS
+            if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
+                ticket.setStatus(TicketStatus.IN_PROGRESS);
             }
+
+            // Cập nhật lại deadline tổng của Ticket từ max deadline của các bước hợp lệ
+            LocalDateTime ticketDeadline = steps.stream()
+                    .filter(Objects::nonNull)
+                    .filter(s -> !s.isDeleted())
+                    .filter(s -> s.getStatus() != AssignmentStatus.CANCELLED)
+                    .map(TicketStep::getDeadline)
+                    .filter(Objects::nonNull)
+                    .max(LocalDateTime::compareTo)
+                    .orElse(null);
+            if (ticketDeadline != null) {
+                ticket.setDeadline(ticketDeadline);
+            }
+            ticketRepository.save(ticket);
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), false);
         }
