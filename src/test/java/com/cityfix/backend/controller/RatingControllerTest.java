@@ -40,6 +40,8 @@ class RatingControllerTest {
     @Mock
     private RatingService ratingService;
 
+
+
     @InjectMocks
     private RatingController ratingController;
 

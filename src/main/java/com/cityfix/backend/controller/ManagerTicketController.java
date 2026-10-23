@@ -8,6 +8,8 @@ import com.cityfix.backend.model.dto.response.SuggestedAssigneeResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
 import com.cityfix.backend.service.ManagerTicketService;
+import com.cityfix.backend.service.RatingFrustrationAnalysisService;
+import com.cityfix.backend.model.dto.response.RatingFrustrationAnalysisResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -34,6 +36,7 @@ import java.util.UUID;
 public class ManagerTicketController {
 
     private final ManagerTicketService managerTicketService;
+    private final RatingFrustrationAnalysisService ratingFrustrationAnalysisService;
 
     @GetMapping
     @PreAuthorize("hasRole('MANAGER')")
@@ -178,5 +181,14 @@ public class ManagerTicketController {
             @Valid @RequestBody ReorderTicketStepsRequest request) {
         List<TicketStepResponse> response = managerTicketService.reorderTicketSteps(ticketId, request);
         return ResponseEntity.ok(BaseResponse.success("Sắp xếp lại thứ tự các bước thành công", response));
+    }
+
+    @GetMapping("/{ticketId}/ratings/frustration-analysis")
+    @PreAuthorize("hasRole('MANAGER')")
+    @Operation(summary = "Phân tích hệ số bức xúc có trọng số của vé", description = "Chỉ Manager mới có quyền xem chi tiết điểm phạt bức xúc, số lượng người theo dõi, ngưỡng kích hoạt và trạng thái cảnh báo khủng hoảng.")
+    public ResponseEntity<BaseResponse<RatingFrustrationAnalysisResponse>> getFrustrationAnalysis(
+            @PathVariable UUID ticketId) {
+        RatingFrustrationAnalysisResponse response = ratingFrustrationAnalysisService.analyzeFrustration(ticketId);
+        return ResponseEntity.ok(BaseResponse.success("Phân tích hệ số bức xúc thành công", response));
     }
 }

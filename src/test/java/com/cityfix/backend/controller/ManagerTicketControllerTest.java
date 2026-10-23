@@ -36,6 +36,9 @@ class ManagerTicketControllerTest {
     @Mock
     private ManagerTicketService managerTicketService;
 
+    @Mock
+    private com.cityfix.backend.service.RatingFrustrationAnalysisService ratingFrustrationAnalysisService;
+
     @InjectMocks
     private ManagerTicketController managerTicketController;
 
