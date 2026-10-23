@@ -3,9 +3,7 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.model.dto.request.CreateRatingRequest;
 import com.cityfix.backend.model.dto.request.UpdateRatingRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
-import com.cityfix.backend.model.dto.response.RatingFrustrationAnalysisResponse;
 import com.cityfix.backend.model.dto.response.RatingResponse;
-import com.cityfix.backend.service.RatingFrustrationAnalysisService;
 import com.cityfix.backend.service.RatingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,7 +25,6 @@ import java.util.UUID;
 public class RatingController {
 
     private final RatingService ratingService;
-    private final RatingFrustrationAnalysisService ratingFrustrationAnalysisService;
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
@@ -77,14 +74,5 @@ public class RatingController {
             @PathVariable UUID ratingId) {
         ratingService.deleteRating(ticketId, ratingId);
         return ResponseEntity.ok(BaseResponse.success("Xóa đánh giá thành công", null));
-    }
-
-    @GetMapping("/frustration-analysis")
-    @PreAuthorize("hasRole('MANAGER')")
-    @Operation(summary = "Phân tích hệ số bức xúc có trọng số của vé", description = "Trả về chi tiết điểm phạt bức xúc, số lượng người theo dõi, ngưỡng kích hoạt và trạng thái cảnh báo khủng hoảng.")
-    public ResponseEntity<BaseResponse<RatingFrustrationAnalysisResponse>> getFrustrationAnalysis(
-            @PathVariable UUID ticketId) {
-        RatingFrustrationAnalysisResponse response = ratingFrustrationAnalysisService.analyzeFrustration(ticketId);
-        return ResponseEntity.ok(BaseResponse.success("Phân tích hệ số bức xúc thành công", response));
     }
 }

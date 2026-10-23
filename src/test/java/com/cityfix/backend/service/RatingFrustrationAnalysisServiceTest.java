@@ -75,6 +75,52 @@ class RatingFrustrationAnalysisServiceTest {
     }
 
     @Test
+    @DisplayName("Chống False Positive (Bug 1): Vé chỉ có 1 người theo dõi và 1 đánh giá 1 sao -> Không kích hoạt khủng hoảng")
+    void testAnalyzeFrustration_SmallSampleSize_OneFollower_NoCrisisAlert() {
+        // Arrange: Chỉ có 1 người theo dõi (chính người tạo vé, 0 upvoters)
+        List<Rating> ratings = List.of(Rating.builder().rate(1).build());
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketVoteRepository.findUpvotersByTicketId(ticketId)).thenReturn(Collections.emptyList());
+        when(ratingRepository.findByTicket_TicketIdAndIsDeletedFalse(ticketId)).thenReturn(ratings);
+
+        // Act
+        RatingFrustrationAnalysisResponse response = frustrationService.analyzeFrustration(ticketId);
+
+        // Assert
+        assertThat(response).isNotNull();
+        assertThat(response.getTotalFollowers()).isEqualTo(1);
+        assertThat(response.getTotalPenaltyScore()).isEqualTo(2); // 1 x 2 = 2
+        // Cần tối thiểu 3 người theo dõi và 3 điểm phạt để cấu thành khủng hoảng
+        assertThat(response.isAlertTriggered()).isFalse();
+        assertThat(response.getCurrentMilestone()).isEqualTo("NONE");
+        assertThat(response.getAnalysisSummary()).contains("CHƯA ĐỦ CỠ MẪU");
+    }
+
+    @Test
+    @DisplayName("Chống False Positive: Vé có 2 người theo dõi và 2 đánh giá 1 sao -> Vẫn chưa đủ quy mô đám đông để gọi là khủng hoảng")
+    void testAnalyzeFrustration_SmallSampleSize_TwoFollowers_NoCrisisAlert() {
+        User otherUpvoter = new User();
+        otherUpvoter.setUserId(UUID.randomUUID());
+
+        List<Rating> ratings = List.of(
+                Rating.builder().rate(1).build(),
+                Rating.builder().rate(1).build()
+        );
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketVoteRepository.findUpvotersByTicketId(ticketId)).thenReturn(List.of(otherUpvoter));
+        when(ratingRepository.findByTicket_TicketIdAndIsDeletedFalse(ticketId)).thenReturn(ratings);
+
+        RatingFrustrationAnalysisResponse response = frustrationService.analyzeFrustration(ticketId);
+
+        assertThat(response.getTotalFollowers()).isEqualTo(2);
+        assertThat(response.isAlertTriggered()).isFalse();
+        assertThat(response.getCurrentMilestone()).isEqualTo("NONE");
+        assertThat(response.getAnalysisSummary()).contains("CHƯA ĐỦ CỠ MẪU");
+    }
+
+    @Test
     @DisplayName("Kịch bản 1: 10 người theo dõi, 5 người cho 2 sao -> 5 điểm phạt >= ngưỡng 5.0 -> Kích hoạt cảnh báo 50%")
     void testAnalyzeFrustration_Scenario1_FiveTwoStarRatings() {
         // Arrange: 5 đánh giá 2 sao
@@ -178,7 +224,7 @@ class RatingFrustrationAnalysisServiceTest {
     }
 
     @Test
-    @DisplayName("Kịch bản 5: An toàn -> 2 người cho 1 sao = 4 điểm phạt < 5.0 -> Chưa chạm ngưỡng, không cảnh báo")
+    @DisplayName("Kịch bản 5: An toàn -> 10 người theo dõi, 2 người cho 1 sao = 4 điểm phạt < 5.0 -> Chưa chạm ngưỡng")
     void testAnalyzeFrustration_Scenario5_SafeBelowThreshold() {
         // Arrange: 2 đánh giá 1 sao (2 x 2 = 4 điểm phạt)
         List<Rating> ratings = List.of(

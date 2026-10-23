@@ -20,6 +20,9 @@ import java.util.*;
 @RequiredArgsConstructor
 public class RatingFrustrationAnalysisServiceImpl implements RatingFrustrationAnalysisService {
 
+    public static final int MIN_FOLLOWERS_FOR_CRISIS = 3;
+    public static final int MIN_PENALTY_FOR_CRISIS = 3;
+
     private final TicketRepository ticketRepository;
     private final RatingRepository ratingRepository;
     private final TicketVoteRepository ticketVoteRepository;
@@ -87,19 +90,24 @@ public class RatingFrustrationAnalysisServiceImpl implements RatingFrustrationAn
         double threshold75 = ((double) totalFollowers * 3.0) / 4.0;
         double threshold100 = (double) totalFollowers;
 
-        // 5. Xác định mốc cảnh báo hiện tại
+        // 5. Xác định mốc cảnh báo hiện tại (áp dụng điều kiện chặn False Positive khi mẫu quá nhỏ)
         String currentMilestone = "NONE";
         boolean isAlertTriggered = false;
 
-        if (totalPenaltyScore >= threshold100 && totalPenaltyScore > 0) {
-            currentMilestone = "ALERT_100_PERCENT";
-            isAlertTriggered = true;
-        } else if (totalPenaltyScore >= threshold75 && totalPenaltyScore > 0) {
-            currentMilestone = "ALERT_75_PERCENT";
-            isAlertTriggered = true;
-        } else if (totalPenaltyScore >= threshold50 && totalPenaltyScore > 0) {
-            currentMilestone = "ALERT_50_PERCENT";
-            isAlertTriggered = true;
+        boolean hasSufficientSample = totalFollowers >= MIN_FOLLOWERS_FOR_CRISIS
+                && totalPenaltyScore >= MIN_PENALTY_FOR_CRISIS;
+
+        if (hasSufficientSample) {
+            if (totalPenaltyScore >= threshold100 && totalPenaltyScore > 0) {
+                currentMilestone = "ALERT_100_PERCENT";
+                isAlertTriggered = true;
+            } else if (totalPenaltyScore >= threshold75 && totalPenaltyScore > 0) {
+                currentMilestone = "ALERT_75_PERCENT";
+                isAlertTriggered = true;
+            } else if (totalPenaltyScore >= threshold50 && totalPenaltyScore > 0) {
+                currentMilestone = "ALERT_50_PERCENT";
+                isAlertTriggered = true;
+            }
         }
 
         // 6. Xây dựng diễn giải phân tích trực quan
@@ -135,8 +143,8 @@ public class RatingFrustrationAnalysisServiceImpl implements RatingFrustrationAn
     public void checkAndTriggerCrisisAlert(UUID ticketId) {
         RatingFrustrationAnalysisResponse analysis = analyzeFrustration(ticketId);
         if (!analysis.isAlertTriggered() || "NONE".equals(analysis.getCurrentMilestone())) {
-            log.info("Ticket {} has penalty score {} < threshold 50% ({}). No alert triggered.",
-                    ticketId, analysis.getTotalPenaltyScore(), analysis.getThreshold50());
+            log.info("Ticket {} did not trigger crisis alert (totalFollowers={}, penaltyScore={}, milestone={}).",
+                    ticketId, analysis.getTotalFollowers(), analysis.getTotalPenaltyScore(), analysis.getCurrentMilestone());
             return;
         }
 
@@ -269,7 +277,13 @@ public class RatingFrustrationAnalysisServiceImpl implements RatingFrustrationAn
         sb.append(" (").append(oneStarCount).append(" đánh giá 1 sao [x2đ], ");
         sb.append(twoStarCount).append(" đánh giá 2 sao [x1đ]). ");
 
-        if ("ALERT_100_PERCENT".equals(currentMilestone)) {
+        if (totalFollowers < MIN_FOLLOWERS_FOR_CRISIS) {
+            sb.append("CHƯA ĐỦ CỠ MẪU: Cần tối thiểu ").append(MIN_FOLLOWERS_FOR_CRISIS)
+                    .append(" người theo dõi để đánh giá khủng hoảng đám đông. Hệ thống chỉ ghi nhận phản ánh cá nhân.");
+        } else if (totalPenaltyScore < MIN_PENALTY_FOR_CRISIS) {
+            sb.append("TRẠNG THÁI AN TOÀN: Điểm phạt chưa đạt ngưỡng tối thiểu kích hoạt khủng hoảng (cần tối thiểu ")
+                    .append(MIN_PENALTY_FOR_CRISIS).append(" điểm phạt).");
+        } else if ("ALERT_100_PERCENT".equals(currentMilestone)) {
             sb.append("BÁO ĐỘNG ĐỎ: Đã chạm mốc 100% người theo dõi (ngưỡng: ")
                     .append(threshold100).append("). Hệ thống kích hoạt cảnh báo khẩn cấp tối đa tới Manager.");
         } else if ("ALERT_75_PERCENT".equals(currentMilestone)) {
