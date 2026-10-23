@@ -321,7 +321,8 @@ public class StaffTicketServiceImpl implements StaffTicketService {
             notificationService.createAndSendNotification(ticket, List.of(ticketUser), title, message);
 
             if (ticketUser.getEmail() != null) {
-                emailService.sendTicketStatusEmail(ticketUser.getEmail(), title, message);
+                // Email sending is disabled; notification is saved to DB and sent via WebSocket
+                log.debug("Ticket status email skipped (saved to DB only): {}", ticket.getTicketId());
             }
         }
     }

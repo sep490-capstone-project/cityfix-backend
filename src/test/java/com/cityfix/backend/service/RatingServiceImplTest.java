@@ -62,6 +62,9 @@ class RatingServiceImplTest {
     private RatingMapper ratingMapper;
 
     @Mock
+    private com.cityfix.backend.service.RatingFrustrationAnalysisService ratingFrustrationAnalysisService;
+
+    @Mock
     private SecurityContext securityContext;
 
     @Mock
