@@ -19,6 +19,8 @@ public interface NotificationService {
     void notifyStepStarted(TicketStep step, User staff);
 
     void notifyStepCompleted(TicketStep step, User staff, boolean isTicketResolved);
+    
+    void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount);
 
     Page<NotificationResponse> getMyNotifications(Boolean isRead, Pageable pageable);
 

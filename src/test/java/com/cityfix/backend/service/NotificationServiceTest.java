@@ -517,4 +517,52 @@ class NotificationServiceTest {
         Notification saved = captor.getValue();
         assertThat(saved.getRecipients()).hasSize(1);
     }
+
+    @Test
+    @DisplayName("notifyRecurringTicketAlert_withActiveManagers_createsAndSendsAlert")
+    void notifyRecurringTicketAlert_withActiveManagers_createsAndSendsAlert() {
+        User manager1 = new User();
+        manager1.setUserId(UUID.randomUUID());
+        manager1.setStatus(UserStatus.ACTIVE);
+        manager1.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+
+        User manager2 = new User();
+        manager2.setUserId(UUID.randomUUID());
+        manager2.setStatus(UserStatus.ACTIVE);
+        manager2.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+
+        when(userRepository.findActiveManagers()).thenReturn(List.of(manager1, manager2));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ticket.setAddress("123 Lê Lợi, Q1");
+        notificationService.notifyRecurringTicketAlert(ticket, 3);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertThat(saved.getTitle()).contains("Lần thứ 3");
+        assertThat(saved.getContent()).contains("123 Lê Lợi, Q1");
+        assertThat(saved.getContent()).contains("30 ngày");
+        assertThat(saved.getRecipients()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("notifyRecurringTicketAlert_noManagersFound_doesNotSave")
+    void notifyRecurringTicketAlert_noManagersFound_doesNotSave() {
+        when(userRepository.findActiveManagers()).thenReturn(Collections.emptyList());
+
+        notificationService.notifyRecurringTicketAlert(ticket, 3);
+
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("notifyRecurringTicketAlert_nullTicket_doesNothing")
+    void notifyRecurringTicketAlert_nullTicket_doesNothing() {
+        notificationService.notifyRecurringTicketAlert(null, 3);
+
+        verifyNoInteractions(userRepository);
+        verify(notificationRepository, never()).save(any());
+    }
 }

@@ -60,6 +60,28 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             @Param("subCategoryId") UUID subCategoryId
     );
 
+    @Query(value = """
+        SELECT COUNT(DISTINCT t.ticket_id)
+        FROM ticket t
+        JOIN ticket_subcategory tsc ON tsc.ticket_id = t.ticket_id
+        WHERE t.status = 'COMPLETED'
+          AND t.is_deleted = FALSE
+          AND t.created_at >= NOW() - INTERVAL '30 days'
+          AND tsc.sub_category_id IN (:subCategoryIds)
+          AND ST_DWithin(
+                t.location::geography,
+                ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+                10.0
+              )
+          AND (:currentTicketId IS NULL OR t.ticket_id != :currentTicketId)
+        """, nativeQuery = true)
+    long countRecurringCompletedTickets(
+            @Param("latitude") Double latitude,
+            @Param("longitude") Double longitude,
+            @Param("subCategoryIds") java.util.Collection<UUID> subCategoryIds,
+            @Param("currentTicketId") UUID currentTicketId
+    );
+
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     Page<Ticket> findByStatus(TicketStatus status, Pageable pageable);
 

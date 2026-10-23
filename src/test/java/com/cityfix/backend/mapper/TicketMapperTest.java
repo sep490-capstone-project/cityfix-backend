@@ -264,4 +264,35 @@ class TicketMapperTest {
         assertThat(response.getSteps().get(0).getId()).isEqualTo(step1.getId());
         assertThat(response.getSteps().get(1).getId()).isEqualTo(step2.getId());
     }
+
+    @Test
+    @DisplayName("toTicketResponse_withReportImages_mapsImageUrlsAndThumbnail")
+    void toTicketResponse_withReportImages_mapsImageUrlsAndThumbnail() {
+        com.cityfix.backend.model.entity.ReportImage img1 = com.cityfix.backend.model.entity.ReportImage.builder()
+                .imageUrl("https://cloudinary.com/img1.jpg")
+                .build();
+        com.cityfix.backend.model.entity.ReportImage img2 = com.cityfix.backend.model.entity.ReportImage.builder()
+                .imageUrl("https://cloudinary.com/img2.jpg")
+                .build();
+        ticket.setImages(List.of(img1, img2));
+
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getImageUrl()).isEqualTo("https://cloudinary.com/img1.jpg");
+        assertThat(response.getImageUrls()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
+        assertThat(response.getImages()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
+    }
+
+    @Test
+    @DisplayName("toTicketResponse_nullOrEmptyImages_mapsEmptyListAndNullThumbnail")
+    void toTicketResponse_nullOrEmptyImages_mapsEmptyListAndNullThumbnail() {
+        ticket.setImages(Collections.emptyList());
+
+        TicketResponse response = ticketMapper.toTicketResponse(ticket);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getImageUrl()).isNull();
+        assertThat(response.getImageUrls()).isEmpty();
+    }
 }

@@ -344,6 +344,33 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     @Override
+    @Transactional
+    public void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount) {
+        if (ticket == null) {
+            return;
+        }
+
+        List<User> managers = userRepository.findActiveManagers();
+        if (managers == null || managers.isEmpty()) {
+            log.warn("No active managers found for recurring ticket alert. ticketId={}", ticket.getTicketId());
+            return;
+        }
+
+        String address = (ticket.getAddress() != null && !ticket.getAddress().isBlank())
+                ? ticket.getAddress()
+                : "vị trí đã báo";
+
+        String title = "[Cảnh báo] Sự cố tái diễn (Lần thứ " + occurrenceCount + ")";
+        String content = "Sự cố tại địa chỉ \"" + address + "\" đã xảy ra lần thứ " + occurrenceCount
+                + " trong vòng 30 ngày qua dù trước đó đã hoàn tất xử lý. Vui lòng kiểm tra chất lượng giải quyết của các đơn vị phụ trách.";
+
+        createAndSendNotification(ticket, managers, title, content);
+
+        log.info("Sent recurring ticket alert to {} managers for ticketId={}, occurrenceCount={}",
+                managers.size(), ticket.getTicketId(), occurrenceCount);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public Page<NotificationResponse> getMyNotifications(Boolean isRead, Pageable pageable) {
         User currentUser = getCurrentUser();

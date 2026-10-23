@@ -21,6 +21,7 @@ import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
 import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.LocationService;
+import com.cityfix.backend.service.NotificationService;
 import com.cityfix.backend.service.TicketService;
 import com.cloudinary.Cloudinary;
 import lombok.RequiredArgsConstructor;
@@ -76,6 +77,7 @@ public class TicketServiceImpl implements TicketService {
     private final TicketHistoryMapper ticketHistoryMapper;
     private final EmailService emailService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
             "image/jpeg",
@@ -416,16 +418,45 @@ public class TicketServiceImpl implements TicketService {
         );
         ticketHistoryRepository.save(history);
 
-        if (request.getImageUrl() != null && !request.getImageUrl().isEmpty()) {
-            ReportImage image = imageMapper.toReportImage(ticket, request.getImageUrl());
-            reportImageRepository.save(image);
+        List<String> finalImageUrls = new ArrayList<>();
+        if (request.getImageUrls() != null && !request.getImageUrls().isEmpty()) {
+            request.getImageUrls().stream()
+                    .filter(url -> url != null && !url.isBlank())
+                    .forEach(finalImageUrls::add);
+        } else if (request.getImageUrl() != null && !request.getImageUrl().isBlank()) {
+            finalImageUrls.add(request.getImageUrl().trim());
         }
 
-        TicketResponse response = ticketMapper.toTicketResponse(ticket);
-        if (request.getImageUrl() != null && !request.getImageUrl().isEmpty()) {
-            response.setImageUrl(request.getImageUrl());
+        for (String imgUrl : finalImageUrls) {
+            ReportImage reportImage = imageMapper.toReportImage(ticket, imgUrl);
+            if (reportImage.getTicket() == null) {
+                reportImage.setTicket(ticket);
+            }
+            ticket.getImages().add(reportImage);
+            reportImageRepository.save(reportImage);
         }
-        return response;
+
+        String firstImageUrl = finalImageUrls.isEmpty() ? null : finalImageUrls.get(0);
+        ticket.setImageUrl(firstImageUrl);
+
+        // Recurring Ticket Alert Engine (Non-blocking)
+        if (request.getLatitude() != null && request.getLongitude() != null && request.getSubCategoryIds() != null && !request.getSubCategoryIds().isEmpty()) {
+            try {
+                long completedCount = ticketRepository.countRecurringCompletedTickets(
+                        request.getLatitude(),
+                        request.getLongitude(),
+                        request.getSubCategoryIds(),
+                        ticket.getTicketId()
+                );
+                if (completedCount >= 2) {
+                    notificationService.notifyRecurringTicketAlert(ticket, completedCount + 1);
+                }
+            } catch (Exception e) {
+                log.error("Lỗi khi kiểm tra cảnh báo sự cố tái diễn cho ticket {}: {}", ticket.getTicketId(), e.getMessage(), e);
+            }
+        }
+
+        return ticketMapper.toTicketResponse(ticket);
     }
 
     @Override

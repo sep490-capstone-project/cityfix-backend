@@ -117,6 +117,9 @@ class TicketServiceTest {
     private com.cityfix.backend.service.EmailService emailService;
 
     @Mock
+    private com.cityfix.backend.service.NotificationService notificationService;
+
+    @Mock
     private org.springframework.security.core.context.SecurityContext securityContext;
 
 
@@ -279,6 +282,123 @@ class TicketServiceTest {
 
         verify(ticketRepository, times(1)).save(any(Ticket.class));
         verify(reportImageRepository, times(1)).save(any());
+        verify(ticketMapper, times(1)).toTicketResponse(any(Ticket.class));
+    }
+
+    @Test
+    @DisplayName("createTicket_withMultipleImageUrls_persistsAllReportImagesAndReturnsThumbnail")
+    void createTicket_withMultipleImageUrls_persistsAllReportImagesAndReturnsThumbnail() {
+        createRequest.setImageUrl("https://cloudinary.com/fallback.jpg");
+        createRequest.setImageUrls(List.of("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg"));
+
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenAnswer(inv -> {
+            Ticket t = inv.getArgument(0);
+            return TicketResponse.builder()
+                    .id(t.getTicketId())
+                    .imageUrl(t.getImageUrl())
+                    .imageUrls(t.getImages().stream().map(ReportImage::getImageUrl).toList())
+                    .build();
+        });
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getImageUrl()).isEqualTo("https://cloudinary.com/img1.jpg");
+        assertThat(result.getImageUrls()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
+        verify(reportImageRepository, times(2)).save(any(ReportImage.class));
+    }
+
+    @Test
+    @DisplayName("createTicket_withLegacyImageUrlOnly_convertsToImageList")
+    void createTicket_withLegacyImageUrlOnly_convertsToImageList() {
+        createRequest.setImageUrl("https://cloudinary.com/legacy.jpg");
+        createRequest.setImageUrls(null);
+
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenAnswer(inv -> {
+            Ticket t = inv.getArgument(0);
+            return TicketResponse.builder()
+                    .id(t.getTicketId())
+                    .imageUrl(t.getImageUrl())
+                    .imageUrls(t.getImages().stream().map(ReportImage::getImageUrl).toList())
+                    .build();
+        });
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getImageUrl()).isEqualTo("https://cloudinary.com/legacy.jpg");
+        assertThat(result.getImageUrls()).containsExactly("https://cloudinary.com/legacy.jpg");
+        verify(reportImageRepository, times(1)).save(any(ReportImage.class));
+    }
+
+    @Test
+    @DisplayName("createTicket_recurringIncidentCountIs2_triggersAlertFor3rdOccurrence")
+    void createTicket_recurringIncidentCountIs2_triggersAlertFor3rdOccurrence() {
+        UUID subCatId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subCatId));
+        createRequest.setLatitude(10.762622);
+        createRequest.setLongitude(106.660172);
+
+        SubCategory sub = SubCategory.builder().subCategoryId(subCatId).category(mockCategory).isActive(true).build();
+        when(subCategoryRepository.findById(subCatId)).thenReturn(Optional.of(sub));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        when(ticketRepository.countRecurringCompletedTickets(eq(10.762622), eq(106.660172), any(), any()))
+                .thenReturn(2L);
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository).countRecurringCompletedTickets(eq(10.762622), eq(106.660172), any(), any());
+        verify(notificationService, times(1)).notifyRecurringTicketAlert(any(Ticket.class), eq(3L));
+    }
+
+    @Test
+    @DisplayName("createTicket_recurringIncidentCountLessThan2_doesNotTriggerAlert")
+    void createTicket_recurringIncidentCountLessThan2_doesNotTriggerAlert() {
+        UUID subCatId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subCatId));
+        createRequest.setLatitude(10.762622);
+        createRequest.setLongitude(106.660172);
+
+        SubCategory sub = SubCategory.builder().subCategoryId(subCatId).category(mockCategory).isActive(true).build();
+        when(subCategoryRepository.findById(subCatId)).thenReturn(Optional.of(sub));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        when(ticketRepository.countRecurringCompletedTickets(eq(10.762622), eq(106.660172), any(), any()))
+                .thenReturn(1L);
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository).countRecurringCompletedTickets(eq(10.762622), eq(106.660172), any(), any());
+        verify(notificationService, never()).notifyRecurringTicketAlert(any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("createTicket_recurringEngineThrowsException_doesNotFailTicketCreation")
+    void createTicket_recurringEngineThrowsException_doesNotFailTicketCreation() {
+        UUID subCatId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subCatId));
+        createRequest.setLatitude(10.762622);
+        createRequest.setLongitude(106.660172);
+
+        SubCategory sub = SubCategory.builder().subCategoryId(subCatId).category(mockCategory).isActive(true).build();
+        when(subCategoryRepository.findById(subCatId)).thenReturn(Optional.of(sub));
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        when(ticketRepository.countRecurringCompletedTickets(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("PostGIS database timeout"));
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        verify(ticketRepository, times(1)).save(any(Ticket.class));
         verify(ticketMapper, times(1)).toTicketResponse(any(Ticket.class));
     }
 
