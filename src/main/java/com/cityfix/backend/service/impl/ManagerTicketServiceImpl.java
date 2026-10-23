@@ -748,7 +748,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         if (creator.getEmail() != null && !creator.getEmail().isBlank()) {
             try {
-                emailService.sendTicketStatusEmail(creator.getEmail(), title, message);
+                // Email sending is disabled; notification is saved to DB and sent via WebSocket
+                log.debug("Ticket status email skipped (saved to DB only): {}", ticket.getTicketId());
             } catch (Exception e) {
                 log.error("Lỗi khi gửi email notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
             }
@@ -766,7 +767,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         if (creator.getEmail() != null && !creator.getEmail().isBlank()) {
             try {
-                emailService.sendTicketStatusEmail(creator.getEmail(), title, message);
+                // Email sending is disabled; notification is saved to DB and sent via WebSocket
+                log.debug("Ticket status email skipped (saved to DB only): {}", ticket.getTicketId());
             } catch (Exception e) {
                 log.error("Lỗi khi gửi email notification cho vé {}: {}", ticket.getTicketId(), e.getMessage());
             }

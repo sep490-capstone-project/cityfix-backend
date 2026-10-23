@@ -40,6 +40,9 @@ class RatingControllerTest {
     @Mock
     private RatingService ratingService;
 
+    @Mock
+    private com.cityfix.backend.service.RatingFrustrationAnalysisService ratingFrustrationAnalysisService;
+
     @InjectMocks
     private RatingController ratingController;
 

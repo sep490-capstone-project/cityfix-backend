@@ -13,6 +13,7 @@ import com.cityfix.backend.repository.RatingRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserRepository;
+import com.cityfix.backend.service.RatingFrustrationAnalysisService;
 import com.cityfix.backend.service.RatingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class RatingServiceImpl implements RatingService {
     private final TicketVoteRepository ticketVoteRepository;
     private final UserRepository userRepository;
     private final RatingMapper ratingMapper;
+    private final RatingFrustrationAnalysisService ratingFrustrationAnalysisService;
 
     private User getCurrentUser() {
         String email = SecurityUtils.getCurrentUserEmail();
@@ -81,6 +83,12 @@ public class RatingServiceImpl implements RatingService {
                 .build();
 
         rating = ratingRepository.save(rating);
+
+        try {
+            ratingFrustrationAnalysisService.checkAndTriggerCrisisAlert(ticketId);
+        } catch (Exception e) {
+            log.error("Lỗi khi kiểm tra cảnh báo khủng hoảng cho vé {}: {}", ticketId, e.getMessage());
+        }
 
         return ratingMapper.toResponse(rating);
     }
@@ -134,6 +142,12 @@ public class RatingServiceImpl implements RatingService {
         rating.setUpdatedAt(LocalDateTime.now());
 
         rating = ratingRepository.save(rating);
+
+        try {
+            ratingFrustrationAnalysisService.checkAndTriggerCrisisAlert(ticketId);
+        } catch (Exception e) {
+            log.error("Lỗi khi kiểm tra cảnh báo khủng hoảng cho vé {}: {}", ticketId, e.getMessage());
+        }
         return ratingMapper.toResponse(rating);
     }
 
