@@ -44,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -125,12 +126,17 @@ public class NotificationServiceImpl implements NotificationService {
 
         UUID directDeptId = extractDepartmentId(staff.getDepartment());
         if (directDeptId != null) {
-            Department dept = departmentRepository.findById(directDeptId)
-                    .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
-            if (Boolean.TRUE.equals(dept.isDeleted())) {
-                return Collections.emptyList();
+            Optional<Department> deptOpt = departmentRepository.findById(directDeptId);
+            if (deptOpt.isPresent()) {
+                Department dept = deptOpt.get();
+                if (!Boolean.TRUE.equals(dept.isDeleted())) {
+                    departmentIds.add(dept.getDepartmentId());
+                } else if (departmentIds.isEmpty()) {
+                    return Collections.emptyList();
+                }
+            } else if (departmentIds.isEmpty()) {
+                throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
             }
-            departmentIds.add(dept.getDepartmentId());
         }
 
         if (!departmentIds.isEmpty()) {
