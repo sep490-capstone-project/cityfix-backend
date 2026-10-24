@@ -35,10 +35,12 @@ class StaffRequestControllerTest {
     void createStaffRequest_returnsCreatedResponse() {
         UUID notifId = UUID.randomUUID();
         UUID ticketId = UUID.randomUUID();
+        UUID stepId = UUID.randomUUID();
         UUID managerId = UUID.randomUUID();
 
         CreateStaffRequest request = CreateStaffRequest.builder()
                 .ticketId(ticketId)
+                .stepId(stepId)
                 .title("Xin cấp thêm trang thiết bị")
                 .content("Cần thêm thiết bị bảo hộ")
                 .build();
@@ -46,6 +48,8 @@ class StaffRequestControllerTest {
         StaffRequestResponse mockResponse = StaffRequestResponse.builder()
                 .notificationId(notifId)
                 .ticketId(ticketId)
+                .stepId(stepId)
+                .stepName("Khảo sát hiện trường")
                 .title("[Yêu cầu từ cán bộ] Xin cấp thêm trang thiết bị")
                 .content("Cán bộ gửi: Cán bộ\nPhòng ban: Phòng Đô thị\nNội dung: Cần thêm thiết bị bảo hộ")
                 .recipientManagerIds(List.of(managerId))
@@ -61,6 +65,8 @@ class StaffRequestControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getData().getNotificationId()).isEqualTo(notifId);
+        assertThat(response.getBody().getData().getStepId()).isEqualTo(stepId);
+        assertThat(response.getBody().getData().getStepName()).isEqualTo("Khảo sát hiện trường");
         assertThat(response.getBody().getData().getRecipientManagerIds()).contains(managerId);
 
         verify(notificationService).sendStaffRequestToManager(request);

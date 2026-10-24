@@ -519,25 +519,42 @@ public class NotificationServiceImpl implements NotificationService {
 
         UUID directDeptId = extractDepartmentId(staff.getDepartment());
         if (directDeptId != null) {
-            Department dept = departmentRepository.findById(directDeptId)
-                    .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
-            if (!Boolean.TRUE.equals(dept.isDeleted())) {
-                departmentIds.add(dept.getDepartmentId());
-                if (dept.getName() != null && !departmentNames.contains(dept.getName())) {
-                    departmentNames.add(dept.getName());
-                }
-            }
+            departmentRepository.findById(directDeptId)
+                    .filter(dept -> !Boolean.TRUE.equals(dept.isDeleted()))
+                    .ifPresent(dept -> {
+                        departmentIds.add(dept.getDepartmentId());
+                        if (dept.getName() != null && !departmentNames.contains(dept.getName())) {
+                            departmentNames.add(dept.getName());
+                        }
+                    });
         }
 
         if (departmentIds.isEmpty()) {
             throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
         }
 
-        List<User> managers = resolveDepartmentManagers(staff);
+        Map<UUID, User> managersMap = new LinkedHashMap<>();
+        List<User> udManagers = userDepartmentRepository.findActiveManagersByDepartmentIds(departmentIds);
+        if (udManagers != null) {
+            for (User mgr : udManagers) {
+                if (mgr != null && mgr.getUserId() != null) {
+                    managersMap.put(mgr.getUserId(), mgr);
+                }
+            }
+        }
+        List<User> directManagers = userRepository.findActiveManagersByDepartmentIds(departmentIds);
+        if (directManagers != null) {
+            for (User mgr : directManagers) {
+                if (mgr != null && mgr.getUserId() != null) {
+                    managersMap.put(mgr.getUserId(), mgr);
+                }
+            }
+        }
+
         List<User> eligibleManagers = new ArrayList<>();
         Set<UUID> addedManagerIds = new HashSet<>();
 
-        for (User mgr : managers) {
+        for (User mgr : managersMap.values()) {
             if (isEligibleRecipient(mgr, staff.getUserId()) && addedManagerIds.add(mgr.getUserId())) {
                 eligibleManagers.add(mgr);
             }
@@ -547,20 +564,96 @@ public class NotificationServiceImpl implements NotificationService {
             throw new AppException(ErrorCode.MANAGER_NOT_FOUND);
         }
 
+        TicketStep targetStep = null;
         Ticket ticket = null;
-        if (request.getTicketId() != null) {
+
+        if (request.getStepId() != null) {
+            targetStep = ticketStepRepository.findById(request.getStepId())
+                    .filter(s -> !s.isDeleted())
+                    .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+            if (request.getTicketId() != null && !targetStep.getTicket().getTicketId().equals(request.getTicketId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Bước xử lý không thuộc về sự cố đã chọn");
+            }
+            ticket = targetStep.getTicket();
+
+            boolean isAssignedToStaff = targetStep.getAssignee() != null
+                    && staff.getUserId() != null
+                    && staff.getUserId().equals(targetStep.getAssignee().getUserId());
+
+            boolean isAssignedToStaffDepartment = false;
+            if (targetStep.getAssignee() != null) {
+                UUID stepAssigneeDeptId = extractDepartmentId(targetStep.getAssignee().getDepartment());
+                if (stepAssigneeDeptId != null && departmentIds.contains(stepAssigneeDeptId)) {
+                    isAssignedToStaffDepartment = true;
+                }
+            }
+
+            if (!isAssignedToStaff && !isAssignedToStaffDepartment) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Bạn không có quyền gửi yêu cầu cho bước xử lý này");
+            }
+        } else if (request.getTicketId() != null) {
             ticket = ticketRepository.findById(request.getTicketId())
                     .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+            List<TicketStep> ticketSteps = ticketStepRepository.findByTicketTicketId(ticket.getTicketId());
+            List<TicketStep> staffRelevantSteps = new ArrayList<>();
+
+            if (ticketSteps != null) {
+                for (TicketStep s : ticketSteps) {
+                    if (s != null && !s.isDeleted() && s.getAssignee() != null) {
+                        boolean isMyStep = staff.getUserId() != null && staff.getUserId().equals(s.getAssignee().getUserId());
+                        UUID deptId = extractDepartmentId(s.getAssignee().getDepartment());
+                        boolean isMyDeptStep = deptId != null && departmentIds.contains(deptId);
+                        if (isMyStep || isMyDeptStep) {
+                            staffRelevantSteps.add(s);
+                        }
+                    }
+                }
+            }
+
+            if (staffRelevantSteps.isEmpty()) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Bạn không có quyền gửi yêu cầu liên quan đến sự cố này");
+            }
+
+            List<TicketStep> myDirectSteps = staffRelevantSteps.stream()
+                    .filter(s -> staff.getUserId() != null && s.getAssignee() != null && staff.getUserId().equals(s.getAssignee().getUserId()))
+                    .toList();
+            if (myDirectSteps.size() == 1) {
+                targetStep = myDirectSteps.get(0);
+            } else if (staffRelevantSteps.size() == 1) {
+                targetStep = staffRelevantSteps.get(0);
+            }
         }
 
         String title = request.getTitle() != null ? request.getTitle().trim() : "";
         String formattedTitle = title.startsWith("[") ? title : "[Yêu cầu từ cán bộ] " + title;
 
         String deptInfo = !departmentNames.isEmpty() ? String.join(", ", departmentNames) : "Không xác định";
-        String senderInfo = "Cán bộ gửi: " + (staff.getFullName() != null ? staff.getFullName() : "Cán bộ")
-                + (staff.getEmail() != null ? " (" + staff.getEmail() + ")" : "") + "\n"
-                + "Phòng ban: " + deptInfo + "\n";
-        String formattedContent = senderInfo + "Nội dung: " + (request.getContent() != null ? request.getContent().trim() : "");
+        StringBuilder sb = new StringBuilder();
+        sb.append("Cán bộ gửi: ").append(staff.getFullName() != null ? staff.getFullName() : "Cán bộ");
+        if (staff.getEmail() != null) {
+            sb.append(" (").append(staff.getEmail()).append(")");
+        }
+        sb.append("\nPhòng ban: ").append(deptInfo).append("\n");
+
+        if (ticket != null) {
+            sb.append("Sự cố: ").append(ticket.getTicketId());
+            if (ticket.getAddress() != null && !ticket.getAddress().isBlank()) {
+                sb.append(" (").append(ticket.getAddress()).append(")");
+            }
+            sb.append("\n");
+        }
+
+        if (targetStep != null) {
+            String stepName = (targetStep.getStep() != null && targetStep.getStep().getStepName() != null)
+                    ? targetStep.getStep().getStepName()
+                    : "Bước xử lý";
+            sb.append("Bước xử lý: [").append(stepName).append("] (Mã bước: ").append(targetStep.getId()).append(")\n");
+        }
+
+        sb.append("Nội dung: ").append(request.getContent() != null ? request.getContent().trim() : "");
+        String formattedContent = sb.toString();
 
         Notification notification = Notification.builder()
                 .ticket(ticket)
@@ -590,6 +683,8 @@ public class NotificationServiceImpl implements NotificationService {
         return StaffRequestResponse.builder()
                 .notificationId(target.getNotificationId())
                 .ticketId(ticket != null ? ticket.getTicketId() : null)
+                .stepId(targetStep != null ? targetStep.getId() : null)
+                .stepName(targetStep != null && targetStep.getStep() != null ? targetStep.getStep().getStepName() : null)
                 .title(target.getTitle())
                 .content(target.getContent())
                 .recipientManagerIds(eligibleManagers.stream().map(User::getUserId).toList())

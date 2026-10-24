@@ -23,6 +23,12 @@ public class StaffRequestResponse {
     @Schema(description = "ID vé liên quan (nếu có)")
     private UUID ticketId;
 
+    @Schema(description = "ID bước xử lý liên quan (nếu có)")
+    private UUID stepId;
+
+    @Schema(description = "Tên bước xử lý liên quan (nếu có)")
+    private String stepName;
+
     @Schema(description = "Tiêu đề thông báo")
     private String title;
 
