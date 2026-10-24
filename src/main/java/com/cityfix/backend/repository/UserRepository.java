@@ -51,4 +51,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     default List<User> findActiveManagersByDepartmentIds(Collection<UUID> departmentIds) {
         return findManagersByDepartmentIdsAndStatus(departmentIds, UserStatus.ACTIVE);
     }
+
+    @Query("SELECT DISTINCT u FROM User u WHERE UPPER(u.role.roleName) = 'MANAGER' AND u.status = :status AND u.isDeleted = false")
+    List<User> findManagersByStatus(@Param("status") UserStatus status);
+
+    default List<User> findActiveManagers() {
+        return findManagersByStatus(UserStatus.ACTIVE);
+    }
 }

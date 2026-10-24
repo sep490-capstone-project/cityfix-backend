@@ -174,6 +174,29 @@ class TicketControllerTest {
         assertThat(violations).anyMatch(v -> v.getMessage().contains("Latitude is required"));
     }
 
+    @Test
+    @DisplayName("validation_missingBothImageUrlAndImageUrls_producesConstraintViolation")
+    void validation_missingBothImageUrlAndImageUrls_producesConstraintViolation() {
+        validCreateRequest.setImageUrl(null);
+        validCreateRequest.setImageUrls(null);
+
+        Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(validCreateRequest);
+
+        assertThat(violations).isNotEmpty();
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Image URL is required"));
+    }
+
+    @Test
+    @DisplayName("validation_providedImageUrlsOnly_validatesSuccessfully")
+    void validation_providedImageUrlsOnly_validatesSuccessfully() {
+        validCreateRequest.setImageUrl(null);
+        validCreateRequest.setImageUrls(List.of("https://cloudinary.com/test1.jpg", "https://cloudinary.com/test2.jpg"));
+
+        Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(validCreateRequest);
+
+        assertThat(violations).isEmpty();
+    }
+
     // ==========================================
     // 2. Upload Image & Video Controller Tests
     // ==========================================

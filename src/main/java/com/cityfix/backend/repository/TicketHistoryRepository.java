@@ -11,4 +11,12 @@ import java.util.UUID;
 public interface TicketHistoryRepository extends JpaRepository<TicketHistory, UUID> {
 
     List<TicketHistory> findByTicketTicketIdOrderByCreatedAtDesc(UUID ticketId);
+
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT th.actor FROM TicketHistory th " +
+           "WHERE th.ticket.ticketId IN :ticketIds " +
+           "AND th.actor IS NOT NULL " +
+           "AND UPPER(th.actor.role.roleName) = 'MANAGER' " +
+           "AND th.actor.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE " +
+           "AND th.actor.isDeleted = false")
+    List<com.cityfix.backend.model.entity.User> findActiveManagersByTicketIds(@org.springframework.data.repository.query.Param("ticketIds") java.util.Collection<UUID> ticketIds);
 }

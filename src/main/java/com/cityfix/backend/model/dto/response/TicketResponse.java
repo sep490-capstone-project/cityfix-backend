@@ -29,6 +29,7 @@ public class TicketResponse {
     private String creatorFullName;
     private String creatorPhoneNumber;
     private java.util.List<String> images;
+    private java.util.List<String> imageUrls;
     private LocalDateTime createdAt;
     private java.util.List<TicketStepResponse> steps;
     private LocalDateTime deadline;
