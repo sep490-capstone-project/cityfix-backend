@@ -1,6 +1,8 @@
 package com.cityfix.backend.service;
 
+import com.cityfix.backend.model.dto.request.CreateStaffRequest;
 import com.cityfix.backend.model.dto.response.NotificationResponse;
+import com.cityfix.backend.model.dto.response.StaffRequestResponse;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
@@ -25,6 +27,8 @@ public interface NotificationService {
     default void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount) {
         notifyRecurringTicketAlert(ticket, occurrenceCount, java.util.Collections.emptyList());
     }
+
+    StaffRequestResponse sendStaffRequestToManager(CreateStaffRequest request);
 
     Page<NotificationResponse> getMyNotifications(Boolean isRead, Pageable pageable);
 
