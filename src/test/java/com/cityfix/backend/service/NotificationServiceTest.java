@@ -3,7 +3,9 @@ package com.cityfix.backend.service;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.NotificationMapper;
+import com.cityfix.backend.model.dto.request.CreateStaffRequest;
 import com.cityfix.backend.model.dto.response.NotificationResponse;
+import com.cityfix.backend.model.dto.response.StaffRequestResponse;
 import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Notification;
 import com.cityfix.backend.model.entity.Role;
@@ -17,6 +19,7 @@ import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketHistoryRepository;
+import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
@@ -74,6 +77,8 @@ class NotificationServiceTest {
     private TicketHistoryRepository ticketHistoryRepository;
     @Mock
     private TicketStepRepository ticketStepRepository;
+    @Mock
+    private TicketRepository ticketRepository;
     @Mock
     private SecurityContext securityContext;
 
@@ -601,6 +606,329 @@ class NotificationServiceTest {
         notificationService.notifyRecurringTicketAlert(null, 3);
 
         verifyNoInteractions(userRepository);
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_success_withoutTicket")
+    void sendStaffRequestToManager_success_withoutTicket() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1, manager2));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(notificationMapper.toResponse(any(UserNotification.class))).thenAnswer(inv -> {
+            UserNotification un = inv.getArgument(0);
+            return NotificationResponse.builder()
+                    .notificationId(un.getNotification().getNotificationId())
+                    .userId(un.getUser().getUserId())
+                    .title(un.getNotification().getTitle())
+                    .content(un.getNotification().getContent())
+                    .build();
+        });
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .title("Xin cấp thêm máy bơm")
+                .content("Cần máy bơm công suất lớn")
+                .build();
+
+        StaffRequestResponse response = notificationService.sendStaffRequestToManager(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getTitle()).contains("[Yêu cầu từ cán bộ]");
+        assertThat(response.getTitle()).contains("Xin cấp thêm máy bơm");
+        assertThat(response.getContent()).contains("Cán bộ gửi: Nhân Viên Xử Lý");
+        assertThat(response.getContent()).contains("Phòng Quản Lý Đô Thị");
+        assertThat(response.getContent()).contains("Cần máy bơm công suất lớn");
+        assertThat(response.getRecipientManagerIds()).containsExactlyInAnyOrder(manager1.getUserId(), manager2.getUserId());
+        assertThat(response.getRecipientManagerNames()).containsExactlyInAnyOrder(manager1.getFullName(), manager2.getFullName());
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        Notification saved = captor.getValue();
+        assertThat(saved.getTicket()).isNull();
+        assertThat(saved.getRecipients()).hasSize(2);
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + manager1.getUserId()), any(NotificationResponse.class));
+        verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + manager2.getUserId()), any(NotificationResponse.class));
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_success_withTicket_autoDetectsStep")
+    void sendStaffRequestToManager_success_withTicket_autoDetectsStep() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1));
+        when(ticketRepository.findById(ticket.getTicketId())).thenReturn(Optional.of(ticket));
+        when(ticketStepRepository.findByTicketTicketId(ticket.getTicketId())).thenReturn(List.of(ticketStep));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .ticketId(ticket.getTicketId())
+                .title("Báo cáo sự cố khẩn")
+                .content("Cần tăng cường nhân lực tại hiện trường")
+                .build();
+
+        StaffRequestResponse response = notificationService.sendStaffRequestToManager(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getTicketId()).isEqualTo(ticket.getTicketId());
+        assertThat(response.getStepId()).isEqualTo(ticketStep.getId());
+        assertThat(response.getStepName()).isEqualTo("Khảo sát hiện trường");
+        assertThat(response.getRecipientManagerIds()).containsExactly(manager1.getUserId());
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        Notification saved = captor.getValue();
+        assertThat(saved.getTicket()).isEqualTo(ticket);
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_success_withExplicitStepId")
+    void sendStaffRequestToManager_success_withExplicitStepId() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1));
+        when(ticketStepRepository.findById(ticketStep.getId())).thenReturn(Optional.of(ticketStep));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .ticketId(ticket.getTicketId())
+                .stepId(ticketStep.getId())
+                .title("Xin gia hạn hoàn thành bước")
+                .content("Do thời tiết mưa bão, xin gia hạn thêm 1 ngày")
+                .build();
+
+        StaffRequestResponse response = notificationService.sendStaffRequestToManager(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getTicketId()).isEqualTo(ticket.getTicketId());
+        assertThat(response.getStepId()).isEqualTo(ticketStep.getId());
+        assertThat(response.getStepName()).isEqualTo("Khảo sát hiện trường");
+        assertThat(response.getContent()).contains("Bước xử lý: [Khảo sát hiện trường]");
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_stepIdNotMatchingTicketId_throwsInvalidRequest")
+    void sendStaffRequestToManager_stepIdNotMatchingTicketId_throwsInvalidRequest() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1));
+        when(ticketStepRepository.findById(ticketStep.getId())).thenReturn(Optional.of(ticketStep));
+
+        UUID anotherTicketId = UUID.randomUUID();
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .ticketId(anotherTicketId)
+                .stepId(ticketStep.getId())
+                .title("Yêu cầu sai khớp vé")
+                .content("Nội dung")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.sendStaffRequestToManager(request))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_stepNotAssignedToStaffOrDept_throwsForbidden")
+    void sendStaffRequestToManager_stepNotAssignedToStaffOrDept_throwsForbidden() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1));
+
+        Department otherDept = Department.builder().departmentId(UUID.randomUUID()).name("Phòng Khác").build();
+        User otherStaff = User.builder().userId(UUID.randomUUID()).department(otherDept).build();
+        TicketStep otherStep = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(ticket)
+                .step(stepDef)
+                .assignee(otherStaff)
+                .build();
+        when(ticketStepRepository.findById(otherStep.getId())).thenReturn(Optional.of(otherStep));
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .stepId(otherStep.getId())
+                .title("Can thiệp bước của người khác")
+                .content("Nội dung")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.sendStaffRequestToManager(request))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_ticketNotAssignedToStaffOrDept_throwsForbidden")
+    void sendStaffRequestToManager_ticketNotAssignedToStaffOrDept_throwsForbidden() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1));
+        when(ticketRepository.findById(ticket.getTicketId())).thenReturn(Optional.of(ticket));
+        when(ticketStepRepository.findByTicketTicketId(ticket.getTicketId())).thenReturn(Collections.emptyList());
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .ticketId(ticket.getTicketId())
+                .title("Vé không thuộc thẩm quyền")
+                .content("Nội dung")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.sendStaffRequestToManager(request))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_staleDirectDept_stillSucceedsWithUserDepartments")
+    void sendStaffRequestToManager_staleDirectDept_stillSucceedsWithUserDepartments() {
+        UUID staleDeptId = UUID.randomUUID();
+        User staffWithStaleDept = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Cán bộ phòng ban lệch")
+                .email("stale@cityfix.com")
+                .role(new Role(UUID.randomUUID(), "STAFF"))
+                .department(Department.builder().departmentId(staleDeptId).build())
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        mockCurrentUser(staffWithStaleDept);
+        when(userDepartmentRepository.findDepartmentsByUserId(staffWithStaleDept.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(staleDeptId)).thenReturn(Optional.empty());
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .title("Yêu cầu khi direct dept stale")
+                .content("Vẫn thành công nhờ user_department")
+                .build();
+
+        StaffRequestResponse response = notificationService.sendStaffRequestToManager(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getRecipientManagerIds()).containsExactly(manager1.getUserId());
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_multipleDepartments_sendsToManagersOfAllDepartments")
+    void sendStaffRequestToManager_multipleDepartments_sendsToManagersOfAllDepartments() {
+        Department dept2 = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng Môi trường")
+                .build();
+        User managerOfDept2 = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Quản lý Môi trường")
+                .email("mgr_env@cityfix.com")
+                .role(new Role(UUID.randomUUID(), "MANAGER"))
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department, dept2));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1, managerOfDept2));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .title("Yêu cầu nhân viên đa phòng ban")
+                .content("Gửi cho cả 2 quản lý của 2 phòng ban")
+                .build();
+
+        StaffRequestResponse response = notificationService.sendStaffRequestToManager(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getRecipientManagerIds()).containsExactlyInAnyOrder(manager1.getUserId(), managerOfDept2.getUserId());
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_ticketNotFound_throwsException")
+    void sendStaffRequestToManager_ticketNotFound_throwsException() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(List.of(manager1));
+        UUID notFoundTicketId = UUID.randomUUID();
+        when(ticketRepository.findById(notFoundTicketId)).thenReturn(Optional.empty());
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .ticketId(notFoundTicketId)
+                .title("Yêu cầu với vé không tồn tại")
+                .content("Nội dung")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.sendStaffRequestToManager(request))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_staffNotInDepartment_throwsException")
+    void sendStaffRequestToManager_staffNotInDepartment_throwsException() {
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+        User staffWithoutDept = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Nhân Viên Chưa Có Phòng")
+                .email("nodept@cityfix.com")
+                .role(staffRole)
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        mockCurrentUser(staffWithoutDept);
+        when(userDepartmentRepository.findDepartmentsByUserId(staffWithoutDept.getUserId())).thenReturn(Collections.emptyList());
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .title("Yêu cầu khi chưa có phòng")
+                .content("Nội dung")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.sendStaffRequestToManager(request))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_noActiveManagers_throwsException")
+    void sendStaffRequestToManager_noActiveManagers_throwsException() {
+        mockCurrentUser(staff);
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId())).thenReturn(List.of(department));
+        when(departmentRepository.findById(department.getDepartmentId())).thenReturn(Optional.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any())).thenReturn(Collections.emptyList());
+        when(userRepository.findActiveManagersByDepartmentIds(any())).thenReturn(Collections.emptyList());
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .title("Yêu cầu khi không có quản lý")
+                .content("Nội dung")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.sendStaffRequestToManager(request))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.MANAGER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("sendStaffRequestToManager_userNotStaff_throwsException")
+    void sendStaffRequestToManager_userNotStaff_throwsException() {
+        mockCurrentUser(reporter);
+
+        CreateStaffRequest request = CreateStaffRequest.builder()
+                .title("Yêu cầu từ citizen")
+                .content("Nội dung")
+                .build();
+
+        assertThatThrownBy(() -> notificationService.sendStaffRequestToManager(request))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
         verify(notificationRepository, never()).save(any());
     }
 }
