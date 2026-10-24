@@ -61,21 +61,64 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
     );
 
     @Query(value = """
-        SELECT COUNT(DISTINCT t.ticket_id)
+        SELECT COALESCE(MAX(sub.cnt), 0)
+        FROM (
+            SELECT COUNT(DISTINCT t.ticket_id) AS cnt
+            FROM ticket t
+            JOIN ticket_subcategory tsc ON tsc.ticket_id = t.ticket_id
+            WHERE t.status = 'COMPLETED'
+              AND t.is_deleted = FALSE
+              AND t.created_at >= NOW() - INTERVAL '30 days'
+              AND tsc.sub_category_id IN (:subCategoryIds)
+              AND ST_DWithin(
+                    t.location::geography,
+                    ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+                    10.0
+                  )
+              AND (:currentTicketId IS NULL OR t.ticket_id != :currentTicketId)
+            GROUP BY tsc.sub_category_id
+            HAVING COUNT(DISTINCT t.ticket_id) >= 2
+        ) sub
+        """, nativeQuery = true)
+    long countRecurringCompletedTickets(
+            @Param("latitude") Double latitude,
+            @Param("longitude") Double longitude,
+            @Param("subCategoryIds") java.util.Collection<UUID> subCategoryIds,
+            @Param("currentTicketId") UUID currentTicketId
+    );
+
+    @Query(value = """
+        SELECT DISTINCT t.ticket_id
         FROM ticket t
         JOIN ticket_subcategory tsc ON tsc.ticket_id = t.ticket_id
         WHERE t.status = 'COMPLETED'
           AND t.is_deleted = FALSE
           AND t.created_at >= NOW() - INTERVAL '30 days'
-          AND tsc.sub_category_id IN (:subCategoryIds)
           AND ST_DWithin(
                 t.location::geography,
                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
                 10.0
               )
           AND (:currentTicketId IS NULL OR t.ticket_id != :currentTicketId)
+          AND tsc.sub_category_id IN (
+              SELECT tsc2.sub_category_id
+              FROM ticket t2
+              JOIN ticket_subcategory tsc2 ON tsc2.ticket_id = t2.ticket_id
+              WHERE t2.status = 'COMPLETED'
+                AND t2.is_deleted = FALSE
+                AND t2.created_at >= NOW() - INTERVAL '30 days'
+                AND tsc2.sub_category_id IN (:subCategoryIds)
+                AND ST_DWithin(
+                      t2.location::geography,
+                      ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
+                      10.0
+                    )
+                AND (:currentTicketId IS NULL OR t2.ticket_id != :currentTicketId)
+              GROUP BY tsc2.sub_category_id
+              HAVING COUNT(DISTINCT t2.ticket_id) >= 2
+          )
         """, nativeQuery = true)
-    long countRecurringCompletedTickets(
+    java.util.List<UUID> findRecurringCompletedTicketIds(
             @Param("latitude") Double latitude,
             @Param("longitude") Double longitude,
             @Param("subCategoryIds") java.util.Collection<UUID> subCategoryIds,

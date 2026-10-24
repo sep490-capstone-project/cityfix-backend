@@ -20,7 +20,11 @@ public interface NotificationService {
 
     void notifyStepCompleted(TicketStep step, User staff, boolean isTicketResolved);
     
-    void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount);
+    void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount, Collection<UUID> recurringTicketIds);
+    
+    default void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount) {
+        notifyRecurringTicketAlert(ticket, occurrenceCount, java.util.Collections.emptyList());
+    }
 
     Page<NotificationResponse> getMyNotifications(Boolean isRead, Pageable pageable);
 

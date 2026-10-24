@@ -13,6 +13,8 @@ import com.cityfix.backend.model.entity.UserNotification;
 import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
+import com.cityfix.backend.repository.TicketHistoryRepository;
+import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
 import com.cityfix.backend.repository.UserNotificationRepository;
@@ -55,6 +57,8 @@ public class NotificationServiceImpl implements NotificationService {
     private final DepartmentRepository departmentRepository;
     private final NotificationMapper notificationMapper;
     private final SimpMessagingTemplate messagingTemplate;
+    private final TicketHistoryRepository ticketHistoryRepository;
+    private final TicketStepRepository ticketStepRepository;
 
     private User getCurrentUser() {
         Object principal = SecurityContextHolder.getContext().getAuthentication() != null
@@ -343,15 +347,73 @@ public class NotificationServiceImpl implements NotificationService {
                 ticket.getTicketId(), step.getId(), actorId, isTicketResolved, citizenRecipients.size(), managerRecipients.size());
     }
 
+    private List<User> resolveManagersForRecurringTickets(Collection<UUID> recurringTicketIds) {
+        if (recurringTicketIds == null || recurringTicketIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<UUID, User> targetManagers = new LinkedHashMap<>();
+
+        // 1. Tìm các Manager từ lịch sử duyệt/xử lý của các vé cũ (TicketHistory)
+        List<User> historyManagers = ticketHistoryRepository.findActiveManagersByTicketIds(recurringTicketIds);
+        if (historyManagers != null) {
+            for (User mgr : historyManagers) {
+                if (mgr != null && mgr.getUserId() != null) {
+                    targetManagers.put(mgr.getUserId(), mgr);
+                }
+            }
+        }
+
+        // 2. Nếu chưa có, tìm Manager của các phòng ban phụ trách các bước (TicketStep) của các vé cũ
+        if (targetManagers.isEmpty()) {
+            List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdIn(recurringTicketIds);
+            if (steps != null && !steps.isEmpty()) {
+                Set<UUID> departmentIds = new LinkedHashSet<>();
+                for (TicketStep s : steps) {
+                    if (s != null && !s.isDeleted() && s.getAssignee() != null) {
+                        UUID deptId = extractDepartmentId(s.getAssignee().getDepartment());
+                        if (deptId != null) {
+                            departmentIds.add(deptId);
+                        }
+                    }
+                }
+                if (!departmentIds.isEmpty()) {
+                    List<User> deptManagers = userRepository.findActiveManagersByDepartmentIds(departmentIds);
+                    if (deptManagers != null) {
+                        for (User mgr : deptManagers) {
+                            if (mgr != null && mgr.getUserId() != null) {
+                                targetManagers.put(mgr.getUserId(), mgr);
+                            }
+                        }
+                    }
+                    List<User> udManagers = userDepartmentRepository.findActiveManagersByDepartmentIds(departmentIds);
+                    if (udManagers != null) {
+                        for (User mgr : udManagers) {
+                            if (mgr != null && mgr.getUserId() != null) {
+                                targetManagers.put(mgr.getUserId(), mgr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return new ArrayList<>(targetManagers.values());
+    }
+
     @Override
     @Transactional
-    public void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount) {
+    public void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount, Collection<UUID> recurringTicketIds) {
         if (ticket == null) {
             return;
         }
 
-        List<User> managers = userRepository.findActiveManagers();
-        if (managers == null || managers.isEmpty()) {
+        List<User> targetManagers = resolveManagersForRecurringTickets(recurringTicketIds);
+        if (targetManagers == null || targetManagers.isEmpty()) {
+            targetManagers = userRepository.findActiveManagers();
+        }
+
+        if (targetManagers == null || targetManagers.isEmpty()) {
             log.warn("No active managers found for recurring ticket alert. ticketId={}", ticket.getTicketId());
             return;
         }
@@ -364,10 +426,10 @@ public class NotificationServiceImpl implements NotificationService {
         String content = "Sự cố tại địa chỉ \"" + address + "\" đã xảy ra lần thứ " + occurrenceCount
                 + " trong vòng 30 ngày qua dù trước đó đã hoàn tất xử lý. Vui lòng kiểm tra chất lượng giải quyết của các đơn vị phụ trách.";
 
-        createAndSendNotification(ticket, managers, title, content);
+        createAndSendNotification(ticket, targetManagers, title, content);
 
-        log.info("Sent recurring ticket alert to {} managers for ticketId={}, occurrenceCount={}",
-                managers.size(), ticket.getTicketId(), occurrenceCount);
+        log.info("Sent recurring ticket alert to {} targeted managers for ticketId={}, occurrenceCount={}",
+                targetManagers.size(), ticket.getTicketId(), occurrenceCount);
     }
 
     @Override

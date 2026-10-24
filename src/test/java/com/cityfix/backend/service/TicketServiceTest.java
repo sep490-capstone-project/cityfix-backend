@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -118,6 +119,9 @@ class TicketServiceTest {
 
     @Mock
     private com.cityfix.backend.service.NotificationService notificationService;
+
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @Mock
     private org.springframework.security.core.context.SecurityContext securityContext;
@@ -334,6 +338,32 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("createTicket_imageUrlsWithWhitespace_trimsUrlsBeforeSaving")
+    void createTicket_imageUrlsWithWhitespace_trimsUrlsBeforeSaving() {
+        createRequest.setImageUrl(null);
+        createRequest.setImageUrls(List.of("   https://cloudinary.com/img1.jpg   ", "   ", "https://cloudinary.com/img2.jpg "));
+
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenAnswer(inv -> {
+            Ticket t = inv.getArgument(0);
+            return TicketResponse.builder()
+                    .id(t.getTicketId())
+                    .imageUrl(t.getImageUrl())
+                    .imageUrls(t.getImages().stream().map(ReportImage::getImageUrl).toList())
+                    .build();
+        });
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getImageUrl()).isEqualTo("https://cloudinary.com/img1.jpg");
+        assertThat(result.getImageUrls()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
+        verify(reportImageRepository, times(2)).save(argThat(img ->
+                img.getImageUrl().equals("https://cloudinary.com/img1.jpg") || img.getImageUrl().equals("https://cloudinary.com/img2.jpg")
+        ));
+    }
+
+    @Test
     @DisplayName("createTicket_recurringIncidentCountIs2_triggersAlertFor3rdOccurrence")
     void createTicket_recurringIncidentCountIs2_triggersAlertFor3rdOccurrence() {
         UUID subCatId = UUID.randomUUID();
@@ -348,12 +378,24 @@ class TicketServiceTest {
 
         when(ticketRepository.countRecurringCompletedTickets(eq(10.762622), eq(106.660172), any(), any()))
                 .thenReturn(2L);
+        UUID oldTicket1 = UUID.randomUUID();
+        UUID oldTicket2 = UUID.randomUUID();
+        when(ticketRepository.findRecurringCompletedTicketIds(eq(10.762622), eq(106.660172), any(), any()))
+                .thenReturn(List.of(oldTicket1, oldTicket2));
 
         TicketResponse result = ticketService.createTicket(createRequest);
 
         assertThat(result).isNotNull();
         verify(ticketRepository).countRecurringCompletedTickets(eq(10.762622), eq(106.660172), any(), any());
-        verify(notificationService, times(1)).notifyRecurringTicketAlert(any(Ticket.class), eq(3L));
+        verify(ticketRepository).findRecurringCompletedTicketIds(eq(10.762622), eq(106.660172), any(), any());
+
+        ArgumentCaptor<com.cityfix.backend.event.RecurringTicketEvent> eventCaptor =
+                ArgumentCaptor.forClass(com.cityfix.backend.event.RecurringTicketEvent.class);
+        verify(eventPublisher, times(1)).publishEvent(eventCaptor.capture());
+
+        com.cityfix.backend.event.RecurringTicketEvent publishedEvent = eventCaptor.getValue();
+        assertThat(publishedEvent.getOccurrenceCount()).isEqualTo(3L);
+        assertThat(publishedEvent.getRecurringTicketIds()).containsExactly(oldTicket1, oldTicket2);
     }
 
     @Test
@@ -376,7 +418,7 @@ class TicketServiceTest {
 
         assertThat(result).isNotNull();
         verify(ticketRepository).countRecurringCompletedTickets(eq(10.762622), eq(106.660172), any(), any());
-        verify(notificationService, never()).notifyRecurringTicketAlert(any(), anyLong());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -400,6 +442,7 @@ class TicketServiceTest {
         assertThat(result).isNotNull();
         verify(ticketRepository, times(1)).save(any(Ticket.class));
         verify(ticketMapper, times(1)).toTicketResponse(any(Ticket.class));
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

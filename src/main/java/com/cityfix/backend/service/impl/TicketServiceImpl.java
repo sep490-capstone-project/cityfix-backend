@@ -19,10 +19,12 @@ import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
+import com.cityfix.backend.event.RecurringTicketEvent;
 import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.LocationService;
 import com.cityfix.backend.service.NotificationService;
 import com.cityfix.backend.service.TicketService;
+import org.springframework.context.ApplicationEventPublisher;
 import com.cloudinary.Cloudinary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +80,7 @@ public class TicketServiceImpl implements TicketService {
     private final EmailService emailService;
     private final SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
             "image/jpeg",
@@ -421,7 +424,9 @@ public class TicketServiceImpl implements TicketService {
         List<String> finalImageUrls = new ArrayList<>();
         if (request.getImageUrls() != null && !request.getImageUrls().isEmpty()) {
             request.getImageUrls().stream()
-                    .filter(url -> url != null && !url.isBlank())
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(url -> !url.isBlank())
                     .forEach(finalImageUrls::add);
         } else if (request.getImageUrl() != null && !request.getImageUrl().isBlank()) {
             finalImageUrls.add(request.getImageUrl().trim());
@@ -439,7 +444,7 @@ public class TicketServiceImpl implements TicketService {
         String firstImageUrl = finalImageUrls.isEmpty() ? null : finalImageUrls.get(0);
         ticket.setImageUrl(firstImageUrl);
 
-        // Recurring Ticket Alert Engine (Non-blocking)
+        // Recurring Ticket Alert Engine (Event-driven, Non-blocking, Transaction-safe)
         if (request.getLatitude() != null && request.getLongitude() != null && request.getSubCategoryIds() != null && !request.getSubCategoryIds().isEmpty()) {
             try {
                 long completedCount = ticketRepository.countRecurringCompletedTickets(
@@ -449,7 +454,13 @@ public class TicketServiceImpl implements TicketService {
                         ticket.getTicketId()
                 );
                 if (completedCount >= 2) {
-                    notificationService.notifyRecurringTicketAlert(ticket, completedCount + 1);
+                    List<UUID> recurringTicketIds = ticketRepository.findRecurringCompletedTicketIds(
+                            request.getLatitude(),
+                            request.getLongitude(),
+                            request.getSubCategoryIds(),
+                            ticket.getTicketId()
+                    );
+                    eventPublisher.publishEvent(new RecurringTicketEvent(ticket, completedCount + 1, recurringTicketIds));
                 }
             } catch (Exception e) {
                 log.error("Lỗi khi kiểm tra cảnh báo sự cố tái diễn cho ticket {}: {}", ticket.getTicketId(), e.getMessage(), e);
