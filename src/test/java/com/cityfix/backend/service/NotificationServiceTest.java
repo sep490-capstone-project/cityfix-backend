@@ -16,6 +16,8 @@ import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
+import com.cityfix.backend.repository.TicketHistoryRepository;
+import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
 import com.cityfix.backend.repository.UserNotificationRepository;
@@ -68,6 +70,10 @@ class NotificationServiceTest {
     private NotificationMapper notificationMapper;
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+    @Mock
+    private TicketHistoryRepository ticketHistoryRepository;
+    @Mock
+    private TicketStepRepository ticketStepRepository;
     @Mock
     private SecurityContext securityContext;
 
@@ -516,5 +522,85 @@ class NotificationServiceTest {
 
         Notification saved = captor.getValue();
         assertThat(saved.getRecipients()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("notifyRecurringTicketAlert_withSpecificManagersFromHistory_onlyNotifiesThoseManagers")
+    void notifyRecurringTicketAlert_withSpecificManagersFromHistory_onlyNotifiesThoseManagers() {
+        UUID oldTicketId = UUID.randomUUID();
+
+        User manager1 = new User();
+        manager1.setUserId(UUID.randomUUID());
+        manager1.setStatus(UserStatus.ACTIVE);
+        manager1.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+
+        when(ticketHistoryRepository.findActiveManagersByTicketIds(List.of(oldTicketId)))
+                .thenReturn(List.of(manager1));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ticket.setAddress("123 Lê Lợi, Q1");
+        notificationService.notifyRecurringTicketAlert(ticket, 3, List.of(oldTicketId));
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertThat(saved.getTitle()).contains("Lần thứ 3");
+        assertThat(saved.getContent()).contains("123 Lê Lợi, Q1");
+        assertThat(saved.getRecipients()).hasSize(1);
+        assertThat(saved.getRecipients().get(0).getUser().getUserId()).isEqualTo(manager1.getUserId());
+        verify(userRepository, never()).findActiveManagers();
+    }
+
+    @Test
+    @DisplayName("notifyRecurringTicketAlert_withActiveManagersFallback_createsAndSendsAlert")
+    void notifyRecurringTicketAlert_withActiveManagersFallback_createsAndSendsAlert() {
+        User manager1 = new User();
+        manager1.setUserId(UUID.randomUUID());
+        manager1.setStatus(UserStatus.ACTIVE);
+        manager1.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+
+        User manager2 = new User();
+        manager2.setUserId(UUID.randomUUID());
+        manager2.setStatus(UserStatus.ACTIVE);
+        manager2.setRole(new Role(UUID.randomUUID(), "MANAGER"));
+
+        when(ticketHistoryRepository.findActiveManagersByTicketIds(any())).thenReturn(Collections.emptyList());
+        when(ticketStepRepository.findByTicketTicketIdIn(any())).thenReturn(Collections.emptyList());
+        when(userRepository.findActiveManagers()).thenReturn(List.of(manager1, manager2));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ticket.setAddress("123 Lê Lợi, Q1");
+        notificationService.notifyRecurringTicketAlert(ticket, 3, List.of(UUID.randomUUID()));
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertThat(saved.getTitle()).contains("Lần thứ 3");
+        assertThat(saved.getContent()).contains("123 Lê Lợi, Q1");
+        assertThat(saved.getContent()).contains("30 ngày");
+        assertThat(saved.getRecipients()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("notifyRecurringTicketAlert_noManagersFound_doesNotSave")
+    void notifyRecurringTicketAlert_noManagersFound_doesNotSave() {
+        when(ticketHistoryRepository.findActiveManagersByTicketIds(any())).thenReturn(Collections.emptyList());
+        when(ticketStepRepository.findByTicketTicketIdIn(any())).thenReturn(Collections.emptyList());
+        when(userRepository.findActiveManagers()).thenReturn(Collections.emptyList());
+
+        notificationService.notifyRecurringTicketAlert(ticket, 3, List.of(UUID.randomUUID()));
+
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("notifyRecurringTicketAlert_nullTicket_doesNothing")
+    void notifyRecurringTicketAlert_nullTicket_doesNothing() {
+        notificationService.notifyRecurringTicketAlert(null, 3);
+
+        verifyNoInteractions(userRepository);
+        verify(notificationRepository, never()).save(any());
     }
 }

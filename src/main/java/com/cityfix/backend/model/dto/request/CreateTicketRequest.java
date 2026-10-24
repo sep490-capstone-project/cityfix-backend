@@ -12,8 +12,16 @@ public class CreateTicketRequest {
     @NotBlank(message = "Description is required")
     private String description;
 
-    @NotBlank(message = "Image URL is required")
+    @Deprecated
     private String imageUrl;
+
+    private java.util.List<String> imageUrls;
+
+    @jakarta.validation.constraints.AssertTrue(message = "Image URL is required")
+    public boolean isImageProvided() {
+        return (imageUrl != null && !imageUrl.isBlank())
+                || (imageUrls != null && imageUrls.stream().anyMatch(url -> url != null && !url.isBlank()));
+    }
 
     @NotEmpty(message = "At least one subcategory is required")
     private java.util.List<java.util.UUID> subCategoryIds;

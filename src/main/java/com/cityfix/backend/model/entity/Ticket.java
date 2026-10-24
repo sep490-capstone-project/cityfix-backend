@@ -44,6 +44,9 @@ public class Ticket {
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<ReportImage> images = new java.util.ArrayList<>();
 
+    @Transient
+    private String imageUrl;
+
     @BatchSize(size = 20)
     @Builder.Default
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -110,5 +113,13 @@ public class Ticket {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+    }
+
+    public java.util.List<ReportImage> getReportImages() {
+        return this.images;
+    }
+
+    public void setReportImages(java.util.List<ReportImage> reportImages) {
+        this.images = reportImages;
     }
 }
