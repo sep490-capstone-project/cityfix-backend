@@ -3,7 +3,9 @@ package com.cityfix.backend.service.impl;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.NotificationMapper;
+import com.cityfix.backend.model.dto.request.CreateStaffRequest;
 import com.cityfix.backend.model.dto.response.NotificationResponse;
+import com.cityfix.backend.model.dto.response.StaffRequestResponse;
 import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Notification;
 import com.cityfix.backend.model.entity.Ticket;
@@ -14,6 +16,7 @@ import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
 import com.cityfix.backend.repository.TicketHistoryRepository;
+import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
@@ -59,6 +62,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final SimpMessagingTemplate messagingTemplate;
     private final TicketHistoryRepository ticketHistoryRepository;
     private final TicketStepRepository ticketStepRepository;
+    private final TicketRepository ticketRepository;
 
     private User getCurrentUser() {
         Object principal = SecurityContextHolder.getContext().getAuthentication() != null
@@ -485,5 +489,112 @@ public class NotificationServiceImpl implements NotificationService {
     public void markAllAsRead() {
         User currentUser = getCurrentUser();
         userNotificationRepository.markAllAsReadByUserId(currentUser.getUserId());
+    }
+
+    @Override
+    @Transactional
+    public StaffRequestResponse sendStaffRequestToManager(CreateStaffRequest request) {
+        User staff = getCurrentUser();
+
+        if (staff.getRole() == null || !"STAFF".equalsIgnoreCase(staff.getRole().getRoleName())) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Set<UUID> departmentIds = new LinkedHashSet<>();
+        List<String> departmentNames = new ArrayList<>();
+
+        if (staff.getUserId() != null) {
+            List<Department> staffDepts = userDepartmentRepository.findDepartmentsByUserId(staff.getUserId());
+            if (staffDepts != null) {
+                for (Department dept : staffDepts) {
+                    if (dept != null && !dept.isDeleted() && dept.getDepartmentId() != null) {
+                        departmentIds.add(dept.getDepartmentId());
+                        if (dept.getName() != null && !departmentNames.contains(dept.getName())) {
+                            departmentNames.add(dept.getName());
+                        }
+                    }
+                }
+            }
+        }
+
+        UUID directDeptId = extractDepartmentId(staff.getDepartment());
+        if (directDeptId != null) {
+            Department dept = departmentRepository.findById(directDeptId)
+                    .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
+            if (!Boolean.TRUE.equals(dept.isDeleted())) {
+                departmentIds.add(dept.getDepartmentId());
+                if (dept.getName() != null && !departmentNames.contains(dept.getName())) {
+                    departmentNames.add(dept.getName());
+                }
+            }
+        }
+
+        if (departmentIds.isEmpty()) {
+            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+        }
+
+        List<User> managers = resolveDepartmentManagers(staff);
+        List<User> eligibleManagers = new ArrayList<>();
+        Set<UUID> addedManagerIds = new HashSet<>();
+
+        for (User mgr : managers) {
+            if (isEligibleRecipient(mgr, staff.getUserId()) && addedManagerIds.add(mgr.getUserId())) {
+                eligibleManagers.add(mgr);
+            }
+        }
+
+        if (eligibleManagers.isEmpty()) {
+            throw new AppException(ErrorCode.MANAGER_NOT_FOUND);
+        }
+
+        Ticket ticket = null;
+        if (request.getTicketId() != null) {
+            ticket = ticketRepository.findById(request.getTicketId())
+                    .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+        }
+
+        String title = request.getTitle() != null ? request.getTitle().trim() : "";
+        String formattedTitle = title.startsWith("[") ? title : "[Yêu cầu từ cán bộ] " + title;
+
+        String deptInfo = !departmentNames.isEmpty() ? String.join(", ", departmentNames) : "Không xác định";
+        String senderInfo = "Cán bộ gửi: " + (staff.getFullName() != null ? staff.getFullName() : "Cán bộ")
+                + (staff.getEmail() != null ? " (" + staff.getEmail() + ")" : "") + "\n"
+                + "Phòng ban: " + deptInfo + "\n";
+        String formattedContent = senderInfo + "Nội dung: " + (request.getContent() != null ? request.getContent().trim() : "");
+
+        Notification notification = Notification.builder()
+                .ticket(ticket)
+                .title(formattedTitle)
+                .content(formattedContent)
+                .build();
+
+        for (User manager : eligibleManagers) {
+            notification.addRecipient(manager);
+        }
+
+        Notification saved = notificationRepository.save(notification);
+        Notification target = saved != null ? saved : notification;
+
+        for (UserNotification un : target.getRecipients()) {
+            try {
+                NotificationResponse notifResponse = notificationMapper.toResponse(un);
+                messagingTemplate.convertAndSend("/topic/notifications/" + un.getUser().getUserId(), notifResponse);
+            } catch (Exception e) {
+                log.error("Lỗi khi gửi WebSocket notification cho manager {}: {}", un.getUser().getUserId(), e.getMessage());
+            }
+        }
+
+        log.info("Staff {} sent request to {} managers. notificationId={}",
+                staff.getUserId(), eligibleManagers.size(), target.getNotificationId());
+
+        return StaffRequestResponse.builder()
+                .notificationId(target.getNotificationId())
+                .ticketId(ticket != null ? ticket.getTicketId() : null)
+                .title(target.getTitle())
+                .content(target.getContent())
+                .recipientManagerIds(eligibleManagers.stream().map(User::getUserId).toList())
+                .recipientManagerNames(eligibleManagers.stream().map(User::getFullName).toList())
+                .createdAt(target.getCreatedAt() != null ? target.getCreatedAt() : ZonedDateTime.now())
+                .build();
     }
 }

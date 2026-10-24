@@ -226,6 +226,11 @@ public enum ErrorCode {
     STEP_PREREQUISITES_NOT_MET(
             HttpStatus.BAD_REQUEST,
             "Chưa thể thực hiện bước này do các bước phụ thuộc tiên quyết chưa hoàn thành"
+    ),
+
+    MANAGER_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy người quản lý phụ trách phòng ban của bạn"
     );
 
     private final HttpStatus status;
