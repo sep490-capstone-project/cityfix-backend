@@ -1,14 +1,18 @@
 package com.cityfix.backend.model.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @Data
@@ -18,36 +22,38 @@ import java.util.List;
 public class AiAnalyzeRequest {
 
     /**
-     * URL hình ảnh/video đơn lẻ (hỗ trợ tương thích ngược)
+     * Danh sách URL hình ảnh/video cần phân tích (cho phép gửi 1 link hoặc nhiều link ảnh)
      */
-    @Schema(description = "URL của 1 ảnh (nếu chỉ gửi 1 ảnh)")
-    private String mediaUrl;
-
-    /**
-     * Danh sách 1 - 5 URLs hình ảnh/video cho việc phân tích đa góc nhìn
-     */
-    @Schema(description = "Danh sách từ 1 đến 5 URL ảnh/video để AI phân tích đa góc nhìn")
+    @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+    @JsonAlias("mediaUrl")
+    @Schema(
+            description = "Danh sách URL ảnh/video để AI phân tích (cho phép gửi 1 link dạng chuỗi hoặc mảng nhiều link)",
+            example = "[\"https://res.cloudinary.com/demo/image/upload/sample.jpg\"]"
+    )
+    @NotEmpty(message = "Danh sách Media URL không được để trống")
     private List<String> mediaUrls;
 
     /**
-     * Gom tất cả các URL hợp lệ từ mediaUrls hoặc mediaUrl
+     * Gom và làm sạch tất cả các URL hợp lệ (loại bỏ null, khoảng trắng thừa bằng trim())
      */
     public List<String> extractAllMediaUrls() {
+        if (mediaUrls == null || mediaUrls.isEmpty()) {
+            return Collections.emptyList();
+        }
         List<String> list = new ArrayList<>();
-        if (mediaUrls != null && !mediaUrls.isEmpty()) {
-            for (String url : mediaUrls) {
-                if (url != null && !url.trim().isEmpty()) {
-                    list.add(url.trim());
+        for (String url : mediaUrls) {
+            if (url != null) {
+                String trimmed = url.trim();
+                if (!trimmed.isEmpty()) {
+                    list.add(trimmed);
                 }
             }
-        } else if (mediaUrl != null && !mediaUrl.trim().isEmpty()) {
-            list.add(mediaUrl.trim());
         }
         return list;
     }
 
     @JsonIgnore
-    @AssertTrue(message = "Ít nhất một Media URL (mediaUrl hoặc mediaUrls) là bắt buộc")
+    @AssertTrue(message = "Ít nhất một Media URL hợp lệ là bắt buộc")
     public boolean isValidMediaProvided() {
         return !extractAllMediaUrls().isEmpty();
     }

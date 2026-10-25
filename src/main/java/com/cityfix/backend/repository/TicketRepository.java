@@ -67,7 +67,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             FROM ticket t
             JOIN ticket_subcategory tsc ON tsc.ticket_id = t.ticket_id
             WHERE t.status = 'COMPLETED'
-              AND t.is_deleted = FALSE
               AND t.created_at >= NOW() - INTERVAL '30 days'
               AND tsc.sub_category_id IN (:subCategoryIds)
               AND ST_DWithin(
@@ -92,7 +91,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
         FROM ticket t
         JOIN ticket_subcategory tsc ON tsc.ticket_id = t.ticket_id
         WHERE t.status = 'COMPLETED'
-          AND t.is_deleted = FALSE
           AND t.created_at >= NOW() - INTERVAL '30 days'
           AND ST_DWithin(
                 t.location::geography,
@@ -105,7 +103,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
               FROM ticket t2
               JOIN ticket_subcategory tsc2 ON tsc2.ticket_id = t2.ticket_id
               WHERE t2.status = 'COMPLETED'
-                AND t2.is_deleted = FALSE
                 AND t2.created_at >= NOW() - INTERVAL '30 days'
                 AND tsc2.sub_category_id IN (:subCategoryIds)
                 AND ST_DWithin(
