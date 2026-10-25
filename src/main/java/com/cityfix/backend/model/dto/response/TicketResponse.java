@@ -11,9 +11,6 @@ import java.util.UUID;
 public class TicketResponse {
     private UUID id;
     private String description;
-    private String imageUrl;
-    private java.util.UUID categoryId;
-    private String categoryName;
     private java.util.List<TicketCategoryResponse> categories;
     private java.util.List<SubCategoryResponse> subCategories;
     private com.cityfix.backend.model.enums.Priority priority;
@@ -28,7 +25,6 @@ public class TicketResponse {
     private UUID createdBy;
     private String creatorFullName;
     private String creatorPhoneNumber;
-    private java.util.List<String> images;
     private java.util.List<String> imageUrls;
     private LocalDateTime createdAt;
     private java.util.List<TicketStepResponse> steps;
