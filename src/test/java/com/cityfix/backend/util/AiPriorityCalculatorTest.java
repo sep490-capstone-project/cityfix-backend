@@ -94,17 +94,17 @@ class AiPriorityCalculatorTest {
     }
 
     @Test
-    @DisplayName("extractAllMediaUrls_singleAndMultiUrl_extractsProperly")
-    void extractAllMediaUrls_singleAndMultiUrl_extractsProperly() {
-        // Test single URL
+    @DisplayName("extractAllMediaUrls_singleAndMultiUrl_extractsProperlyWithTrim")
+    void extractAllMediaUrls_singleAndMultiUrl_extractsProperlyWithTrim() throws Exception {
+        // Test single URL with trimming
         AiAnalyzeRequest req1 = new AiAnalyzeRequest();
-        req1.setMediaUrl("https://example.com/single.jpg");
+        req1.setMediaUrls(List.of("   https://example.com/single.jpg   "));
         assertThat(req1.extractAllMediaUrls()).containsExactly("https://example.com/single.jpg");
         assertThat(req1.isValidMediaProvided()).isTrue();
 
-        // Test multi URLs
+        // Test multi URLs with trimming and whitespace filtering
         AiAnalyzeRequest req2 = new AiAnalyzeRequest();
-        req2.setMediaUrls(List.of("https://example.com/1.jpg", "https://example.com/2.jpg", " "));
+        req2.setMediaUrls(List.of("  https://example.com/1.jpg  ", " https://example.com/2.jpg ", " "));
         assertThat(req2.extractAllMediaUrls()).containsExactly("https://example.com/1.jpg", "https://example.com/2.jpg");
         assertThat(req2.isValidMediaProvided()).isTrue();
 
@@ -112,5 +112,14 @@ class AiPriorityCalculatorTest {
         AiAnalyzeRequest req3 = new AiAnalyzeRequest();
         assertThat(req3.extractAllMediaUrls()).isEmpty();
         assertThat(req3.isValidMediaProvided()).isFalse();
+
+        // Test Jackson deserialization with single URL string (ACCEPT_SINGLE_VALUE_AS_ARRAY)
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        AiAnalyzeRequest fromSingle = mapper.readValue("{\"mediaUrls\": \" https://example.com/single.jpg \"}", AiAnalyzeRequest.class);
+        assertThat(fromSingle.extractAllMediaUrls()).containsExactly("https://example.com/single.jpg");
+
+        // Test Jackson deserialization with array of URLs
+        AiAnalyzeRequest fromArray = mapper.readValue("{\"mediaUrls\": [\" https://example.com/1.jpg \", \" https://example.com/2.jpg \"]}", AiAnalyzeRequest.class);
+        assertThat(fromArray.extractAllMediaUrls()).containsExactly("https://example.com/1.jpg", "https://example.com/2.jpg");
     }
 }

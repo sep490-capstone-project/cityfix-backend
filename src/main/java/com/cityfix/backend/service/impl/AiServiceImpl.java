@@ -50,7 +50,9 @@ public class AiServiceImpl implements AiService {
     @Override
     public AiAnalyzeResponse analyzeMedia(String mediaUrl) {
         AiAnalyzeRequest request = new AiAnalyzeRequest();
-        request.setMediaUrl(mediaUrl);
+        if (mediaUrl != null && !mediaUrl.trim().isEmpty()) {
+            request.setMediaUrls(List.of(mediaUrl.trim()));
+        }
         return analyze(request);
     }
 
