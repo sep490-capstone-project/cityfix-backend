@@ -247,8 +247,7 @@ class TicketServiceTest {
         mockResponse = TicketResponse.builder()
                 .id(mockTicket.getTicketId())
                 .description(mockTicket.getDescription())
-                .imageUrl(createRequest.getImageUrl())
-                .categoryId(categoryId)
+                .imageUrls(List.of(createRequest.getImageUrl()))
                 .priorityReasoning(createRequest.getPriorityReasoning())
                 .priority(createRequest.getPriority())
                 .locationMethod(createRequest.getLocationMethod())
@@ -281,7 +280,7 @@ class TicketServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getDescription()).isEqualTo("Mặt đường bị sụt hố sâu lớn");
         assertThat(result.getCreatedBy()).isEqualTo(mockUser.getUserId());
-        assertThat(result.getImageUrl()).isEqualTo(createRequest.getImageUrl());
+        assertThat(result.getImageUrls()).containsExactly(createRequest.getImageUrl());
         assertThat(result.getLocationMethod()).isEqualTo(LocationMethod.AUTO_GPS);
 
         verify(ticketRepository, times(1)).save(any(Ticket.class));
@@ -300,7 +299,6 @@ class TicketServiceTest {
             Ticket t = inv.getArgument(0);
             return TicketResponse.builder()
                     .id(t.getTicketId())
-                    .imageUrl(t.getImageUrl())
                     .imageUrls(t.getImages().stream().map(ReportImage::getImageUrl).toList())
                     .build();
         });
@@ -308,7 +306,6 @@ class TicketServiceTest {
         TicketResponse result = ticketService.createTicket(createRequest);
 
         assertThat(result).isNotNull();
-        assertThat(result.getImageUrl()).isEqualTo("https://cloudinary.com/img1.jpg");
         assertThat(result.getImageUrls()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
         verify(reportImageRepository, times(2)).save(any(ReportImage.class));
     }
@@ -324,7 +321,6 @@ class TicketServiceTest {
             Ticket t = inv.getArgument(0);
             return TicketResponse.builder()
                     .id(t.getTicketId())
-                    .imageUrl(t.getImageUrl())
                     .imageUrls(t.getImages().stream().map(ReportImage::getImageUrl).toList())
                     .build();
         });
@@ -332,7 +328,6 @@ class TicketServiceTest {
         TicketResponse result = ticketService.createTicket(createRequest);
 
         assertThat(result).isNotNull();
-        assertThat(result.getImageUrl()).isEqualTo("https://cloudinary.com/legacy.jpg");
         assertThat(result.getImageUrls()).containsExactly("https://cloudinary.com/legacy.jpg");
         verify(reportImageRepository, times(1)).save(any(ReportImage.class));
     }
@@ -348,7 +343,6 @@ class TicketServiceTest {
             Ticket t = inv.getArgument(0);
             return TicketResponse.builder()
                     .id(t.getTicketId())
-                    .imageUrl(t.getImageUrl())
                     .imageUrls(t.getImages().stream().map(ReportImage::getImageUrl).toList())
                     .build();
         });
@@ -356,7 +350,6 @@ class TicketServiceTest {
         TicketResponse result = ticketService.createTicket(createRequest);
 
         assertThat(result).isNotNull();
-        assertThat(result.getImageUrl()).isEqualTo("https://cloudinary.com/img1.jpg");
         assertThat(result.getImageUrls()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
         verify(reportImageRepository, times(2)).save(argThat(img ->
                 img.getImageUrl().equals("https://cloudinary.com/img1.jpg") || img.getImageUrl().equals("https://cloudinary.com/img2.jpg")

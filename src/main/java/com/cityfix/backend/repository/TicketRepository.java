@@ -178,21 +178,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
            countQuery = "SELECT COUNT(t) FROM Ticket t WHERE t.user.userId = :userId")
     Page<Ticket> findByUserId(@Param("userId") UUID userId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {
-        "subCategories.subCategory",
-        "subCategories.subCategory.category",
-        "images"
-    })
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     @Query(value = """
-        SELECT t FROM Ticket t
-        JOIN TicketVote tv ON tv.ticket = t
-        WHERE tv.user.userId = :userId
-        ORDER BY tv.createdAt DESC
-        """,
-        countQuery = """
-        SELECT COUNT(tv) FROM TicketVote tv
-        WHERE tv.user.userId = :userId
-        """)
+    SELECT t FROM Ticket t
+    JOIN TicketVote tv ON tv.ticket = t
+    WHERE tv.user.userId = :userId
+    ORDER BY tv.createdAt DESC
+    """,
+            countQuery = """
+    SELECT COUNT(tv) FROM TicketVote tv
+    WHERE tv.user.userId = :userId
+    """)
     Page<Ticket> findUpvotedTicketsByUserId(@Param("userId") UUID userId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})

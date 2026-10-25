@@ -27,16 +27,12 @@ public interface TicketMapper {
     @Mapping(target = "createdBy", source = "user.userId")
     @Mapping(target = "creatorFullName", source = "user.fullName")
     @Mapping(target = "creatorPhoneNumber", source = "user.phoneNumber")
-    @Mapping(target = "categoryId", ignore = true)
-    @Mapping(target = "categoryName", ignore = true)
     @Mapping(target = "categories", ignore = true)
     @Mapping(target = "assigneeId", ignore = true)
     @Mapping(target = "assigneeName", ignore = true)
     @Mapping(target = "latitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getY() : null)")
     @Mapping(target = "longitude", expression = "java(ticket.getLocation() != null ? ticket.getLocation().getX() : null)")
-    @Mapping(target = "imageUrl", expression = "java(ticket.getImageUrl() != null ? ticket.getImageUrl() : (ticket.getImages() != null && !ticket.getImages().isEmpty() ? ticket.getImages().get(0).getImageUrl() : null))")
     @Mapping(target = "imageUrls", expression = "java(ticket.getImages() != null ? ticket.getImages().stream().map(com.cityfix.backend.model.entity.ReportImage::getImageUrl).toList() : java.util.Collections.emptyList())")
-    @Mapping(target = "images", expression = "java(ticket.getImages() != null ? ticket.getImages().stream().map(com.cityfix.backend.model.entity.ReportImage::getImageUrl).toList() : java.util.Collections.emptyList())")
     @Mapping(target = "subCategories", source = "subCategories")
     @Mapping(target = "steps", source = "steps")
     @Mapping(target = "departmentId", ignore = true)
@@ -76,10 +72,6 @@ public interface TicketMapper {
             }
         }
         response.setCategories(categories);
-        if (!categories.isEmpty()) {
-            response.setCategoryId(categories.get(0).getCategoryId());
-            response.setCategoryName(categories.get(0).getCategoryName());
-        }
     }
 
     @AfterMapping

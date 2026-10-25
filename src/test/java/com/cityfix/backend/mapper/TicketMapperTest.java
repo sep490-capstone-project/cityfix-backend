@@ -225,8 +225,6 @@ class TicketMapperTest {
         assertThat(response.getCategories().get(0).getCategoryName()).isEqualTo("Hạ tầng");
         assertThat(response.getCategories().get(1).getCategoryId()).isEqualTo(cat2.getCategoryId());
         assertThat(response.getCategories().get(1).getCategoryName()).isEqualTo("Môi trường");
-        assertThat(response.getCategoryId()).isEqualTo(cat1.getCategoryId());
-        assertThat(response.getCategoryName()).isEqualTo("Hạ tầng");
     }
 
     @Test
@@ -279,9 +277,7 @@ class TicketMapperTest {
         TicketResponse response = ticketMapper.toTicketResponse(ticket);
 
         assertThat(response).isNotNull();
-        assertThat(response.getImageUrl()).isEqualTo("https://cloudinary.com/img1.jpg");
         assertThat(response.getImageUrls()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
-        assertThat(response.getImages()).containsExactly("https://cloudinary.com/img1.jpg", "https://cloudinary.com/img2.jpg");
     }
 
     @Test
@@ -292,7 +288,6 @@ class TicketMapperTest {
         TicketResponse response = ticketMapper.toTicketResponse(ticket);
 
         assertThat(response).isNotNull();
-        assertThat(response.getImageUrl()).isNull();
         assertThat(response.getImageUrls()).isEmpty();
     }
 }
