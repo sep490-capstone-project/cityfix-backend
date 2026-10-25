@@ -18,6 +18,16 @@ public enum ErrorCode {
             "Số điện thoại đã tồn tại"
     ),
 
+    TICKET_CANNOT_UPVOTE(
+            HttpStatus.BAD_REQUEST,
+            "Không thể bình chọn vé đã đóng hoặc đã hoàn thành"
+    ),
+
+    TICKET_ALREADY_UPVOTED(
+            HttpStatus.BAD_REQUEST,
+            "Bạn đã bình chọn cho báo cáo này rồi"
+    ),
+
     ACCOUNT_REACTIVATION_REQUIRED(
             HttpStatus.CONFLICT,
             "Tài khoản đã tồn tại nhưng đã bị xóa. Vui lòng gửi yêu cầu kích hoạt lại cho quản trị viên."

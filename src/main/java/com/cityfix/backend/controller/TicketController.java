@@ -50,6 +50,15 @@ public class TicketController {
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách phản ánh thành công.", response));
     }
 
+    @GetMapping("/my-upvoted")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Lấy danh sách các vé mà người dùng hiện tại đã upvote", description = "Trích xuất thông tin người dùng từ SecurityContext, trả về danh sách phân trang các vé đã upvote.")
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getMyUpvotedTickets(
+            @PageableDefault(size = 10) Pageable pageable) {
+        Page<TicketResponse> response = ticketService.getMyUpvotedTickets(pageable);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé đã upvote thành công.", response));
+    }
+
     @GetMapping("/{ticketId}/steps")
     @PreAuthorize("hasAnyRole('STAFF', 'MANAGER')")
     @Operation(summary = "Lấy danh sách các bước xử lý của vé", description = "Chỉ cho phép vai trò STAFF và MANAGER. Chặn ADMIN và các vai trò khác.")

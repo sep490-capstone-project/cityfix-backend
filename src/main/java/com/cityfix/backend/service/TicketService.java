@@ -18,6 +18,7 @@ public interface TicketService {
     
     org.springframework.data.domain.Page<TicketResponse> getInitiatedTickets(org.springframework.data.domain.Pageable pageable);
     org.springframework.data.domain.Page<TicketResponse> getMyReportedTickets(org.springframework.data.domain.Pageable pageable);
+    org.springframework.data.domain.Page<TicketResponse> getMyUpvotedTickets(org.springframework.data.domain.Pageable pageable);
     TicketResponse rerouteTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RerouteTicketRequest request);
     org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(AssignmentStatus status, org.springframework.data.domain.Pageable pageable);
     
