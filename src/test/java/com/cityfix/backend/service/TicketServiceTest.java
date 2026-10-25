@@ -1673,5 +1673,73 @@ class TicketServiceTest {
 
         assertThat(ticketDeadline).isNull();
     }
+
+    @Test
+    @DisplayName("getMyUpvotedTickets_success_returnsPagedTicketResponses")
+    void getMyUpvotedTickets_success_returnsPagedTicketResponses() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        Ticket ticket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Hố ga mất nắp")
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+        TicketResponse expectedResponse = TicketResponse.builder()
+                .id(ticket.getTicketId())
+                .description(ticket.getDescription())
+                .status(ticket.getStatus())
+                .build();
+
+        org.springframework.data.domain.Page<Ticket> ticketPage =
+                new org.springframework.data.domain.PageImpl<>(List.of(ticket), pageable, 1);
+
+        when(ticketRepository.findUpvotedTicketsByUserId(eq(mockUser.getUserId()), eq(pageable)))
+                .thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(expectedResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getMyUpvotedTickets(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getId()).isEqualTo(ticket.getTicketId());
+        assertThat(result.getContent().get(0).getDescription()).isEqualTo("Hố ga mất nắp");
+
+        verify(ticketRepository).findUpvotedTicketsByUserId(mockUser.getUserId(), pageable);
+        verify(ticketMapper).toTicketResponse(ticket);
+    }
+
+    @Test
+    @DisplayName("getMyUpvotedTickets_emptyResult_returnsEmptyPage")
+    void getMyUpvotedTickets_emptyResult_returnsEmptyPage() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        org.springframework.data.domain.Page<Ticket> emptyPage =
+                new org.springframework.data.domain.PageImpl<>(Collections.emptyList(), pageable, 0);
+
+        when(ticketRepository.findUpvotedTicketsByUserId(eq(mockUser.getUserId()), eq(pageable)))
+                .thenReturn(emptyPage);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getMyUpvotedTickets(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(0);
+        assertThat(result.getContent()).isEmpty();
+
+        verify(ticketRepository).findUpvotedTicketsByUserId(mockUser.getUserId(), pageable);
+        verify(ticketMapper, never()).toTicketResponse(any());
+    }
+
+    @Test
+    @DisplayName("getMyUpvotedTickets_unauthenticated_throwsUnauthenticated")
+    void getMyUpvotedTickets_unauthenticated_throwsUnauthenticated() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> ticketService.getMyUpvotedTickets(pageable))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(ticketRepository, never()).findUpvotedTicketsByUserId(any(), any());
+    }
 }
 

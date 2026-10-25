@@ -478,9 +478,19 @@ public class TicketServiceImpl implements TicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        if (ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, user.getUserId())) {
-            throw new RuntimeException("User has already upvoted this ticket");
+        Set<AssignmentStatus>restrictedStatuses = EnumSet.of(
+                AssignmentStatus.RESOLVED,
+                AssignmentStatus.COMPLETED,
+                AssignmentStatus.CANCELLED
+        );
+
+        if(restrictedStatuses.contains(ticket.getStatus())) {
+            throw new AppException(ErrorCode.TICKET_CANNOT_UPVOTE);
         }
+
+        if (ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, user.getUserId())) {
+            throw new AppException(ErrorCode.TICKET_ALREADY_UPVOTED);
+    }
 
         TicketVote vote = TicketVote.builder()
                 .ticket(ticket)
@@ -589,6 +599,14 @@ public class TicketServiceImpl implements TicketService {
     public Page<TicketResponse> getMyReportedTickets(Pageable pageable) {
         User currentUser = getCurrentUser();
         Page<Ticket> tickets = ticketRepository.findByUserId(currentUser.getUserId(), pageable);
+        return tickets.map(ticketMapper::toTicketResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> getMyUpvotedTickets(Pageable pageable) {
+        User currentUser = getCurrentUser();
+        Page<Ticket> tickets = ticketRepository.findUpvotedTicketsByUserId(currentUser.getUserId(), pageable);
         return tickets.map(ticketMapper::toTicketResponse);
     }
 
