@@ -402,6 +402,26 @@ class TicketControllerTest {
     }
 
     @Test
+    @DisplayName("getMyUpvotedTickets_returns200WithPageData")
+    void getMyUpvotedTickets_returns200WithPageData() {
+        org.springframework.data.domain.Page<TicketResponse> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(mockTicketResponse));
+
+        when(ticketService.getMyUpvotedTickets(any())).thenReturn(page);
+
+        ResponseEntity<BaseResponse<org.springframework.data.domain.Page<TicketResponse>>> response =
+                ticketController.getMyUpvotedTickets(org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Lấy danh sách vé đã upvote thành công.");
+        assertThat(response.getBody().getData().getContent()).hasSize(1);
+
+        verify(ticketService, times(1)).getMyUpvotedTickets(any());
+    }
+
+    @Test
     @DisplayName("analyzeMedia_validRequest_returnsAiAnalyzeResponse")
     void analyzeMedia_validRequest_returnsAiAnalyzeResponse() {
         com.cityfix.backend.model.dto.request.AiAnalyzeRequest request = new com.cityfix.backend.model.dto.request.AiAnalyzeRequest();
