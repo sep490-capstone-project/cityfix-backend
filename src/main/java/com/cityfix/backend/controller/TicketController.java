@@ -59,6 +59,15 @@ public class TicketController {
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé đã upvote thành công.", response));
     }
 
+    @GetMapping("/in-progress")
+    @PreAuthorize("hasRole('RESIDENT')")
+    @Operation(summary = "Lấy danh sách toàn bộ vé đang xử lý (IN_PROGRESS)", description = "Dành cho Resident, trả về danh sách phân trang toàn bộ các vé có trạng thái IN_PROGRESS không giới hạn chủ sở hữu.")
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getInProgressTickets(
+            @PageableDefault(size = 10) Pageable pageable) {
+        Page<TicketResponse> response = ticketService.getInProgressTickets(pageable);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé đang xử lý thành công.", response));
+    }
+
     @GetMapping("/{ticketId}/steps")
     @PreAuthorize("hasAnyRole('STAFF', 'MANAGER')")
     @Operation(summary = "Lấy danh sách các bước xử lý của vé", description = "Chỉ cho phép vai trò STAFF và MANAGER. Chặn ADMIN và các vai trò khác.")

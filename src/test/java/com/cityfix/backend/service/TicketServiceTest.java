@@ -1734,5 +1734,52 @@ class TicketServiceTest {
 
         verify(ticketRepository, never()).findUpvotedTicketsByUserId(any(), any());
     }
+
+    @Test
+    @DisplayName("getInProgressTickets_success_returnsPagedInProgressTicketsRegardlessOfOwner")
+    void getInProgressTickets_success_returnsPagedInProgressTicketsRegardlessOfOwner() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        Ticket ticket1 = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sự cố đèn đường hỏng")
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+        Ticket ticket2 = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sự cố cây đổ")
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+
+        TicketResponse resp1 = TicketResponse.builder()
+                .id(ticket1.getTicketId())
+                .description(ticket1.getDescription())
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+        TicketResponse resp2 = TicketResponse.builder()
+                .id(ticket2.getTicketId())
+                .description(ticket2.getDescription())
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+
+        org.springframework.data.domain.Page<Ticket> ticketPage =
+                new org.springframework.data.domain.PageImpl<>(List.of(ticket1, ticket2), pageable, 2);
+
+        when(ticketRepository.findByStatus(eq(TicketStatus.IN_PROGRESS), eq(pageable)))
+                .thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket1)).thenReturn(resp1);
+        when(ticketMapper.toTicketResponse(ticket2)).thenReturn(resp2);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getInProgressTickets(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent()).hasSize(2);
+        assertThat(result.getContent().get(0).getId()).isEqualTo(ticket1.getTicketId());
+        assertThat(result.getContent().get(1).getId()).isEqualTo(ticket2.getTicketId());
+
+        verify(ticketRepository).findByStatus(TicketStatus.IN_PROGRESS, pageable);
+        verify(ticketMapper).toTicketResponse(ticket1);
+        verify(ticketMapper).toTicketResponse(ticket2);
+    }
 }
 
