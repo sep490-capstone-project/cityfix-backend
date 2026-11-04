@@ -19,7 +19,10 @@ public class CorsConfig {
                 "http://127.0.0.1:*",
                 "https://*.vercel.app",
                 "https://*.netlify.app",
-                "https://*.onrender.com"
+                "https://*.onrender.com",
+                "https://cityfix-six.vercel.app",
+                "https://cityfix.cloud",
+                "https://www.cityfix.cloud"
         ));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
