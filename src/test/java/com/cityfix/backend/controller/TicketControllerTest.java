@@ -421,6 +421,28 @@ class TicketControllerTest {
     }
 
     @Test
+    @DisplayName("getInProgressTickets_returns200WithPageData")
+    void getInProgressTickets_returns200WithPageData() {
+        mockTicketResponse.setStatus(TicketStatus.IN_PROGRESS);
+        org.springframework.data.domain.Page<TicketResponse> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(mockTicketResponse));
+
+        when(ticketService.getInProgressTickets(any())).thenReturn(page);
+
+        ResponseEntity<BaseResponse<org.springframework.data.domain.Page<TicketResponse>>> response =
+                ticketController.getInProgressTickets(org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Lấy danh sách vé đang xử lý thành công.");
+        assertThat(response.getBody().getData().getContent()).hasSize(1);
+        assertThat(response.getBody().getData().getContent().get(0).getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+
+        verify(ticketService, times(1)).getInProgressTickets(any());
+    }
+
+    @Test
     @DisplayName("analyzeMedia_validRequest_returnsAiAnalyzeResponse")
     void analyzeMedia_validRequest_returnsAiAnalyzeResponse() {
         com.cityfix.backend.model.dto.request.AiAnalyzeRequest request = new com.cityfix.backend.model.dto.request.AiAnalyzeRequest();

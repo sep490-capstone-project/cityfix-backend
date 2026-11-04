@@ -17,6 +17,7 @@ public interface TicketService {
     List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID subCategoryId);
     
     org.springframework.data.domain.Page<TicketResponse> getInitiatedTickets(org.springframework.data.domain.Pageable pageable);
+    org.springframework.data.domain.Page<TicketResponse> getInProgressTickets(org.springframework.data.domain.Pageable pageable);
     org.springframework.data.domain.Page<TicketResponse> getMyReportedTickets(org.springframework.data.domain.Pageable pageable);
     org.springframework.data.domain.Page<TicketResponse> getMyUpvotedTickets(org.springframework.data.domain.Pageable pageable);
     TicketResponse rerouteTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RerouteTicketRequest request);

@@ -37,3 +37,11 @@ logs/
 
 ### VS Code ###
 .vscode/
+
+
+### Unit Test Report & Local Scripts ###
+*.xlsx
+~$*.xlsx
+build_catalog.ps1
+generate_report5.ps1
+functions_catalog.json

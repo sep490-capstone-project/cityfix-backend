@@ -596,6 +596,13 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional(readOnly = true)
+    public Page<TicketResponse> getInProgressTickets(Pageable pageable) {
+        Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.IN_PROGRESS, pageable);
+        return tickets.map(ticketMapper::toTicketResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Page<TicketResponse> getMyReportedTickets(Pageable pageable) {
         User currentUser = getCurrentUser();
         Page<Ticket> tickets = ticketRepository.findByUserId(currentUser.getUserId(), pageable);
