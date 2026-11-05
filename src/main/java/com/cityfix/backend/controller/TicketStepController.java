@@ -52,7 +52,7 @@ public class TicketStepController {
     }
 
     @PostMapping(value = "/{stepId}/evidences", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasRole('STAFF')")
     @Operation(summary = "Đính kèm bằng chứng xử lý cho bước", description = "Upload nhiều files bằng chứng và kèm ghi chú cho một bước cụ thể. Bước sẽ tự động chuyển sang RESOLVED khi upload thành công.")
     public ResponseEntity<BaseResponse<List<com.cityfix.backend.model.dto.response.ResolutionEvidenceResponse>>> submitEvidence(
             @PathVariable UUID stepId,

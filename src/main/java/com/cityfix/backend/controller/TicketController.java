@@ -68,6 +68,15 @@ public class TicketController {
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách vé đang xử lý thành công.", response));
     }
 
+    @GetMapping("/life-threatening")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Lấy danh sách vé sự cố nguy hiểm đến tính mạng cùng Phường", description = "Trả về danh sách phân trang các vé có isLifeThreatening = true, trạng thái ASSIGNED, IN_PROGRESS, RESOLVED trong cùng khu vực Phường với người dùng hiện tại.")
+    public ResponseEntity<BaseResponse<Page<TicketResponse>>> getLifeThreateningTicketsInSameWard(
+            @PageableDefault(size = 10) Pageable pageable) {
+        Page<TicketResponse> response = ticketService.getLifeThreateningTicketsInSameWard(pageable);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách sự cố khẩn cấp cùng khu vực thành công.", response));
+    }
+
     @GetMapping("/{ticketId}/steps")
     @PreAuthorize("hasAnyRole('STAFF', 'MANAGER')")
     @Operation(summary = "Lấy danh sách các bước xử lý của vé", description = "Chỉ cho phép vai trò STAFF và MANAGER. Chặn ADMIN và các vai trò khác.")
@@ -128,7 +137,7 @@ public class TicketController {
     }
 
     @PostMapping("/{id}/reroute")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Chuyển tuyến vé (Re-route Ticket)", description = "Chuyển tuyến vé sang phòng ban khác do phòng ban hiện tại không thuộc thẩm quyền.")
     public ResponseEntity<BaseResponse<TicketResponse>> rerouteTicket(
             @PathVariable UUID id,

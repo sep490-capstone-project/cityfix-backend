@@ -383,17 +383,11 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     @Override
     @Transactional
     public TicketResponse reviewTicket(UUID ticketId, ReviewTicketRequest request) {
-        // =========================================================================
-        // 1. Phân quyền: CHỈ cho phép role MANAGER thực hiện
-        // =========================================================================
         User currentUser = getCurrentUser();
         if (!isManager(currentUser)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        // =========================================================================
-        // 2. Tìm kiếm vé & kiểm tra trạng thái INITIATED
-        // =========================================================================
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
@@ -401,23 +395,19 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
         }
 
-        // =========================================================================
-        // 3. Validation danh sách SubCategory
-        // =========================================================================
         List<SubCategory> subCategories = validateAndFetchSubCategories(request.getSubCategoryIds());
 
-        // =========================================================================
-        // 4. Validation danh sách steps & assignees
-        // =========================================================================
         Map<UUID, Step> stepMap = validateAndFetchSteps(request.getSteps());
         Map<UUID, User> assigneeMap = validateAndFetchAssignees(request.getSteps());
 
-        // =========================================================================
-        // 4.1 Validate cấu trúc DAG của các bước xử lý
-        // =========================================================================
         Set<UUID> allMasterStepIds = request.getSteps().stream()
                 .map(ReviewTicketRequest.StepAssignmentRequest::getStepId)
                 .collect(Collectors.toSet());
+
+        if(allMasterStepIds.size() != request.getSteps().size()) {
+            throw new AppException(ErrorCode.DUPLICATE_STEP_ASSIGNMENT);
+        }
+
         Map<UUID, Set<UUID>> adjacencyMap = new HashMap<>();
         for (ReviewTicketRequest.StepAssignmentRequest stepReq : request.getSteps()) {
             Set<UUID> deps = stepReq.getDependsOnStepIds() != null
@@ -427,9 +417,6 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
         StepDagValidator.validateDag(allMasterStepIds, adjacencyMap);
 
-        // =========================================================================
-        // 5. Cập nhật SOS và Review Note (KHÔNG đổi categoryId theo thiết kế mới)
-        // =========================================================================
         if (request.getIsLifeThreatening() != null) {
             ticket.setIsLifeThreatening(request.getIsLifeThreatening());
         }
@@ -437,36 +424,21 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             ticket.setReviewNote(request.getReviewNote());
         }
 
-        // =========================================================================
-        // 6. Xử lý Hibernate Collection: Ticket_SubCategory (orphanRemoval = true)
-        // =========================================================================
         updateTicketSubCategories(ticket, subCategories);
 
-        // =========================================================================
-        // 7. Xử lý Hibernate Collection: Ticket_Step (Quy trình 2 pha & kích hoạt Anchor Steps)
-        // =========================================================================
+        // Xử lý Hibernate Collection: Ticket_Step (Quy trình 2 pha & kích hoạt Anchor Steps)
         List<TicketStep> anchorSteps = updateTicketSteps(ticket, request.getSteps(), stepMap, assigneeMap);
 
-        // =========================================================================
-        // 8. Chuyển trạng thái vé: IN_PROGRESS sau khi kích hoạt các anchor step
-        // =========================================================================
+        // Chuyển trạng thái vé: IN_PROGRESS sau khi kích hoạt các anchor step
         TicketStatus prevStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.IN_PROGRESS);
         ticket.setNeedsManualReview(false);
 
-        // =========================================================================
-        // 9. Tính toán hạn chót (deadline) của Ticket từ hạn chót trễ nhất của các bước
-        // =========================================================================
+        // Tính toán hạn chót (deadline) của Ticket từ hạn chót trễ nhất của các bước
         ticket.setDeadline(resolveTicketDeadline(ticket));
 
-        // =========================================================================
-        // 10. Lưu Ticket xuống Database (Cascade lưu TicketSubCategory & TicketStep)
-        // =========================================================================
         ticket = ticketRepository.save(ticket);
 
-        // =========================================================================
-        // 11. Ghi log lịch sử TicketHistory
-        // =========================================================================
         String historyNote = (request.getReviewNote() != null && !request.getReviewNote().isBlank())
                 ? request.getReviewNote()
                 : "Duyệt thủ công vé thành công, chuyển sang Đang xử lý";
@@ -475,7 +447,6 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         );
         ticketHistoryRepository.save(history);
 
-        // Kích hoạt thông báo và log TicketHistory cho từng Anchor Step
         for (TicketStep anchorStep : anchorSteps) {
             TicketHistory stepHistory = ticketHistoryMapper.toTicketHistory(
                     ticket, currentUser, ActionType.WORK_STARTED, TicketStatus.IN_PROGRESS, TicketStatus.IN_PROGRESS,
@@ -485,9 +456,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             notificationService.notifyStepStarted(anchorStep, currentUser);
         }
 
-        // =========================================================================
-        // 12. Gửi thông báo WebSocket & Email cho người tạo vé (Creator)
-        // =========================================================================
+        //Gửi thông báo
         sendReviewSuccessNotification(ticket);
 
         return ticketMapper.toTicketResponse(ticket);
