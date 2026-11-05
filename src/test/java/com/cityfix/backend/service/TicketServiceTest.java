@@ -1781,5 +1781,218 @@ class TicketServiceTest {
         verify(ticketMapper).toTicketResponse(ticket1);
         verify(ticketMapper).toTicketResponse(ticket2);
     }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_success_normalizesWardAndReturnsPagedTickets")
+    void getLifeThreateningTicketsInSameWard_success_normalizesWardAndReturnsPagedTickets() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        mockUser.setWard("Phường Bến Nghé");
+        mockUser.setProvince("TP. Hồ Chí Minh");
+
+        Ticket ticket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Dây điện cao thế đứt rơi xuống đường")
+                .address("123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh")
+                .isLifeThreatening(true)
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+
+        TicketResponse expectedResponse = TicketResponse.builder()
+                .id(ticket.getTicketId())
+                .description(ticket.getDescription())
+                .address(ticket.getAddress())
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+
+        List<TicketStatus> expectedStatuses = List.of(
+                TicketStatus.ASSIGNED,
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.RESOLVED
+        );
+
+        org.springframework.data.domain.Page<Ticket> ticketPage =
+                new org.springframework.data.domain.PageImpl<>(List.of(ticket), pageable, 1);
+
+        when(ticketRepository.findLifeThreateningTicketsByWard(
+                eq("Phường Bến Nghé"),
+                eq("Bến Nghé"),
+                eq("TP. Hồ Chí Minh"),
+                eq(expectedStatuses),
+                eq(pageable)
+        )).thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(expectedResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getLifeThreateningTicketsInSameWard(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getId()).isEqualTo(ticket.getTicketId());
+
+        verify(ticketRepository).findLifeThreateningTicketsByWard(
+                "Phường Bến Nghé", "Bến Nghé", "TP. Hồ Chí Minh", expectedStatuses, pageable
+        );
+        verify(ticketMapper).toTicketResponse(ticket);
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_nullOrBlankUserWard_returnsEmptyPageWithoutQuerying")
+    void getLifeThreateningTicketsInSameWard_nullOrBlankUserWard_returnsEmptyPageWithoutQuerying() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        mockUser.setWard("   ");
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getLifeThreateningTicketsInSameWard(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).isEmpty();
+        verify(ticketRepository, never()).findLifeThreateningTicketsByWard(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_nullProvince_passesEmptyStringProvince")
+    void getLifeThreateningTicketsInSameWard_nullProvince_passesEmptyStringProvince() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        mockUser.setWard("P. Đa Kao");
+        mockUser.setProvince(null);
+
+        List<TicketStatus> expectedStatuses = List.of(
+                TicketStatus.ASSIGNED,
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.RESOLVED
+        );
+
+        org.springframework.data.domain.Page<Ticket> emptyPage =
+                new org.springframework.data.domain.PageImpl<>(Collections.emptyList(), pageable, 0);
+
+        when(ticketRepository.findLifeThreateningTicketsByWard(
+                eq("P. Đa Kao"),
+                eq("Đa Kao"),
+                eq(""),
+                eq(expectedStatuses),
+                eq(pageable)
+        )).thenReturn(emptyPage);
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getLifeThreateningTicketsInSameWard(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).isEmpty();
+        verify(ticketRepository).findLifeThreateningTicketsByWard(
+                "P. Đa Kao", "Đa Kao", "", expectedStatuses, pageable
+        );
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_unauthenticated_throwsUnauthenticated")
+    void getLifeThreateningTicketsInSameWard_unauthenticated_throwsUnauthenticated() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> ticketService.getLifeThreateningTicketsInSameWard(pageable))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(ticketRepository, never()).findLifeThreateningTicketsByWard(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_accountNotFound_throwsAccountNotFound")
+    void getLifeThreateningTicketsInSameWard_accountNotFound_throwsAccountNotFound() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        when(authentication.getPrincipal()).thenReturn("unknown@cityfix.com");
+        when(userRepository.findByEmail("unknown@cityfix.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.getLifeThreateningTicketsInSameWard(pageable))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+
+        verify(ticketRepository, never()).findLifeThreateningTicketsByWard(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_wardOnlyContainsPrefix_returnsEmptyPageWithoutQuerying")
+    void getLifeThreateningTicketsInSameWard_wardOnlyContainsPrefix_returnsEmptyPageWithoutQuerying() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        mockUser.setWard("Phường   ");
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getLifeThreateningTicketsInSameWard(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).isEmpty();
+        verify(ticketRepository, never()).findLifeThreateningTicketsByWard(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_nullWard_returnsEmptyPageWithoutQuerying")
+    void getLifeThreateningTicketsInSameWard_nullWard_returnsEmptyPageWithoutQuerying() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        mockUser.setWard(null);
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getLifeThreateningTicketsInSameWard(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).isEmpty();
+        verify(ticketRepository, never()).findLifeThreateningTicketsByWard(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_numericWard_retainsPhuongPrefixToPreventFalsePositives")
+    void getLifeThreateningTicketsInSameWard_numericWard_retainsPhuongPrefixToPreventFalsePositives() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        mockUser.setWard("P. 1");
+        mockUser.setProvince("TP. Hồ Chí Minh");
+
+        Ticket ticket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sập giàn giáo công trình")
+                .address("15 Lê Thánh Tôn, Phường 1, Quận 3, TP. Hồ Chí Minh")
+                .isLifeThreatening(true)
+                .status(TicketStatus.ASSIGNED)
+                .build();
+
+        TicketResponse expectedResponse = TicketResponse.builder()
+                .id(ticket.getTicketId())
+                .description(ticket.getDescription())
+                .address(ticket.getAddress())
+                .status(TicketStatus.ASSIGNED)
+                .build();
+
+        List<TicketStatus> expectedStatuses = List.of(
+                TicketStatus.ASSIGNED,
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.RESOLVED
+        );
+
+        org.springframework.data.domain.Page<Ticket> ticketPage =
+                new org.springframework.data.domain.PageImpl<>(List.of(ticket), pageable, 1);
+
+        when(ticketRepository.findLifeThreateningTicketsByWard(
+                eq("P. 1"),
+                eq("Phường 1"),
+                eq("TP. Hồ Chí Minh"),
+                eq(expectedStatuses),
+                eq(pageable)
+        )).thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(expectedResponse);
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getLifeThreateningTicketsInSameWard(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getId()).isEqualTo(ticket.getTicketId());
+
+        verify(ticketRepository).findLifeThreateningTicketsByWard(
+                "P. 1", "Phường 1", "TP. Hồ Chí Minh", expectedStatuses, pageable
+        );
+        verify(ticketMapper).toTicketResponse(ticket);
+    }
 }
 

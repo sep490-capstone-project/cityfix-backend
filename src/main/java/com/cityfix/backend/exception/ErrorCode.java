@@ -238,6 +238,11 @@ public enum ErrorCode {
             "Chưa thể thực hiện bước này do các bước phụ thuộc tiên quyết chưa hoàn thành"
     ),
 
+    DUPLICATE_STEP_ASSIGNMENT(
+            HttpStatus.BAD_REQUEST,
+            "Không được giao trùng một bước xử lý nhiều lần trong vé."
+    ),
+
     MANAGER_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "Không tìm thấy người quản lý phụ trách phòng ban của bạn"
