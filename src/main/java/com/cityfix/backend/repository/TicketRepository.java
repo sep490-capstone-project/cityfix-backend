@@ -299,4 +299,76 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             @Param("departmentIds") java.util.Collection<UUID> departmentIds,
             Pageable pageable
     );
+
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @Query(value = """
+        SELECT t FROM Ticket t
+        WHERE t.isLifeThreatening = true
+          AND t.status IN :statuses
+          AND (
+              (
+                  t.address IS NOT NULL
+                  AND (
+                      LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern, ',%'))
+                      OR LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern))
+                  )
+                  AND (:province IS NULL OR :province = '' OR LOWER(t.address) LIKE LOWER(CONCAT('%', :province, '%')))
+              )
+              OR (
+                  t.location IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM AdministrativeBoundary ab
+                      WHERE ab.ward IS NOT NULL
+                        AND (
+                            LOWER(ab.ward) = LOWER(:rawWard)
+                            OR LOWER(ab.ward) = LOWER(:wardPattern)
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Phường ', :wardPattern))
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Xã ', :wardPattern))
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Thị trấn ', :wardPattern))
+                        )
+                        AND (:province IS NULL OR :province = '' OR LOWER(ab.province) LIKE LOWER(CONCAT('%', :province, '%')))
+                        AND function('ST_Contains', ab.geom, t.location) = true
+                  )
+              )
+          )
+        ORDER BY t.createdAt DESC
+        """,
+        countQuery = """
+        SELECT COUNT(t) FROM Ticket t
+        WHERE t.isLifeThreatening = true
+          AND t.status IN :statuses
+          AND (
+              (
+                  t.address IS NOT NULL
+                  AND (
+                      LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern, ',%'))
+                      OR LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern))
+                  )
+                  AND (:province IS NULL OR :province = '' OR LOWER(t.address) LIKE LOWER(CONCAT('%', :province, '%')))
+              )
+              OR (
+                  t.location IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM AdministrativeBoundary ab
+                      WHERE ab.ward IS NOT NULL
+                        AND (
+                            LOWER(ab.ward) = LOWER(:rawWard)
+                            OR LOWER(ab.ward) = LOWER(:wardPattern)
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Phường ', :wardPattern))
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Xã ', :wardPattern))
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Thị trấn ', :wardPattern))
+                        )
+                        AND (:province IS NULL OR :province = '' OR LOWER(ab.province) LIKE LOWER(CONCAT('%', :province, '%')))
+                        AND function('ST_Contains', ab.geom, t.location) = true
+                  )
+              )
+          )
+        """)
+    Page<Ticket> findLifeThreateningTicketsByWard(
+            @Param("rawWard") String rawWard,
+            @Param("wardPattern") String wardPattern,
+            @Param("province") String province,
+            @Param("statuses") java.util.Collection<TicketStatus> statuses,
+            Pageable pageable
+    );
 }

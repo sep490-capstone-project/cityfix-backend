@@ -618,6 +618,45 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> getLifeThreateningTicketsInSameWard(Pageable pageable) {
+        User currentUser = getCurrentUser();
+
+        if (currentUser.getWard() == null || currentUser.getWard().isBlank()) {
+            return Page.empty(pageable);
+        }
+
+        String rawWard = currentUser.getWard().trim();
+        String coreWard = rawWard
+                .replaceFirst("^(?i)(Phường|Xã|Thị trấn|P\\.)\\s*", "")
+                .trim();
+
+        if (coreWard.isEmpty()) {
+            return Page.empty(pageable);
+        }
+
+        // Nếu phần tên lõi chỉ là số (VD: "1", "2", "10"), giữ tiền tố "Phường " để tránh bắt nhầm số nhà
+        String wardPattern = coreWard.matches("^\\d+$")
+                ? "Phường " + coreWard
+                : coreWard;
+
+        String province = (currentUser.getProvince() != null && !currentUser.getProvince().isBlank())
+                ? currentUser.getProvince().trim()
+                : "";
+
+        List<TicketStatus> targetStatuses = List.of(
+                TicketStatus.ASSIGNED,
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.RESOLVED
+        );
+
+        Page<Ticket> tickets = ticketRepository.findLifeThreateningTicketsByWard(
+                rawWard, wardPattern, province, targetStatuses, pageable
+        );
+        return tickets.map(ticketMapper::toTicketResponse);
+    }
+
+    @Override
     @Transactional
     public TicketResponse rerouteTicket(UUID ticketId, RerouteTicketRequest request) {
         User currentUser = getCurrentUser();

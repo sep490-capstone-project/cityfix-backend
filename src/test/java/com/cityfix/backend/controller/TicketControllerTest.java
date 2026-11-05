@@ -443,6 +443,44 @@ class TicketControllerTest {
     }
 
     @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_returns200WithPageData")
+    void getLifeThreateningTicketsInSameWard_returns200WithPageData() {
+        mockTicketResponse.setStatus(TicketStatus.IN_PROGRESS);
+        org.springframework.data.domain.Page<TicketResponse> page =
+                new org.springframework.data.domain.PageImpl<>(List.of(mockTicketResponse));
+
+        when(ticketService.getLifeThreateningTicketsInSameWard(any())).thenReturn(page);
+
+        ResponseEntity<BaseResponse<org.springframework.data.domain.Page<TicketResponse>>> response =
+                ticketController.getLifeThreateningTicketsInSameWard(org.springframework.data.domain.PageRequest.of(0, 10));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Lấy danh sách sự cố khẩn cấp cùng khu vực thành công.");
+        assertThat(response.getBody().getData().getContent()).hasSize(1);
+        assertThat(response.getBody().getData().getContent().get(0).getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+
+        verify(ticketService, times(1)).getLifeThreateningTicketsInSameWard(any());
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_serviceThrowsException_propagatesAppException")
+    void getLifeThreateningTicketsInSameWard_serviceThrowsException_propagatesAppException() {
+        when(ticketService.getLifeThreateningTicketsInSameWard(any()))
+                .thenThrow(new com.cityfix.backend.exception.AppException(com.cityfix.backend.exception.ErrorCode.UNAUTHENTICATED));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                ticketController.getLifeThreateningTicketsInSameWard(org.springframework.data.domain.PageRequest.of(0, 10))
+        )
+                .isInstanceOf(com.cityfix.backend.exception.AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.UNAUTHENTICATED);
+
+        verify(ticketService, times(1)).getLifeThreateningTicketsInSameWard(any());
+    }
+
+    @Test
     @DisplayName("analyzeMedia_validRequest_returnsAiAnalyzeResponse")
     void analyzeMedia_validRequest_returnsAiAnalyzeResponse() {
         com.cityfix.backend.model.dto.request.AiAnalyzeRequest request = new com.cityfix.backend.model.dto.request.AiAnalyzeRequest();
