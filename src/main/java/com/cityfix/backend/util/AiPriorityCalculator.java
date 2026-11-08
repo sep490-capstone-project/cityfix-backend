@@ -83,27 +83,30 @@ public final class AiPriorityCalculator {
     /**
      * Bước 2: Thiết lập công thức tính điểm ưu tiên cuối cùng P
      * P = wb*B + ws*S + wi*I + wu*U + wc*C
+     * Sử dụng BigDecimal trong tính toán để tránh sai số dấu phẩy động (floating point).
      * Kèm quy tắc Leo thang Khẩn cấp (Critical Escalation): nếu rủi ro thực tế từ AI đạt ngưỡng cực đại
      * (AI trung bình có trọng số >= 8.8, Urgency >= 9.0 và Severity >= 8.5) thì lấy max(rawScore, aiNormalizedScore)
      * để sự cố đặc biệt nguy cấp không bị kìm dưới ngưỡng HIGH (8.5) bởi Base Score thấp từ DB.
      */
     public static double calculatePriorityScore(double baseScore, double severity, double impact, double urgency, double context) {
-        double aiWeightedComponent = (WEIGHT_SEVERITY * severity)
-                + (WEIGHT_IMPACT * impact)
-                + (WEIGHT_URGENCY * urgency)
-                + (WEIGHT_CONTEXT * context);
-        double rawScore = (WEIGHT_BASE * baseScore) + aiWeightedComponent;
-        double aiNormalizedScore = aiWeightedComponent / (1.0 - WEIGHT_BASE);
+        BigDecimal bBase = BigDecimal.valueOf(WEIGHT_BASE).multiply(BigDecimal.valueOf(baseScore));
+        BigDecimal bSeverity = BigDecimal.valueOf(WEIGHT_SEVERITY).multiply(BigDecimal.valueOf(severity));
+        BigDecimal bImpact = BigDecimal.valueOf(WEIGHT_IMPACT).multiply(BigDecimal.valueOf(impact));
+        BigDecimal bUrgency = BigDecimal.valueOf(WEIGHT_URGENCY).multiply(BigDecimal.valueOf(urgency));
+        BigDecimal bContext = BigDecimal.valueOf(WEIGHT_CONTEXT).multiply(BigDecimal.valueOf(context));
 
-        double effectiveScore = (aiNormalizedScore >= CRITICAL_AI_SCORE_THRESHOLD
+        BigDecimal aiWeightedComponent = bSeverity.add(bImpact).add(bUrgency).add(bContext);
+        BigDecimal rawScore = bBase.add(aiWeightedComponent);
+        BigDecimal divisor = BigDecimal.valueOf(1.0 - WEIGHT_BASE);
+        BigDecimal aiNormalizedScore = aiWeightedComponent.divide(divisor, 4, RoundingMode.HALF_UP);
+
+        BigDecimal effectiveScore = (aiNormalizedScore.doubleValue() >= CRITICAL_AI_SCORE_THRESHOLD
                 && urgency >= CRITICAL_URGENCY_THRESHOLD
                 && severity >= CRITICAL_SEVERITY_THRESHOLD)
-                ? Math.max(rawScore, aiNormalizedScore)
+                ? (rawScore.compareTo(aiNormalizedScore) >= 0 ? rawScore : aiNormalizedScore)
                 : rawScore;
 
-        return BigDecimal.valueOf(effectiveScore)
-                .setScale(2, RoundingMode.HALF_UP)
-                .doubleValue();
+        return effectiveScore.setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
     /**
