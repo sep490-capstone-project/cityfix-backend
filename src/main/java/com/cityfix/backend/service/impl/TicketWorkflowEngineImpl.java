@@ -137,6 +137,7 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             ticketHistoryRepository.save(history);
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
+            notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.COMPLETED);
             log.info("Ticket {} - All steps COMPLETED. Ticket marked as COMPLETED.", ticketId);
         } else if (allStepsResolved) {
             TicketStatus prevStatus = ticket.getStatus();
@@ -153,9 +154,11 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             }
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), true);
+            notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.RESOLVED);
             log.info("Ticket {} - All steps RESOLVED. Ticket marked as RESOLVED.", ticketId);
         } else {
             // Còn bước đang chờ hoặc đang làm dở -> duy trì trạng thái IN_PROGRESS
+            TicketStatus prevStatus = ticket.getStatus();
             if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
                 ticket.setStatus(TicketStatus.IN_PROGRESS);
             }
@@ -175,6 +178,9 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
             ticketRepository.save(ticket);
 
             notificationService.notifyStepCompleted(completedStep, completedStep.getAssignee(), false);
+            if (prevStatus != TicketStatus.IN_PROGRESS) {
+                notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.IN_PROGRESS);
+            }
         }
     }
 }

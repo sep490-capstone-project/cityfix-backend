@@ -716,6 +716,9 @@ public class TicketServiceImpl implements TicketService {
                 ticket, currentUser, ActionType.REROUTED, prevStatus, TicketStatus.ASSIGNED, request.getReason()
         );
         ticketHistoryRepository.save(history);
+        if (notificationService != null) {
+            notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.ASSIGNED);
+        }
 
         return ticketMapper.toTicketResponse(ticket);
     }
@@ -818,6 +821,9 @@ public class TicketServiceImpl implements TicketService {
                 ticket, currentUser, ActionType.ASSIGNED, prevStatus, TicketStatus.ASSIGNED, "Phân công cho " + assignee.getFullName()
         );
         ticketHistoryRepository.save(history);
+        if (notificationService != null) {
+            notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.ASSIGNED);
+        }
 
         return ticketMapper.toTicketResponse(ticket);
     }

@@ -15,28 +15,28 @@ class AiPriorityCalculatorTest {
     @Test
     @DisplayName("convertBaseScore_validPriorities_returnsCorrectStandardScores")
     void convertBaseScore_validPriorities_returnsCorrectStandardScores() {
-        assertThat(AiPriorityCalculator.convertBaseScore(Priority.LOW)).isEqualTo(3.0);
-        assertThat(AiPriorityCalculator.convertBaseScore(Priority.MEDIUM)).isEqualTo(6.0);
+        assertThat(AiPriorityCalculator.convertBaseScore(Priority.LOW)).isEqualTo(3.5);
+        assertThat(AiPriorityCalculator.convertBaseScore(Priority.MEDIUM)).isEqualTo(7.0);
         assertThat(AiPriorityCalculator.convertBaseScore(Priority.HIGH)).isEqualTo(9.0);
-        assertThat(AiPriorityCalculator.convertBaseScore(null)).isEqualTo(3.0);
+        assertThat(AiPriorityCalculator.convertBaseScore(null)).isEqualTo(3.5);
     }
 
     @Test
     @DisplayName("convertMaxBaseScore_multiSubCategories_returnsHighestScore")
     void convertMaxBaseScore_multiSubCategories_returnsHighestScore() {
-        // Đa sự cố: Ổ gà (LOW = 3.0) và Vỡ cống (HIGH = 9.0) -> Base score lấy mức cao nhất 9.0
+        // Đa sự cố: Ổ gà (LOW = 3.5) và Vỡ cống (HIGH = 9.0) -> Base score lấy mức cao nhất 9.0
         assertThat(AiPriorityCalculator.convertMaxBaseScore(List.of(Priority.LOW, Priority.HIGH))).isEqualTo(9.0);
-        assertThat(AiPriorityCalculator.convertMaxBaseScore(List.of(Priority.LOW, Priority.MEDIUM))).isEqualTo(6.0);
-        assertThat(AiPriorityCalculator.convertMaxBaseScore(List.of(Priority.LOW))).isEqualTo(3.0);
-        assertThat(AiPriorityCalculator.convertMaxBaseScore(List.of())).isEqualTo(3.0);
-        assertThat(AiPriorityCalculator.convertMaxBaseScore(null)).isEqualTo(3.0);
+        assertThat(AiPriorityCalculator.convertMaxBaseScore(List.of(Priority.LOW, Priority.MEDIUM))).isEqualTo(7.0);
+        assertThat(AiPriorityCalculator.convertMaxBaseScore(List.of(Priority.LOW))).isEqualTo(3.5);
+        assertThat(AiPriorityCalculator.convertMaxBaseScore(List.of())).isEqualTo(3.5);
+        assertThat(AiPriorityCalculator.convertMaxBaseScore(null)).isEqualTo(3.5);
     }
 
     @Test
-    @DisplayName("calculatePriorityScore_userExamplePothole_returns6Point95AndMediumPriority")
-    void calculatePriorityScore_userExamplePothole_returns6Point95AndMediumPriority() {
+    @DisplayName("calculatePriorityScore_userExamplePothole_returns7Point38AndMediumPriority")
+    void calculatePriorityScore_userExamplePothole_returns7Point38AndMediumPriority() {
         // Sự cố "Ổ gà":
-        // Database: Mặc định là LOW (B = 3.0)
+        // Database: Mặc định là LOW (B = 3.5)
         // AI: S = 8.0, I = 9.0, U = 9.0, C = 8.0
         double baseScore = AiPriorityCalculator.convertBaseScore(Priority.LOW);
         double S = 8.0;
@@ -46,10 +46,10 @@ class AiPriorityCalculatorTest {
 
         double finalScore = AiPriorityCalculator.calculatePriorityScore(baseScore, S, I, U, C);
 
-        // Công thức: 0.30*3 + 0.15*8 + 0.20*9 + 0.25*9 + 0.10*8 = 0.9 + 1.2 + 1.8 + 2.25 + 0.8 = 6.95
-        assertThat(finalScore).isEqualTo(6.95);
+        // Công thức: 0.25*3.5 + 0.15*8 + 0.20*9 + 0.30*9 + 0.10*8 = 0.875 + 1.2 + 1.8 + 2.7 + 0.8 = 7.375 -> 7.38
+        assertThat(finalScore).isEqualTo(7.38);
 
-        // Ánh xạ mờ: 6.95 nằm trong [5.0, 7.5) -> MEDIUM
+        // Ánh xạ mờ: 7.38 nằm trong [6.0, 8.5) -> MEDIUM
         Priority priority = AiPriorityCalculator.mapScoreToPriority(finalScore);
         assertThat(priority).isEqualTo(Priority.MEDIUM);
 
@@ -61,12 +61,11 @@ class AiPriorityCalculatorTest {
     @Test
     @DisplayName("calculatePriorityScore_extremeDanger_escalatesToHigh")
     void calculatePriorityScore_extremeDanger_escalatesToHigh() {
-        // Base Score là LOW (3.0) nhưng rủi ro AI đạt điểm tuyệt đối 10.0
-        double baseScore = 3.0;
+        // Base Score là LOW (3.5) nhưng rủi ro AI đạt điểm tuyệt đối 10.0 -> leo thang khẩn cấp lên 10.0 (>= 8.5 HIGH)
+        double baseScore = AiPriorityCalculator.convertBaseScore(Priority.LOW);
         double score = AiPriorityCalculator.calculatePriorityScore(baseScore, 10.0, 10.0, 10.0, 10.0);
 
-        // 0.30*3 + 0.70*10 = 0.9 + 7.0 = 7.90
-        assertThat(score).isEqualTo(7.90);
+        assertThat(score).isEqualTo(10.0);
         assertThat(AiPriorityCalculator.mapScoreToPriority(score)).isEqualTo(Priority.HIGH);
         assertThat(AiPriorityCalculator.mapScoreToSeverityLevel(10.0)).isEqualTo(SeverityLevel.CRITICAL);
     }
@@ -74,13 +73,22 @@ class AiPriorityCalculatorTest {
     @Test
     @DisplayName("calculatePriorityScore_lowRisk_staysLow")
     void calculatePriorityScore_lowRisk_staysLow() {
-        double baseScore = 3.0;
+        double baseScore = AiPriorityCalculator.convertBaseScore(Priority.LOW);
         double score = AiPriorityCalculator.calculatePriorityScore(baseScore, 2.0, 2.0, 2.0, 2.0);
 
-        // 0.30*3 + 0.70*2 = 0.9 + 1.4 = 2.30
-        assertThat(score).isEqualTo(2.30);
+        // 0.25*3.5 + 0.75*2.0 = 0.875 + 1.50 = 2.375 -> 2.38
+        assertThat(score).isEqualTo(2.38);
         assertThat(AiPriorityCalculator.mapScoreToPriority(score)).isEqualTo(Priority.LOW);
         assertThat(AiPriorityCalculator.mapScoreToSeverityLevel(2.0)).isEqualTo(SeverityLevel.LOW);
+    }
+
+    @Test
+    @DisplayName("mapScoreToPriority_exactThresholds6Point0And8Point5_mapsAccurately")
+    void mapScoreToPriority_exactThresholds6Point0And8Point5_mapsAccurately() {
+        assertThat(AiPriorityCalculator.mapScoreToPriority(5.99)).isEqualTo(Priority.LOW);
+        assertThat(AiPriorityCalculator.mapScoreToPriority(6.00)).isEqualTo(Priority.MEDIUM);
+        assertThat(AiPriorityCalculator.mapScoreToPriority(8.49)).isEqualTo(Priority.MEDIUM);
+        assertThat(AiPriorityCalculator.mapScoreToPriority(8.50)).isEqualTo(Priority.HIGH);
     }
 
     @Test

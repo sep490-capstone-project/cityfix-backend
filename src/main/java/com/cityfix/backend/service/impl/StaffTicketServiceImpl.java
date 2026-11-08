@@ -179,6 +179,9 @@ public class StaffTicketServiceImpl implements StaffTicketService {
                 if (ticket.getStatus() != TicketStatus.IN_PROGRESS) {
                     ticket.setStatus(TicketStatus.IN_PROGRESS);
                     ticket = ticketRepository.save(ticket);
+                    if (notificationService != null) {
+                        notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.IN_PROGRESS);
+                    }
                 }
                 notificationService.notifyStepStarted(targetStep, currentUser);
 
@@ -235,6 +238,9 @@ public class StaffTicketServiceImpl implements StaffTicketService {
             );
             ticketHistoryRepository.save(history);
             sendTicketStatusNotification(ticket, targetStatus);
+            if (notificationService != null) {
+                notificationService.notifySosTicketStatusChanged(ticket, prevStatus, targetStatus);
+            }
 
             return ticketMapper.toTicketResponse(ticket);
         }
@@ -267,6 +273,9 @@ public class StaffTicketServiceImpl implements StaffTicketService {
                     ticket, currentUser, ActionType.WORK_STARTED, prevStatus, TicketStatus.IN_PROGRESS, note
             );
             ticketHistoryRepository.save(history);
+            if (notificationService != null) {
+                notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.IN_PROGRESS);
+            }
 
             return ticketMapper.toTicketResponse(ticket);
         }
@@ -296,6 +305,9 @@ public class StaffTicketServiceImpl implements StaffTicketService {
 
         ticket.setStatus(targetStatus);
         ticket = ticketRepository.save(ticket);
+        if (notificationService != null) {
+            notificationService.notifySosTicketStatusChanged(ticket, prevStatus, targetStatus);
+        }
         return ticketMapper.toTicketResponse(ticket);
     }
 
