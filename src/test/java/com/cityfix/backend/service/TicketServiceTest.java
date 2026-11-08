@@ -357,6 +357,29 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("createTicket_withNullImageUrlsAndNullImageUrl_createsTicketWithoutReportImages")
+    void createTicket_withNullImageUrlsAndNullImageUrl_createsTicketWithoutReportImages() {
+        createRequest.setImageUrl(null);
+        createRequest.setImageUrls(null);
+
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenAnswer(inv -> {
+            Ticket t = inv.getArgument(0);
+            return TicketResponse.builder()
+                    .id(t.getTicketId())
+                    .imageUrls(t.getImages().stream().map(ReportImage::getImageUrl).toList())
+                    .build();
+        });
+
+        TicketResponse result = ticketService.createTicket(createRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getImageUrls()).isEmpty();
+        assertThat(mockTicket.getImageUrl()).isNull();
+        verify(reportImageRepository, never()).save(any(ReportImage.class));
+    }
+
+    @Test
     @DisplayName("createTicket_recurringIncidentCountIs2_triggersAlertFor3rdOccurrence")
     void createTicket_recurringIncidentCountIs2_triggersAlertFor3rdOccurrence() {
         UUID subCatId = UUID.randomUUID();

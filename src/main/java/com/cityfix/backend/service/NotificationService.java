@@ -6,6 +6,7 @@ import com.cityfix.backend.model.dto.response.StaffRequestResponse;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
 import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.enums.TicketStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -27,6 +28,8 @@ public interface NotificationService {
     default void notifyRecurringTicketAlert(Ticket ticket, long occurrenceCount) {
         notifyRecurringTicketAlert(ticket, occurrenceCount, java.util.Collections.emptyList());
     }
+
+    void notifySosTicketStatusChanged(Ticket ticket, TicketStatus prevStatus, TicketStatus newStatus);
 
     StaffRequestResponse sendStaffRequestToManager(CreateStaffRequest request);
 

@@ -4,14 +4,17 @@ import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.NotificationMapper;
 import com.cityfix.backend.model.dto.request.CreateStaffRequest;
+import com.cityfix.backend.model.dto.response.LocationBoundary;
 import com.cityfix.backend.model.dto.response.NotificationResponse;
 import com.cityfix.backend.model.dto.response.StaffRequestResponse;
 import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Notification;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
+import com.cityfix.backend.model.entity.TicketSubCategory;
 import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.entity.UserNotification;
+import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.NotificationRepository;
@@ -22,6 +25,7 @@ import com.cityfix.backend.repository.TicketVoteRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
 import com.cityfix.backend.repository.UserNotificationRepository;
 import com.cityfix.backend.repository.UserRepository;
+import com.cityfix.backend.service.LocationService;
 import com.cityfix.backend.service.NotificationService;
 import com.cityfix.backend.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -39,10 +43,12 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -52,6 +58,13 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
+
+    private static final Set<TicketStatus> SOS_NOTIFY_STATUSES = EnumSet.of(
+            TicketStatus.ASSIGNED,
+            TicketStatus.IN_PROGRESS,
+            TicketStatus.RESOLVED,
+            TicketStatus.COMPLETED
+    );
 
     private final NotificationRepository notificationRepository;
     private final UserNotificationRepository userNotificationRepository;
@@ -64,6 +77,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final TicketHistoryRepository ticketHistoryRepository;
     private final TicketStepRepository ticketStepRepository;
     private final TicketRepository ticketRepository;
+    private final LocationService locationService;
 
     private User getCurrentUser() {
         Object principal = SecurityContextHolder.getContext().getAuthentication() != null
@@ -440,6 +454,196 @@ public class NotificationServiceImpl implements NotificationService {
 
         log.info("Sent recurring ticket alert to {} targeted managers for ticketId={}, occurrenceCount={}",
                 targetManagers.size(), ticket.getTicketId(), occurrenceCount);
+    }
+
+    @Override
+    @Transactional
+    public void notifySosTicketStatusChanged(Ticket ticket, TicketStatus prevStatus, TicketStatus newStatus) {
+        if (ticket == null || !Boolean.TRUE.equals(ticket.getIsLifeThreatening())) {
+            return;
+        }
+        if (newStatus == null || !SOS_NOTIFY_STATUSES.contains(newStatus)) {
+            return;
+        }
+        if (prevStatus == newStatus) {
+            return;
+        }
+
+        LocationBoundary boundary = null;
+        if (ticket.getLocation() != null && locationService != null) {
+            boundary = locationService.getBoundaryFromCoordinates(
+                    ticket.getLocation().getY(),
+                    ticket.getLocation().getX()
+            );
+        }
+
+        String ticketAddress = (ticket.getAddress() != null && !ticket.getAddress().isBlank())
+                ? ticket.getAddress().trim()
+                : null;
+        boolean hasBoundaryWard = boundary != null && boundary.getWard() != null && !boundary.getWard().isBlank();
+
+        if (ticketAddress == null && !hasBoundaryWard) {
+            log.warn("Cannot resolve ward for SOS notification: both address and GPS boundary are empty. ticketId={}",
+                    ticket.getTicketId());
+            return;
+        }
+
+        List<User> activeResidents = userRepository.findActiveResidentsWithWard();
+        if (activeResidents == null || activeResidents.isEmpty()) {
+            return;
+        }
+
+        List<User> matchingResidents = new ArrayList<>();
+        Set<UUID> addedIds = new HashSet<>();
+        for (User resident : activeResidents) {
+            if (!isEligibleRecipient(resident, null)) {
+                continue;
+            }
+            if (resident.getRole() != null && resident.getRole().getRoleName() != null
+                    && !"RESIDENT".equalsIgnoreCase(resident.getRole().getRoleName())) {
+                continue;
+            }
+            if (isResidentInSameWardAsTicket(resident, ticketAddress, boundary) && addedIds.add(resident.getUserId())) {
+                matchingResidents.add(resident);
+            }
+        }
+
+        if (matchingResidents.isEmpty()) {
+            log.info("No active RESIDENT users matched ward for SOS ticketId={}, status={}", ticket.getTicketId(), newStatus);
+            return;
+        }
+
+        String locationLabel = ticketAddress != null
+                ? ticketAddress
+                : boundary.getWard().trim();
+        String issueSummary = extractIssueSummary(ticket);
+        String issueDetail = issueSummary.isEmpty() ? "" : " (" + issueSummary + ")";
+
+        String title;
+        String content;
+        switch (newStatus) {
+            case ASSIGNED -> {
+                title = "[SOS Khu vực] Sự cố khẩn cấp đã được phân công";
+                content = "Cảnh báo sự cố nguy hiểm" + issueDetail + " tại " + locationLabel
+                        + " đã được tiếp nhận và phân công đơn vị chuyên trách. Người dân lưu ý cẩn trọng khi di chuyển qua khu vực này.";
+            }
+            case IN_PROGRESS -> {
+                if (prevStatus == TicketStatus.RESOLVED) {
+                    title = "[SOS Khu vực] Sự cố khẩn cấp đang được xử lý bổ sung";
+                    content = "Cảnh báo sự cố nguy hiểm" + issueDetail + " tại " + locationLabel
+                            + " đang được lực lượng chức năng tiếp tục xử lý bổ sung tại hiện trường. Người dân vui lòng chú ý an toàn.";
+                } else {
+                    title = "[SOS Khu vực] Cảnh báo sự cố khẩn cấp đang xử lý";
+                    content = "Cảnh báo sự cố nguy hiểm đến tính mạng" + issueDetail + " tại " + locationLabel
+                            + ": Lực lượng chức năng đang tiến hành xử lý tại hiện trường. Người dân vui lòng hạn chế di chuyển qua khu vực này.";
+                }
+            }
+            case RESOLVED -> {
+                title = "[SOS Khu vực] Sự cố khẩn cấp đã được khắc phục tại hiện trường";
+                content = "Sự cố nguy hiểm" + issueDetail + " tại " + locationLabel
+                        + " đã được đơn vị thi công xử lý xong tại hiện trường và đang chờ kiểm tra nghiệm thu.";
+            }
+            case COMPLETED -> {
+                title = "[SOS Khu vực] Sự cố khẩn cấp đã hoàn tất xử lý an toàn";
+                content = "Sự cố nguy hiểm" + issueDetail + " tại " + locationLabel
+                        + " đã được xác nhận hoàn thành và đảm bảo an toàn cho khu vực.";
+            }
+            default -> {
+                return;
+            }
+        }
+
+        createAndSendNotification(ticket, matchingResidents, title, content);
+
+        log.info("Sent SOS ward notification for ticketId={}, transition={}->{}, recipientCount={}",
+                ticket.getTicketId(), prevStatus, newStatus, matchingResidents.size());
+    }
+
+    private boolean isResidentInSameWardAsTicket(User resident, String ticketAddress, LocationBoundary boundary) {
+        if (resident == null || resident.getWard() == null || resident.getWard().isBlank()) {
+            return false;
+        }
+
+        String rawWard = resident.getWard().trim();
+        String coreWard = rawWard
+                .replaceFirst("^(?i)(Phường|Xã|Thị trấn|P\\.)\\s*", "")
+                .trim();
+        if (coreWard.isEmpty()) {
+            return false;
+        }
+
+        // Đồng bộ 1-1 với TicketServiceImpl.getLifeThreateningTicketsInSameWard:
+        // Nếu tên lõi chỉ là số (VD: "1", "2", "10"), giữ tiền tố "Phường " để tránh bắt nhầm số nhà/tên đường
+        String wardPattern = coreWard.matches("^\\d+$")
+                ? "Phường " + coreWard
+                : coreWard;
+
+        String userProvince = (resident.getProvince() != null && !resident.getProvince().isBlank())
+                ? resident.getProvince().trim()
+                : "";
+
+        boolean addressMatches = false;
+        if (ticketAddress != null) {
+            String lowerAddr = ticketAddress.toLowerCase(Locale.ROOT);
+            String lowerWardPattern = wardPattern.toLowerCase(Locale.ROOT);
+            boolean wardInAddr = lowerAddr.contains(lowerWardPattern + ",")
+                    || lowerAddr.endsWith(lowerWardPattern);
+            boolean provinceInAddr = userProvince.isEmpty() || matchesProvince(lowerAddr, userProvince);
+            addressMatches = wardInAddr && provinceInAddr;
+        }
+
+        boolean boundaryMatches = false;
+        if (boundary != null && boundary.getWard() != null && !boundary.getWard().isBlank()) {
+            String abWard = boundary.getWard().trim();
+            boolean wardEq = abWard.equalsIgnoreCase(rawWard)
+                    || abWard.equalsIgnoreCase(wardPattern)
+                    || abWard.equalsIgnoreCase("Phường " + wardPattern)
+                    || abWard.equalsIgnoreCase("Xã " + wardPattern)
+                    || abWard.equalsIgnoreCase("Thị trấn " + wardPattern);
+            String abProvinceLower = boundary.getProvince() != null
+                    ? boundary.getProvince().trim().toLowerCase(Locale.ROOT)
+                    : "";
+            boolean provinceEq = userProvince.isEmpty() || matchesProvince(abProvinceLower, userProvince);
+            boundaryMatches = wardEq && provinceEq;
+        }
+
+        return addressMatches || boundaryMatches;
+    }
+
+    private boolean matchesProvince(String targetLower, String userProvince) {
+        if (targetLower == null || targetLower.isEmpty()) {
+            return false;
+        }
+        String lowerUserProv = userProvince.toLowerCase(Locale.ROOT);
+        if (targetLower.contains(lowerUserProv)) {
+            return true;
+        }
+        String coreProv = userProvince
+                .replaceFirst("^(?i)(Thành phố|Tỉnh|TP\\.|TP)\\s*", "")
+                .trim()
+                .toLowerCase(Locale.ROOT);
+        return !coreProv.isEmpty() && targetLower.contains(coreProv);
+    }
+
+    private String extractIssueSummary(Ticket ticket) {
+        try {
+            if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
+                List<String> names = new ArrayList<>();
+                for (TicketSubCategory tsc : ticket.getSubCategories()) {
+                    if (tsc != null && tsc.getSubCategory() != null
+                            && tsc.getSubCategory().getName() != null
+                            && !tsc.getSubCategory().getName().isBlank()) {
+                        names.add(tsc.getSubCategory().getName().trim());
+                    }
+                }
+                if (!names.isEmpty()) {
+                    return String.join(", ", names);
+                }
+            }
+        } catch (Exception ignored) {
+            // Phòng ngừa LazyInitializationException nếu subCategories chưa được khởi tạo
+        }
+        return "";
     }
 
     @Override

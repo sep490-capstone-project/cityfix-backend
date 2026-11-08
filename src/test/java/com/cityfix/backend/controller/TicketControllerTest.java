@@ -174,15 +174,14 @@ class TicketControllerTest {
     }
 
     @Test
-    @DisplayName("validation_missingBothImageUrlAndImageUrls_producesConstraintViolation")
-    void validation_missingBothImageUrlAndImageUrls_producesConstraintViolation() {
+    @DisplayName("validation_missingBothImageUrlAndImageUrls_validatesSuccessfully")
+    void validation_missingBothImageUrlAndImageUrls_validatesSuccessfully() {
         validCreateRequest.setImageUrl(null);
         validCreateRequest.setImageUrls(null);
 
         Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(validCreateRequest);
 
-        assertThat(violations).isNotEmpty();
-        assertThat(violations).anyMatch(v -> v.getMessage().contains("Image URL is required"));
+        assertThat(violations).isEmpty();
     }
 
     @Test

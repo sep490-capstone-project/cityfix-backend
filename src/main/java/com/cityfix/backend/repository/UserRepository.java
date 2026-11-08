@@ -58,4 +58,19 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     default List<User> findActiveManagers() {
         return findManagersByStatus(UserStatus.ACTIVE);
     }
+
+    @Query("""
+        SELECT DISTINCT u FROM User u
+        JOIN FETCH u.role r
+        WHERE UPPER(r.roleName) = 'RESIDENT'
+          AND u.status = :status
+          AND u.isDeleted = false
+          AND u.ward IS NOT NULL
+          AND TRIM(u.ward) <> ''
+        """)
+    List<User> findResidentsWithWardByStatus(@Param("status") UserStatus status);
+
+    default List<User> findActiveResidentsWithWard() {
+        return findResidentsWithWardByStatus(UserStatus.ACTIVE);
+    }
 }
