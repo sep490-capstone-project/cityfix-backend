@@ -458,6 +458,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         //Gửi thông báo
         sendReviewSuccessNotification(ticket);
+        if (notificationService != null) {
+            notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.IN_PROGRESS);
+        }
 
         return ticketMapper.toTicketResponse(ticket);
     }
@@ -1154,6 +1157,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 );
                 if (history != null) {
                     ticketHistoryRepository.save(history);
+                }
+                if (notificationService != null) {
+                    notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.IN_PROGRESS);
                 }
             }
         }

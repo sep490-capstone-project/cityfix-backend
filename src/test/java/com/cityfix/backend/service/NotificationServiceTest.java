@@ -80,6 +80,8 @@ class NotificationServiceTest {
     @Mock
     private TicketRepository ticketRepository;
     @Mock
+    private com.cityfix.backend.service.LocationService locationService;
+    @Mock
     private SecurityContext securityContext;
 
     @InjectMocks
@@ -929,6 +931,175 @@ class NotificationServiceTest {
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.FORBIDDEN);
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("notifySosTicketStatusChanged_addressAndBoundaryMatching_notifiesOnlyActiveSameWardResidents")
+    void notifySosTicketStatusChanged_addressAndBoundaryMatching_notifiesOnlyActiveSameWardResidents() {
+        Role residentRole = new Role(UUID.randomUUID(), "RESIDENT");
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+
+        User residentSameWard1 = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Cư dân Bến Nghé 1")
+                .role(residentRole)
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        User residentSameWard2 = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Cư dân Bến Nghé 2")
+                .role(residentRole)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("P. Bến Nghé")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        User residentOtherWard = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Cư dân Đa Kao")
+                .role(residentRole)
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường Đa Kao")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        User staffSameWard = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Nhân viên Bến Nghé")
+                .role(staffRole)
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        Ticket sosTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .address("123 Nguyễn Huệ, Phường Bến Nghé, Quận 1, Thành phố Hồ Chí Minh")
+                .isLifeThreatening(true)
+                .status(com.cityfix.backend.model.enums.TicketStatus.IN_PROGRESS)
+                .build();
+
+        when(userRepository.findActiveResidentsWithWard())
+                .thenReturn(List.of(residentSameWard1, residentSameWard2, residentOtherWard, staffSameWard));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(notificationMapper.toResponse(any(UserNotification.class))).thenAnswer(inv -> {
+            UserNotification un = inv.getArgument(0);
+            return NotificationResponse.builder()
+                    .userId(un.getUser().getUserId())
+                    .title(un.getNotification().getTitle())
+                    .content(un.getNotification().getContent())
+                    .build();
+        });
+
+        notificationService.notifySosTicketStatusChanged(
+                sosTicket,
+                com.cityfix.backend.model.enums.TicketStatus.INITIATED,
+                com.cityfix.backend.model.enums.TicketStatus.IN_PROGRESS
+        );
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository, times(1)).save(captor.capture());
+        Notification saved = captor.getValue();
+
+        assertThat(saved.getTitle()).isEqualTo("[SOS Khu vực] Cảnh báo sự cố khẩn cấp đang xử lý");
+        assertThat(saved.getContent()).contains("123 Nguyễn Huệ, Phường Bến Nghé");
+        List<UUID> recipientIds = saved.getRecipients().stream().map(un -> un.getUser().getUserId()).toList();
+        assertThat(recipientIds).containsExactlyInAnyOrder(residentSameWard1.getUserId(), residentSameWard2.getUserId());
+    }
+
+    @Test
+    @DisplayName("notifySosTicketStatusChanged_numericWardAndPostGisBoundary_preventsFalsePositivesAndMatchesBoundary")
+    void notifySosTicketStatusChanged_numericWardAndPostGisBoundary_preventsFalsePositivesAndMatchesBoundary() {
+        Role residentRole = new Role(UUID.randomUUID(), "RESIDENT");
+
+        User residentWard1 = User.builder()
+                .userId(UUID.randomUUID())
+                .role(residentRole)
+                .province("TP. Hồ Chí Minh")
+                .ward("1")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        User residentWard10 = User.builder()
+                .userId(UUID.randomUUID())
+                .role(residentRole)
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường 10")
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        org.locationtech.jts.geom.GeometryFactory gf = new org.locationtech.jts.geom.GeometryFactory();
+        org.locationtech.jts.geom.Point point = gf.createPoint(new org.locationtech.jts.geom.Coordinate(106.68, 10.77));
+
+        // Địa chỉ chỉ có số nhà/đường số 1 nhưng thuộc Phường 10 theo PostGIS & Address
+        Ticket sosTicketWard10 = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .address("15 Đường số 1")
+                .location(point)
+                .isLifeThreatening(true)
+                .status(com.cityfix.backend.model.enums.TicketStatus.RESOLVED)
+                .build();
+
+        when(locationService.getBoundaryFromCoordinates(10.77, 106.68))
+                .thenReturn(com.cityfix.backend.model.dto.response.LocationBoundary.builder()
+                        .province("Thành phố Hồ Chí Minh")
+                        .ward("Phường 10")
+                        .build());
+        when(userRepository.findActiveResidentsWithWard())
+                .thenReturn(List.of(residentWard1, residentWard10));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.notifySosTicketStatusChanged(
+                sosTicketWard10,
+                com.cityfix.backend.model.enums.TicketStatus.IN_PROGRESS,
+                com.cityfix.backend.model.enums.TicketStatus.RESOLVED
+        );
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository, times(1)).save(captor.capture());
+        Notification saved = captor.getValue();
+
+        assertThat(saved.getTitle()).isEqualTo("[SOS Khu vực] Sự cố khẩn cấp đã được khắc phục tại hiện trường");
+        List<UUID> recipientIds = saved.getRecipients().stream().map(un -> un.getUser().getUserId()).toList();
+        assertThat(recipientIds).containsExactly(residentWard10.getUserId());
+    }
+
+    @Test
+    @DisplayName("notifySosTicketStatusChanged_nonLifeThreateningOrUnchangedStatus_skipsNotification")
+    void notifySosTicketStatusChanged_nonLifeThreateningOrUnchangedStatus_skipsNotification() {
+        Ticket normalTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .isLifeThreatening(false)
+                .address("Phường Bến Nghé, TP. Hồ Chí Minh")
+                .build();
+
+        Ticket sosTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .isLifeThreatening(true)
+                .address("Phường Bến Nghé, TP. Hồ Chí Minh")
+                .build();
+
+        notificationService.notifySosTicketStatusChanged(
+                normalTicket,
+                com.cityfix.backend.model.enums.TicketStatus.INITIATED,
+                com.cityfix.backend.model.enums.TicketStatus.IN_PROGRESS
+        );
+        notificationService.notifySosTicketStatusChanged(
+                sosTicket,
+                com.cityfix.backend.model.enums.TicketStatus.IN_PROGRESS,
+                com.cityfix.backend.model.enums.TicketStatus.IN_PROGRESS
+        );
+        notificationService.notifySosTicketStatusChanged(
+                sosTicket,
+                com.cityfix.backend.model.enums.TicketStatus.ASSIGNED,
+                com.cityfix.backend.model.enums.TicketStatus.REJECTED
+        );
+
+        verify(userRepository, never()).findActiveResidentsWithWard();
         verify(notificationRepository, never()).save(any());
     }
 }

@@ -109,21 +109,50 @@ public class AiServiceImpl implements AiService {
                 }
             }
 
-            // 3. Xây dựng Prompt phân tích đa ảnh và nhận diện đa sự cố (Multi-SubCategory)
-            String prompt = "Bạn là chuyên gia thẩm định và đánh giá rủi ro cơ sở hạ tầng đô thị cho hệ thống tiếp nhận phản ánh sự cố CityFix.\n"
-                    + "Nhiệm vụ của bạn là phân tích toàn diện (các) hình ảnh/video được cung cấp (có thể bao gồm nhiều góc chụp: cận cảnh vết nứt, toàn cảnh ngã tư, bối cảnh xung quanh của cùng một hiện trường) để:\n"
-                    + "1. Xác định xem đây có phải là sự cố cơ sở hạ tầng đô thị hợp lệ hay không (ví dụ: ổ gà, lún đường, vỡ ống nước, nắp cống gãy, ngập úng, cây ngã đổ, đèn đường hỏng, rác ứ đọng...). Nếu KHÔNG hợp lệ (ảnh selfie, văn bản, ảnh phong cảnh không có sự cố, động vật...), trả về 'isValidIssue' = false, 'description' là lý do từ chối bằng TIẾNG VIỆT, các trường khác để null.\n"
-                    + "2. Nếu ĐÚNG là sự cố ('isValidIssue' = true), hãy tổng hợp tất cả các góc ảnh và nhận diện TẤT CẢ các danh mục sự cố chi tiết (SubCategories) đang xuất hiện (một hiện trường có thể có đồng thời nhiều sự cố, ví dụ: vừa có 'Ổ gà / lún sụt mặt đường' vừa có 'Nắp cống hư hỏng' hoặc 'Ngập úng').\n"
-                    + "Hãy trả về một đối tượng JSON duy nhất chứa các trường sau:\n"
-                    + "   - 'subCategoryIds': Mảng danh sách các mã UUID chuẩn 36 ký tự của các SubCategory phù hợp từ danh mục được cung cấp bên dưới (chọn ít nhất 1 SubCategory, có thể chọn nhiều SubCategory nếu hiện trường có đa sự cố).\n"
-                    + "   - 'severityScore': Số thực từ 1.0 đến 10.0 đánh giá MỨC ĐỘ HƯ HẠI VẬT LÝ lớn nhất của sự cố (quan sát các ảnh cận cảnh: hố sụt sâu, sụp nắp cống lớn, ống nước xối xả = 8-10; nứt nhẹ, ổ gà nông = 2-4).\n"
-                    + "   - 'impact': Số thực từ 1.0 đến 10.0 đánh giá PHẠM VI ẢNH HƯỞNG (quan sát các ảnh góc rộng: ngã tư huyết mạch, đại lộ nhiều làn xe, lưu lượng người đông đúc = 8-10; đường cụt nhỏ, vắng người = 2-4).\n"
-                    + "   - 'urgency': Số thực từ 1.0 đến 10.0 đánh giá TÍNH CẤP BÁCH / NGUY CƠ TỨC THÌ (dễ gây tai nạn giao thông, sụp lún bất ngờ, kẹt xe nghiêm trọng = 8-10; có thể xử lý trong vài ngày = 2-4).\n"
-                    + "   - 'context': Số thực từ 1.0 đến 10.0 đánh giá BỐI CẢNH XUNG QUANH LÀM TĂNG ĐỘ NGUY HIỂM (gần trường học, bệnh viện, khu chợ, cột điện cao thế, ngập nước che khuất hố = 8-10; bãi đất trống = 2-4).\n"
-                    + "   - 'confidenceScore': Số thập phân từ 0 đến 100 thể hiện độ tin cậy của AI.\n"
-                    + "   - 'description': Mô tả chi tiết, rõ ràng về hiện trạng các sự cố bằng TIẾNG VIỆT.\n"
-                    + "   - 'priorityReasoning': Giải thích ngắn gọn bằng TIẾNG VIỆT lý do chấm 4 điểm số (S, I, U, C) và nhận diện các sự cố dựa trên những gì nhìn thấy từ các hình ảnh.\n"
-                    + "LƯU Ý: Chỉ trả về một đối tượng JSON hợp lệ duy nhất, không dùng định dạng markdown ```json ... ```.\n"
+            // 3. Xây dựng Prompt phân tích đa ảnh, nhận diện SubCategory chính xác và chấm điểm chuẩn hóa 4 dải
+            String prompt = "Bạn là chuyên gia thẩm định hiện trường và đánh giá rủi ro cơ sở hạ tầng đô thị cho hệ thống CityFix.\n"
+                    + "Nhiệm vụ của bạn là quan sát khách quan, toàn diện (các) hình ảnh/video được cung cấp (có thể gồm ảnh cận cảnh và toàn cảnh của cùng một hiện trường) để:\n"
+                    + "1. KIỂM TRA TÍNH HỢP LỆ:\n"
+                    + "   - Xác định đây có phải sự cố cơ sở hạ tầng/môi trường đô thị hợp lệ không (ổ gà, sụt lún, vỡ ống nước, nắp cống hỏng/mất, ngập úng, cây ngã đổ, sự cố điện/đèn đường, rác thải ứ đọng...).\n"
+                    + "   - Nếu KHÔNG hợp lệ (ảnh chân dung/selfie, ảnh chụp màn hình văn bản, phong cảnh bình thường không có sự cố, vật nuôi, đồ vật trong nhà...), trả về 'isValidIssue' = false, 'description' giải thích lý do từ chối bằng TIẾNG VIỆT, các trường còn lại để null.\n"
+                    + "2. NHẬN DIỆN DANH MỤC SỰ CỐ ('isValidIssue' = true):\n"
+                    + "   - Chọn các mã UUID của SubCategory phù hợp nhất từ danh mục bên dưới.\n"
+                    + "   - QUY TẮC ĐA SỰ CỐ: Chỉ chọn từ 2 SubCategory trở lên khi hiện trường thực sự có nhiều sự cố ĐỘC LẬP cần quy trình xử lý khác nhau (VD: cây ngã đổ làm đứt dây điện/gãy đèn đường). KHÔNG gán dư các hệ quả phụ nhỏ nhặt (VD: ổ gà nhỏ có đọng ít nước mưa thì CHỈ chọn danh mục ổ gà/hư hỏng mặt đường, KHÔNG chọn thêm 'Ngập úng' trừ khi mặt đường xung quanh bị ngập).\n"
+                    + "3. NGUYÊN TẮC CHẤM ĐIỂM CHUẨN HÓA (THANG 1.0 - 10.0, CHỐNG THỔI PHỒNG ĐIỂM):\n"
+                    + "   Hệ thống phân loại mức ưu tiên cuối cùng theo ngưỡng nghiêm ngặt: Dưới 6.0 = LOW (Thấp), từ 6.0 đến dưới 8.5 = MEDIUM (Trung bình), từ 8.5 trở lên = HIGH (Cao/Khẩn cấp).\n"
+                    + "   Vì vậy bạn PHẢI chấm điểm bám sát bằng chứng thị giác thực tế theo 4 dải chuẩn sau, TUYỆT ĐỐI không chấm vọt lên 8-10 cho sự cố thông thường:\n"
+                    + "   - 'severityScore' (MỨC ĐỘ HƯ HẠI VẬT LÝ):\n"
+                    + "       + 1.0 - 3.5: Rất nhẹ/thẩm mỹ (vết nứt chân chim, bong tróc sơn, vài túi rác nhỏ trên vỉa hè, cỏ mọc).\n"
+                    + "       + 4.0 - 5.9: Hư hại nhỏ - vừa, kết cấu xung quanh còn ổn định (ổ gà nông <5cm diện tích nhỏ, đọng vũng nước nhỏ, 1 bóng đèn đường tắt, rác sinh hoạt ứ đọng cục bộ).\n"
+                    + "       + 6.0 - 8.4: Hư hại đáng kể (ổ gà rộng hoặc sâu 5-15cm, mặt đường bong tróc mảng lớn, nắp cống nứt/kênh lệch, cành cây lớn gãy, rò rỉ nước chảy tràn mặt đường, bãi rác tự phát lớn).\n"
+                    + "       + 8.5 - 10.0: Hư hại nghiêm trọng/phá hủy kết cấu (hố sụt sâu 'hố tử thần', mất hoặc vỡ sập hoàn toàn nắp cống lộ hố sâu, cột điện nghiêng gãy/dây điện đứt rơi/chập cháy, cây cổ thụ bật gốc chắn ngang đường, vỡ ống nước chính phun mạnh gây xói lở, ngập sâu diện rộng).\n"
+                    + "   - 'impact' (PHẠM VI ẢNH HƯỞNG LƯU THÔNG & CỘNG ĐỒNG):\n"
+                    + "       + 1.0 - 3.5: Góc khuất, vỉa hè rộng, bãi đất trống, hầu như không cản trở người đi bộ hay xe cộ.\n"
+                    + "       + 4.0 - 5.9: Đường hẻm nhỏ, đường nội bộ ít xe, hoặc sát lề đường dễ dàng lách tránh.\n"
+                    + "       + 6.0 - 8.4: Chiếm một phần làn xe chạy trên đường phố dân sinh, gây cản trở giao thông hoặc ảnh hưởng nhiều hộ dân xung quanh.\n"
+                    + "       + 8.5 - 10.0: Chắn ngang làn chính của trục đường lớn/ngã tư đông đúc, gây ùn tắc nghiêm trọng hoặc chia cắt lối đi.\n"
+                    + "   - 'urgency' (TÍNH CẤP BÁCH / NGUY CƠ TAI NẠN TỨC THÌ):\n"
+                    + "       + 1.0 - 3.5: Không có nguy cơ gây tai nạn, có thể xử lý theo kế hoạch bảo trì định kỳ.\n"
+                    + "       + 4.0 - 5.9: Rủi ro va chạm thấp, người đi đường dễ quan sát từ xa, xử lý trong vài ngày là hợp lý.\n"
+                    + "       + 6.0 - 8.4: Tiềm ẩn nguy cơ trượt ngã/va quệt xe máy nếu thiếu chú ý (đặc biệt vào ban đêm/trời mưa), cần xử lý sớm trong 24-48 giờ.\n"
+                    + "       + 8.5 - 10.0: NGUY HIỂM TỨC THÌ đe dọa tính mạng, thương vong nặng hoặc cháy nổ/điện giật/sập bẫy giao thông bất ngờ, bắt buộc ứng cứu khẩn cấp ngay lập tức.\n"
+                    + "   - 'context' (BỐI CẢNH XUNG QUANH LÀM TĂNG RỦI RO):\n"
+                    + "       + 1.0 - 3.5: Khu vực vắng vẻ, tầm nhìn thoáng đãng, ban ngày khô ráo, sự cố nằm ngoài phần đường xe chạy.\n"
+                    + "       + 4.0 - 5.9: Khu dân cư bình thường, hoặc ẢNH CHỤP CẬN CẢNH không nhìn thấy rõ bối cảnh đặc biệt xung quanh.\n"
+                    + "       + 6.0 - 8.4: Khúc cua khuất tầm nhìn, ban đêm thiếu sáng, mặt đường trơn ướt, hoặc khu phố buôn bán đông người qua lại.\n"
+                    + "       + 8.5 - 10.0: Nhìn thấy RÕ RÀNG trong ảnh sự cố nằm ngay cổng trường học/bệnh viện/chợ đông đúc, sát trạm biến áp/đường dây điện trần, hoặc nước ngập đục che khuất hoàn toàn hố sâu/chướng ngại vật.\n"
+                    + "   - QUY TẮC CHỐNG SUY DIỄN (QUAN TRỌNG): Chỉ chấm điểm dựa trên những gì NHÌN THẤY TRONG ẢNH/VIDEO. Nếu người dùng chụp cận cảnh không thấy toàn cảnh đường phố hay công trình xung quanh, bắt buộc giữ 'impact' và 'context' ở mức trung lập (4.0 - 5.5 tùy bề mặt vỉa hè hay lòng đường nhựa), TUYỆT ĐỐI không tự suy đoán là đại lộ hay gần trường học/bệnh viện.\n"
+                    + "4. ĐỊNH DẠNG JSON ĐẦU RA:\n"
+                    + "   Trả về DUY NHẤT một đối tượng JSON hợp lệ (không bọc trong markdown ```json) gồm các trường:\n"
+                    + "   - 'isValidIssue': boolean (true/false).\n"
+                    + "   - 'subCategoryIds': Mảng các mã UUID chuẩn 36 ký tự từ danh mục tham chiếu (ít nhất 1 mã khi isValidIssue = true).\n"
+                    + "   - 'severityScore': Số thực [1.0 - 10.0] (cho phép 1 chữ số thập phân, VD: 4.5, 6.5, 8.5).\n"
+                    + "   - 'impact': Số thực [1.0 - 10.0].\n"
+                    + "   - 'urgency': Số thực [1.0 - 10.0].\n"
+                    + "   - 'context': Số thực [1.0 - 10.0].\n"
+                    + "   - 'confidenceScore': Số thực từ 0 đến 100 thể hiện độ tự tin nhận diện sự cố.\n"
+                    + "   - 'description': Mô tả khách quan, chi tiết hiện trạng sự cố bằng TIẾNG VIỆT.\n"
+                    + "   - 'priorityReasoning': Giải thích ngắn gọn bằng TIẾNG VIỆT căn cứ thị giác cụ thể cho từng điểm S, I, U, C và lý do xếp mức độ rủi ro.\n"
                     + "Danh mục SubCategory tham chiếu:\n" + categoriesStr;
 
             // 4. Chuẩn bị payload gửi Gemini (bao gồm nhiều visual parts + 1 text part)
@@ -150,6 +179,7 @@ public class AiServiceImpl implements AiService {
 
             Map<String, Object> generationConfig = new HashMap<>();
             generationConfig.put("responseMimeType", "application/json");
+            generationConfig.put("temperature", 0.1);
             requestBody.put("generationConfig", generationConfig);
 
             HttpHeaders headers = new HttpHeaders();

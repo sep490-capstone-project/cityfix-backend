@@ -13,20 +13,25 @@ import java.math.RoundingMode;
 public final class AiPriorityCalculator {
 
     // Phân bổ trọng số cho 5 biến (Tổng = 1.0 hay 100%)
-    public static final double WEIGHT_BASE = 0.30;      // wb: 30% Base Score từ DB
-    public static final double WEIGHT_URGENCY = 0.25;   // wu: 25% Tính khẩn cấp từ AI
+    public static final double WEIGHT_BASE = 0.25;      // wb: 25% Base Score từ DB
+    public static final double WEIGHT_URGENCY = 0.30;   // wu: 30% Tính khẩn cấp từ AI
     public static final double WEIGHT_IMPACT = 0.20;    // wi: 20% Phạm vi ảnh hưởng từ AI
     public static final double WEIGHT_SEVERITY = 0.15;  // ws: 15% Mức độ hư hại vật lý từ AI
     public static final double WEIGHT_CONTEXT = 0.10;   // wc: 10% Bối cảnh xung quanh từ AI
 
-    // Quy chuẩn thang điểm 10 cho Base Score từ Database
-    public static final double BASE_SCORE_LOW = 3.0;     // LOW -> 3 điểm (Mức độ cơ bản, không gấp)
-    public static final double BASE_SCORE_MEDIUM = 6.0;  // MEDIUM -> 6 điểm (Cần xử lý sớm)
-    public static final double BASE_SCORE_HIGH = 9.0;    // HIGH -> 9 điểm (Nghiêm trọng, khẩn cấp)
+    // Quy chuẩn thang điểm 10 cho Base Score từ Database (tương thích thang [<6.0, 6.0-8.5, >=8.5])
+    public static final double BASE_SCORE_LOW = 3.5;     // LOW -> 3.5 điểm (Mức độ cơ bản, không gấp)
+    public static final double BASE_SCORE_MEDIUM = 7.0;  // MEDIUM -> 7.0 điểm (Cần xử lý sớm)
+    public static final double BASE_SCORE_HIGH = 9.0;    // HIGH -> 9.0 điểm (Nghiêm trọng, khẩn cấp)
 
     // Ngưỡng phân loại kết quả (Fuzzy Mapping thresholds)
-    public static final double THRESHOLD_MEDIUM = 5.0;  // 0.0 - 4.9 -> LOW, 5.0 - 7.4 -> MEDIUM
-    public static final double THRESHOLD_HIGH = 7.5;    // 7.5 - 10.0 -> HIGH
+    public static final double THRESHOLD_MEDIUM = 6.0;  // < 6.0 -> LOW, 6.0 đến < 8.5 -> MEDIUM
+    public static final double THRESHOLD_HIGH = 8.5;    // >= 8.5 -> HIGH
+
+    // Ngưỡng leo thang khẩn cấp khi hiện trường cực kỳ nguy hiểm bất chấp Base Score thấp
+    public static final double CRITICAL_AI_SCORE_THRESHOLD = 8.8;
+    public static final double CRITICAL_URGENCY_THRESHOLD = 9.0;
+    public static final double CRITICAL_SEVERITY_THRESHOLD = 8.5;
 
     private AiPriorityCalculator() {
         // Utility class
@@ -34,8 +39,8 @@ public final class AiPriorityCalculator {
 
     /**
      * Bước 1: Quy chuẩn điểm Base Score từ Database
-     * LOW -> 3.0
-     * MEDIUM -> 6.0
+     * LOW -> 3.5
+     * MEDIUM -> 7.0
      * HIGH -> 9.0
      */
     public static double convertBaseScore(Priority dbPriority) {
@@ -78,23 +83,34 @@ public final class AiPriorityCalculator {
     /**
      * Bước 2: Thiết lập công thức tính điểm ưu tiên cuối cùng P
      * P = wb*B + ws*S + wi*I + wu*U + wc*C
+     * Kèm quy tắc Leo thang Khẩn cấp (Critical Escalation): nếu rủi ro thực tế từ AI đạt ngưỡng cực đại
+     * (AI trung bình có trọng số >= 8.8, Urgency >= 9.0 và Severity >= 8.5) thì lấy max(rawScore, aiNormalizedScore)
+     * để sự cố đặc biệt nguy cấp không bị kìm dưới ngưỡng HIGH (8.5) bởi Base Score thấp từ DB.
      */
     public static double calculatePriorityScore(double baseScore, double severity, double impact, double urgency, double context) {
-        double rawScore = (WEIGHT_BASE * baseScore)
-                + (WEIGHT_SEVERITY * severity)
+        double aiWeightedComponent = (WEIGHT_SEVERITY * severity)
                 + (WEIGHT_IMPACT * impact)
                 + (WEIGHT_URGENCY * urgency)
                 + (WEIGHT_CONTEXT * context);
-        return BigDecimal.valueOf(rawScore)
+        double rawScore = (WEIGHT_BASE * baseScore) + aiWeightedComponent;
+        double aiNormalizedScore = aiWeightedComponent / (1.0 - WEIGHT_BASE);
+
+        double effectiveScore = (aiNormalizedScore >= CRITICAL_AI_SCORE_THRESHOLD
+                && urgency >= CRITICAL_URGENCY_THRESHOLD
+                && severity >= CRITICAL_SEVERITY_THRESHOLD)
+                ? Math.max(rawScore, aiNormalizedScore)
+                : rawScore;
+
+        return BigDecimal.valueOf(effectiveScore)
                 .setScale(2, RoundingMode.HALF_UP)
                 .doubleValue();
     }
 
     /**
      * Bước 4: Ánh xạ kết quả (Fuzzy Mapping)
-     * 0.0 - 4.9 -> LOW
-     * 5.0 - 7.4 -> MEDIUM
-     * 7.5 - 10.0 -> HIGH
+     * < 6.0 -> LOW
+     * 6.0 đến < 8.5 -> MEDIUM
+     * >= 8.5 -> HIGH
      */
     public static Priority mapScoreToPriority(double score) {
         if (score < THRESHOLD_MEDIUM) {

@@ -242,6 +242,7 @@ class TicketWorkflowEngineTest {
         verify(ticketRepository, times(1)).save(mockTicket);
         verify(ticketHistoryRepository, times(1)).save(any(TicketHistory.class));
         verify(notificationService, times(1)).notifyStepCompleted(eq(mockStep2), any(), eq(true));
+        verify(notificationService, times(1)).notifySosTicketStatusChanged(eq(mockTicket), any(), eq(TicketStatus.RESOLVED));
     }
 
     @Test

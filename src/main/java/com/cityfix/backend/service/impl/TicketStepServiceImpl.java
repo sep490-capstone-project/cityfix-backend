@@ -132,8 +132,10 @@ public class TicketStepServiceImpl implements TicketStepService {
         Ticket ticket = step.getTicket();
         if (ticket != null) {
             TicketStatus prevTicketStatus = ticket.getStatus();
+            boolean ticketMovedToInProgress = false;
             if (status == AssignmentStatus.IN_PROGRESS && prevTicketStatus == TicketStatus.ASSIGNED) {
                 ticket.setStatus(TicketStatus.IN_PROGRESS);
+                ticketMovedToInProgress = true;
                 if (ticketHistoryMapper != null && ticketHistoryRepository != null) {
                     TicketHistory history = ticketHistoryMapper.toTicketHistory(
                             ticket, currentUser, ActionType.WORK_STARTED, prevTicketStatus, TicketStatus.IN_PROGRESS,
@@ -146,6 +148,9 @@ public class TicketStepServiceImpl implements TicketStepService {
             }
             ticket.setDeadline(ticketService.calculateTicketDeadline(ticket));
             ticketRepository.save(ticket);
+            if (ticketMovedToInProgress && notificationService != null) {
+                notificationService.notifySosTicketStatusChanged(ticket, prevTicketStatus, TicketStatus.IN_PROGRESS);
+            }
         }
 
         if (status == AssignmentStatus.IN_PROGRESS && prevStatus != AssignmentStatus.IN_PROGRESS) {
