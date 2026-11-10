@@ -31,4 +31,9 @@ public interface RoutingRuleRepository extends JpaRepository<RoutingRule, UUID>,
     List<RoutingRule> findByCategoryCategoryIdAndIsDeletedFalse(UUID categoryId);
 
     List<RoutingRule> findByCategoryCategoryIdInAndIsDeletedFalse(java.util.Collection<UUID> categoryIds);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"department", "category"})
+    List<RoutingRule> findByIsDeletedFalse();
+
+    long countByIsDeletedFalse();
 }

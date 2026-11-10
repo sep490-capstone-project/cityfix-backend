@@ -24,4 +24,8 @@ public interface SubCategoryRepository extends JpaRepository<SubCategory, UUID> 
 
     @EntityGraph(attributePaths = {"category"})
     java.util.Optional<SubCategory> findByNameAndIsDeletedFalse(String name);
+
+    long countByIsDeletedFalse();
+
+    long countByIsActiveTrueAndIsDeletedFalse();
 }

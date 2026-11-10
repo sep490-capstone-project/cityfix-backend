@@ -25,4 +25,8 @@ public interface DepartmentRepository extends JpaRepository<Department, UUID> {
     Optional<Department> findByDepartmentIdAndIsDeletedFalse(UUID departmentId);
 
     Page<Department> findByIsDeletedFalse(Pageable pageable);
+
+    java.util.List<Department> findAllByIsDeletedFalse();
+
+    long countByIsDeletedFalse();
 }

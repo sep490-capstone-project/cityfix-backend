@@ -73,4 +73,10 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     default List<User> findActiveResidentsWithWard() {
         return findResidentsWithWardByStatus(UserStatus.ACTIVE);
     }
+
+    @Query("SELECT u.status, COUNT(u) FROM User u WHERE u.isDeleted = false GROUP BY u.status")
+    List<Object[]> countUsersGroupByStatus();
+
+    @Query("SELECT UPPER(u.role.roleName), COUNT(u) FROM User u WHERE u.isDeleted = false GROUP BY UPPER(u.role.roleName)")
+    List<Object[]> countUsersGroupByRole();
 }

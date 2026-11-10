@@ -22,4 +22,10 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
     Page<Rating> findByTicket_TicketIdAndIsDeletedFalse(UUID ticketId, Pageable pageable);
 
     Optional<Rating> findByIdAndTicket_TicketIdAndIsDeletedFalse(UUID ratingId, UUID ticketId);
+
+    @org.springframework.data.jpa.repository.Query("SELECT COALESCE(AVG(r.rate), 0.0) FROM Rating r WHERE r.isDeleted = false")
+    Double findAverageActiveRating();
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"ticket"})
+    List<Rating> findByTicket_TicketIdInAndIsDeletedFalse(java.util.Collection<UUID> ticketIds);
 }

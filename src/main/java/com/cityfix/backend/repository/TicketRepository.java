@@ -8,7 +8,9 @@ import com.cityfix.backend.model.enums.TicketStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -20,12 +22,37 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface TicketRepository extends JpaRepository<Ticket, UUID> {
+public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecificationExecutor<Ticket> {
+
+    @Override
+    @EntityGraph(attributePaths = {"user"})
+    Page<Ticket> findAll(Specification<Ticket> spec, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "user"})
+    @Query("SELECT DISTINCT t FROM Ticket t WHERE t.ticketId IN :ticketIds")
+    List<Ticket> findAllWithSubCategoriesByTicketIdIn(@Param("ticketIds") java.util.Collection<UUID> ticketIds);
 
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     Optional<Ticket> findById(UUID id);
 
     boolean existsByDescriptionAndStatus(String description, TicketStatus status);
+
+    @Query("SELECT t.status, COUNT(t) FROM Ticket t GROUP BY t.status")
+    List<Object[]> countTicketsGroupByStatus();
+
+    @Query("SELECT COUNT(t) FROM Ticket t WHERE NOT EXISTS (SELECT 1 FROM TicketStep ts WHERE ts.ticket = t AND ts.isDeleted = false AND ts.assignee IS NOT NULL)")
+    long countUnassignedTickets();
+
+    long countByNeedsManualReviewTrue();
+
+    @Query("SELECT COUNT(t) FROM Ticket t WHERE t.isLifeThreatening = true AND t.status NOT IN :terminalStatuses")
+    long countActiveLifeThreateningTickets(@Param("terminalStatuses") java.util.Collection<TicketStatus> terminalStatuses);
+
+    @Query("SELECT COUNT(t) FROM Ticket t WHERE t.deadline IS NOT NULL AND t.deadline < :now AND t.status NOT IN :closedStatuses")
+    long countOverdueTickets(
+            @Param("now") java.time.LocalDateTime now,
+            @Param("closedStatuses") java.util.Collection<TicketStatus> closedStatuses
+    );
 
     @Query(value = """
         SELECT t.ticket_id AS ticketId,
@@ -198,7 +225,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
             EXISTS (
                 SELECT 1 FROM TicketStep ts
                 WHERE ts.ticket = t
-                  AND ts.assignee.department.departmentId = :departmentId
+                   AND ts.assignee.department.departmentId = :departmentId
                   AND ts.isDeleted = false
             )
             OR (
