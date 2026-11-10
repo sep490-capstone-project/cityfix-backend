@@ -185,6 +185,7 @@ class AdminTicketServiceTest {
         // Enriched department from RoutingRule
         assertThat(item.getDepartmentId()).isEqualTo(departmentId);
         assertThat(item.getDepartmentName()).isEqualTo("Sở Giao thông Vận tải");
+        verify(ticketRepository).findAllWithSubCategoriesByTicketIdIn(List.of(ticketId));
     }
 
     @Test

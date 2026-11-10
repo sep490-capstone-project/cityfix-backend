@@ -13,7 +13,9 @@ import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.specification.TicketSpecification;
 import com.cityfix.backend.service.AdminTicketService;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,15 +42,53 @@ public class AdminTicketServiceImpl implements AdminTicketService {
     @Override
     @Transactional(readOnly = true)
     public Page<TicketResponse> getAllTickets(AdminTicketFilterRequest filter, Pageable pageable) {
-        Page<Ticket> tickets = ticketRepository.findAll(TicketSpecification.withFilter(filter), pageable);
-        Page<TicketResponse> responses = tickets.map(ticket -> {
+        Page<Ticket> ticketsPage = ticketRepository.findAll(TicketSpecification.withFilter(filter), pageable);
+        List<Ticket> pageTickets = ticketsPage.getContent();
+        if (pageTickets.isEmpty()) {
+            return Page.empty(pageable);
+        }
+
+        List<UUID> ticketIds = pageTickets.stream()
+                .map(Ticket::getTicketId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        List<Ticket> hydratedTickets = pageTickets;
+        Map<UUID, List<TicketStep>> stepsByTicket = new HashMap<>();
+        if (!ticketIds.isEmpty()) {
+            List<Ticket> withSubCategories = ticketRepository.findAllWithSubCategoriesByTicketIdIn(ticketIds);
+            if (withSubCategories != null && !withSubCategories.isEmpty()) {
+                Map<UUID, Ticket> hydratedById = withSubCategories.stream()
+                        .filter(t -> t != null && t.getTicketId() != null)
+                        .collect(Collectors.toMap(Ticket::getTicketId, t -> t, (a, b) -> a));
+                hydratedTickets = pageTickets.stream()
+                        .map(t -> t != null && t.getTicketId() != null
+                                ? hydratedById.getOrDefault(t.getTicketId(), t)
+                                : t)
+                        .toList();
+            }
+
+            List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdIn(ticketIds);
+            if (steps != null) {
+                for (TicketStep step : steps) {
+                    if (step != null && step.getTicket() != null && step.getTicket().getTicketId() != null) {
+                        stepsByTicket.computeIfAbsent(step.getTicket().getTicketId(), k -> new ArrayList<>()).add(step);
+                    }
+                }
+            }
+        }
+
+        List<TicketResponse> responseList = new ArrayList<>(hydratedTickets.size());
+        for (Ticket ticket : hydratedTickets) {
             TicketResponse res = ticketMapper.toTicketResponse(ticket);
             ensureAdminCreatorVisibility(ticket, res);
-            enrichDepartmentFromUserDepartmentsIfNeeded(ticket, res);
-            return res;
-        });
-        enrichUnassignedTicketsDepartmentFromRoutingRule(tickets.getContent(), responses.getContent());
-        return responses;
+            List<TicketStep> ticketSteps = getPreloadedOrInitializedSteps(ticket, stepsByTicket);
+            enrichDepartmentFromStepsIfNeeded(ticketSteps, res);
+            responseList.add(res);
+        }
+
+        enrichUnassignedTicketsDepartmentFromRoutingRule(hydratedTickets, responseList);
+        return new PageImpl<>(responseList, pageable, ticketsPage.getTotalElements());
     }
 
     @Override
@@ -57,15 +97,21 @@ public class AdminTicketServiceImpl implements AdminTicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        List<TicketStep> preloadedSteps = ticketStepRepository.findByTicketTicketIdIn(List.of(ticketId));
+        List<TicketStep> sourceSteps = (preloadedSteps != null && !preloadedSteps.isEmpty())
+                ? preloadedSteps
+                : (ticket.getSteps() != null && Hibernate.isInitialized(ticket.getSteps())
+                        ? ticket.getSteps()
+                        : Collections.emptyList());
+
         TicketResponse base = ticketMapper.toTicketResponse(ticket);
         ensureAdminCreatorVisibility(ticket, base);
-        enrichDepartmentFromUserDepartmentsIfNeeded(ticket, base);
+        enrichDepartmentFromStepsIfNeeded(sourceSteps, base);
         if (base != null && base.getDepartmentId() == null) {
             enrichUnassignedTicketsDepartmentFromRoutingRule(List.of(ticket), List.of(base));
         }
 
-        List<TicketStep> validSteps = (ticket.getSteps() != null ? ticket.getSteps() : Collections.<TicketStep>emptyList())
-                .stream()
+        List<TicketStep> validSteps = sourceSteps.stream()
                 .filter(s -> s != null && !s.isDeleted())
                 .sorted(Comparator.comparing(TicketStep::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())))
@@ -117,6 +163,22 @@ public class AdminTicketServiceImpl implements AdminTicketService {
                 .build();
     }
 
+    private List<TicketStep> getPreloadedOrInitializedSteps(Ticket ticket, Map<UUID, List<TicketStep>> stepsByTicket) {
+        if (ticket == null) {
+            return Collections.emptyList();
+        }
+        if (stepsByTicket != null && ticket.getTicketId() != null) {
+            List<TicketStep> preloaded = stepsByTicket.get(ticket.getTicketId());
+            if (preloaded != null && !preloaded.isEmpty()) {
+                return preloaded;
+            }
+        }
+        if (ticket.getSteps() != null && Hibernate.isInitialized(ticket.getSteps())) {
+            return ticket.getSteps();
+        }
+        return Collections.emptyList();
+    }
+
     private void ensureAdminCreatorVisibility(Ticket ticket, TicketResponse response) {
         if (ticket == null || response == null || ticket.getUser() == null) {
             return;
@@ -127,14 +189,11 @@ public class AdminTicketServiceImpl implements AdminTicketService {
         response.setCreatorPhoneNumber(creator.getPhoneNumber());
     }
 
-    private void enrichDepartmentFromUserDepartmentsIfNeeded(Ticket ticket, TicketResponse response) {
-        if (ticket == null || response == null || response.getDepartmentId() != null) {
+    private void enrichDepartmentFromStepsIfNeeded(List<TicketStep> steps, TicketResponse response) {
+        if (steps == null || steps.isEmpty() || response == null || response.getDepartmentId() != null) {
             return;
         }
-        if (ticket.getSteps() == null || ticket.getSteps().isEmpty()) {
-            return;
-        }
-        for (TicketStep step : ticket.getSteps()) {
+        for (TicketStep step : steps) {
             if (step != null && !step.isDeleted() && step.getAssignee() != null) {
                 User assignee = step.getAssignee();
                 if (response.getAssigneeId() == null) {
@@ -146,7 +205,7 @@ public class AdminTicketServiceImpl implements AdminTicketService {
                     response.setDepartmentName(assignee.getDepartment().getName());
                     return;
                 }
-                if (assignee.getUserDepartments() != null && !assignee.getUserDepartments().isEmpty()) {
+                if (assignee.getUserDepartments() != null && Hibernate.isInitialized(assignee.getUserDepartments())) {
                     for (UserDepartment ud : assignee.getUserDepartments()) {
                         if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()) {
                             response.setDepartmentId(ud.getDepartment().getDepartmentId());
@@ -218,7 +277,9 @@ public class AdminTicketServiceImpl implements AdminTicketService {
     }
 
     private UUID getTicketCategoryId(Ticket ticket) {
-        if (ticket != null && ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
+        if (ticket != null && ticket.getSubCategories() != null
+                && Hibernate.isInitialized(ticket.getSubCategories())
+                && !ticket.getSubCategories().isEmpty()) {
             TicketSubCategory tsc = ticket.getSubCategories().get(0);
             if (tsc != null && tsc.getSubCategory() != null && tsc.getSubCategory().getCategory() != null) {
                 return tsc.getSubCategory().getCategory().getCategoryId();

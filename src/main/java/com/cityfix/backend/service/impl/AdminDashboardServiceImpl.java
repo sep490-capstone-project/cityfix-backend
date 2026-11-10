@@ -395,6 +395,19 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
             Map<UUID, List<TicketStep>> batchStepsMap = new HashMap<>();
             if (!batchIds.isEmpty()) {
+                List<Ticket> hydratedTickets = ticketRepository.findAllWithSubCategoriesByTicketIdIn(batchIds);
+                if (hydratedTickets != null && !hydratedTickets.isEmpty()) {
+                    Map<UUID, Ticket> hydratedById = hydratedTickets.stream()
+                            .filter(t -> t != null && t.getTicketId() != null)
+                            .collect(Collectors.toMap(Ticket::getTicketId, t -> t, (a, b) -> a));
+                    batchTickets = batchTickets.stream()
+                            .map(t -> t != null && t.getTicketId() != null
+                                    ? hydratedById.getOrDefault(t.getTicketId(), t)
+                                    : t)
+                            .toList();
+                }
+            }
+            if (!batchIds.isEmpty()) {
                 List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdIn(batchIds);
                 if (steps != null) {
                     for (TicketStep step : steps) {
@@ -812,7 +825,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             UUID departmentId,
             List<RoutingRule> activeRoutingRules) {
 
-        if (ticket.getSubCategories() == null || ticket.getSubCategories().isEmpty()) {
+        if (ticket.getSubCategories() == null || !Hibernate.isInitialized(ticket.getSubCategories()) || ticket.getSubCategories().isEmpty()) {
             return false;
         }
         String address = ticket.getAddress() != null ? ticket.getAddress().toLowerCase() : "";
@@ -845,7 +858,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     private boolean isTicketInCategory(Ticket ticket, UUID categoryId) {
-        if (ticket == null || categoryId == null || ticket.getSubCategories() == null) {
+        if (ticket == null || categoryId == null || ticket.getSubCategories() == null || !Hibernate.isInitialized(ticket.getSubCategories())) {
             return false;
         }
         for (TicketSubCategory tsc : ticket.getSubCategories()) {

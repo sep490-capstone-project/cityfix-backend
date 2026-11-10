@@ -252,6 +252,7 @@ class AdminDashboardServiceTest {
         assertThat(summary.getDepartmentSummaries().get(0).getResolutionRate()).isEqualTo(50.0);
 
         verify(ticketRepository, never()).findAll(any(Specification.class));
+        verify(ticketRepository, times(2)).findAllWithSubCategoriesByTicketIdIn(any());
         verify(ratingRepository, never()).findAll();
     }
 

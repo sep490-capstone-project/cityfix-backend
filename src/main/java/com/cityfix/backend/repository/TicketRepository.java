@@ -25,12 +25,12 @@ import java.util.UUID;
 public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecificationExecutor<Ticket> {
 
     @Override
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "user"})
+    @EntityGraph(attributePaths = {"user"})
     Page<Ticket> findAll(Specification<Ticket> spec, Pageable pageable);
 
-    @Override
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "user"})
-    List<Ticket> findAll(Specification<Ticket> spec);
+    @Query("SELECT DISTINCT t FROM Ticket t WHERE t.ticketId IN :ticketIds")
+    List<Ticket> findAllWithSubCategoriesByTicketIdIn(@Param("ticketIds") java.util.Collection<UUID> ticketIds);
 
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     Optional<Ticket> findById(UUID id);
@@ -225,7 +225,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             EXISTS (
                 SELECT 1 FROM TicketStep ts
                 WHERE ts.ticket = t
-                  AND ts.assignee.department.departmentId = :departmentId
+                   AND ts.assignee.department.departmentId = :departmentId
                   AND ts.isDeleted = false
             )
             OR (
