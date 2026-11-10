@@ -13,4 +13,5 @@ public interface StepRepository extends JpaRepository<Step, UUID> {
     List<Step> findByIsDeletedFalse();
     java.util.Optional<Step> findByStepIdAndIsDeletedFalse(UUID stepId);
     java.util.Optional<Step> findBySubCategory_SubCategoryIdAndStepNameAndIsDeletedFalse(UUID subCategoryId, String stepName);
+    long countByIsDeletedFalse();
 }

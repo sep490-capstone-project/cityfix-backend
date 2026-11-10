@@ -206,7 +206,7 @@ public class AdminTicketServiceImpl implements AdminTicketService {
                             .map(RoutingRule::getDepartment)
                             .filter(Objects::nonNull)
                             .findFirst()
-                            .orElse(categoryRules.get(0).getDepartment());
+                            .orElse(null);
 
                     if (matchedDept != null) {
                         res.setDepartmentId(matchedDept.getDepartmentId());

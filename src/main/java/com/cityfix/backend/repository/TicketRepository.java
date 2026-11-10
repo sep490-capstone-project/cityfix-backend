@@ -37,6 +37,23 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
 
     boolean existsByDescriptionAndStatus(String description, TicketStatus status);
 
+    @Query("SELECT t.status, COUNT(t) FROM Ticket t GROUP BY t.status")
+    List<Object[]> countTicketsGroupByStatus();
+
+    @Query("SELECT COUNT(t) FROM Ticket t WHERE NOT EXISTS (SELECT 1 FROM TicketStep ts WHERE ts.ticket = t AND ts.isDeleted = false AND ts.assignee IS NOT NULL)")
+    long countUnassignedTickets();
+
+    long countByNeedsManualReviewTrue();
+
+    @Query("SELECT COUNT(t) FROM Ticket t WHERE t.isLifeThreatening = true AND t.status NOT IN :terminalStatuses")
+    long countActiveLifeThreateningTickets(@Param("terminalStatuses") java.util.Collection<TicketStatus> terminalStatuses);
+
+    @Query("SELECT COUNT(t) FROM Ticket t WHERE t.deadline IS NOT NULL AND t.deadline < :now AND t.status NOT IN :closedStatuses")
+    long countOverdueTickets(
+            @Param("now") java.time.LocalDateTime now,
+            @Param("closedStatuses") java.util.Collection<TicketStatus> closedStatuses
+    );
+
     @Query(value = """
         SELECT t.ticket_id AS ticketId,
                t.description AS description,

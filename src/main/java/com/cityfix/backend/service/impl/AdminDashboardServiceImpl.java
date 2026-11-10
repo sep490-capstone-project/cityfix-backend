@@ -13,6 +13,12 @@ import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.specification.TicketSpecification;
 import com.cityfix.backend.service.AdminDashboardService;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +28,23 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.WeekFields;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class AdminDashboardServiceImpl implements AdminDashboardService {
 
+    private static final int BATCH_SIZE = 500;
+    private static final List<TicketStatus> TERMINAL_NON_ACTIVE_STATUSES = List.of(
+            TicketStatus.COMPLETED, TicketStatus.REJECTED, TicketStatus.CANCELLED
+    );
+    private static final List<TicketStatus> CLOSED_TICKET_STATUSES = List.of(
+            TicketStatus.RESOLVED, TicketStatus.COMPLETED, TicketStatus.REJECTED, TicketStatus.CANCELLED
+    );
+
     private final TicketRepository ticketRepository;
+    private final TicketStepRepository ticketStepRepository;
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
     private final CategoryRepository categoryRepository;
@@ -45,49 +61,38 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     public AdminDashboardSummaryResponse getDashboardSummary() {
         LocalDateTime now = LocalDateTime.now();
 
-        List<Ticket> allTickets = ticketRepository.findAll(TicketSpecification.withFilter(null));
-        List<Rating> allRatings = ratingRepository.findAll().stream()
-                .filter(r -> r != null && !r.isDeleted())
-                .toList();
+        // 1. Ticket Summary (DB-level aggregation)
+        Map<TicketStatus, Long> ticketStatusCounts = new EnumMap<>(TicketStatus.class);
+        List<Object[]> rawTicketStatusCounts = ticketRepository.countTicketsGroupByStatus();
+        if (rawTicketStatusCounts != null) {
+            for (Object[] row : rawTicketStatusCounts) {
+                if (row != null && row.length >= 2 && row[0] instanceof TicketStatus status && row[1] instanceof Number cnt) {
+                    ticketStatusCounts.put(status, cnt.longValue());
+                }
+            }
+        }
 
-        // 1. Ticket Summary
-        long totalTickets = allTickets.size();
-        long initiatedTickets = countByStatus(allTickets, TicketStatus.INITIATED);
-        long assignedTickets = countByStatus(allTickets, TicketStatus.ASSIGNED);
-        long inProgressTickets = countByStatus(allTickets, TicketStatus.IN_PROGRESS);
-        long resolvedTickets = countByStatus(allTickets, TicketStatus.RESOLVED);
-        long completedTickets = countByStatus(allTickets, TicketStatus.COMPLETED);
-        long rejectedTickets = countByStatus(allTickets, TicketStatus.REJECTED);
-        long cancelledTickets = countByStatus(allTickets, TicketStatus.CANCELLED);
+        long initiatedTickets = ticketStatusCounts.getOrDefault(TicketStatus.INITIATED, 0L);
+        long assignedTickets = ticketStatusCounts.getOrDefault(TicketStatus.ASSIGNED, 0L);
+        long inProgressTickets = ticketStatusCounts.getOrDefault(TicketStatus.IN_PROGRESS, 0L);
+        long resolvedTickets = ticketStatusCounts.getOrDefault(TicketStatus.RESOLVED, 0L);
+        long completedTickets = ticketStatusCounts.getOrDefault(TicketStatus.COMPLETED, 0L);
+        long rejectedTickets = ticketStatusCounts.getOrDefault(TicketStatus.REJECTED, 0L);
+        long cancelledTickets = ticketStatusCounts.getOrDefault(TicketStatus.CANCELLED, 0L);
+        long totalTickets = ticketStatusCounts.values().stream().mapToLong(Long::longValue).sum();
 
-        long unassignedTickets = allTickets.stream()
-                .filter(this::isTicketUnassigned)
-                .count();
-
-        long needsManualReviewTickets = allTickets.stream()
-                .filter(t -> Boolean.TRUE.equals(t.getNeedsManualReview()))
-                .count();
-
-        long lifeThreateningTickets = allTickets.stream()
-                .filter(t -> Boolean.TRUE.equals(t.getIsLifeThreatening()) && !isTerminalNonActiveStatus(t.getStatus()))
-                .count();
-
-        long overdueTickets = allTickets.stream()
-                .filter(t -> isTicketOverdue(t, now))
-                .count();
+        long unassignedTickets = ticketRepository.countUnassignedTickets();
+        long needsManualReviewTickets = ticketRepository.countByNeedsManualReviewTrue();
+        long lifeThreateningTickets = ticketRepository.countActiveLifeThreateningTickets(TERMINAL_NON_ACTIVE_STATUSES);
+        long overdueTickets = ticketRepository.countOverdueTickets(now, CLOSED_TICKET_STATUSES);
 
         long validTickets = totalTickets - rejectedTickets - cancelledTickets;
         double overallResolutionRate = validTickets > 0
                 ? round2(((double) (resolvedTickets + completedTickets) / validTickets) * 100.0)
                 : 0.0;
 
-        double averageRating = allRatings.isEmpty()
-                ? 0.0
-                : round2(allRatings.stream()
-                        .filter(r -> r.getRate() != null)
-                        .mapToInt(Rating::getRate)
-                        .average()
-                        .orElse(0.0));
+        Double avgRatingRaw = ratingRepository.findAverageActiveRating();
+        double averageRating = avgRatingRaw != null ? round2(avgRatingRaw) : 0.0;
 
         TicketKpiSummary ticketSummary = TicketKpiSummary.builder()
                 .totalTickets(totalTickets)
@@ -106,15 +111,33 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .averageRating(averageRating)
                 .build();
 
-        // 2. Account Summary
-        List<User> users = userRepository.findAllByIsDeletedFalse();
-        long totalUsers = users.size();
-        long activeUsers = users.stream().filter(u -> u.getStatus() == UserStatus.ACTIVE).count();
-        long blockedUsers = users.stream().filter(u -> u.getStatus() == UserStatus.BLOCKED).count();
-        long residentCount = countUsersByRole(users, "RESIDENT");
-        long staffCount = countUsersByRole(users, "STAFF");
-        long managerCount = countUsersByRole(users, "MANAGER");
-        long adminCount = countUsersByRole(users, "ADMIN");
+        // 2. Account Summary (DB-level aggregation)
+        Map<UserStatus, Long> userStatusCounts = new EnumMap<>(UserStatus.class);
+        List<Object[]> rawUserStatusCounts = userRepository.countUsersGroupByStatus();
+        if (rawUserStatusCounts != null) {
+            for (Object[] row : rawUserStatusCounts) {
+                if (row != null && row.length >= 2 && row[0] instanceof UserStatus st && row[1] instanceof Number cnt) {
+                    userStatusCounts.put(st, cnt.longValue());
+                }
+            }
+        }
+        long totalUsers = userStatusCounts.values().stream().mapToLong(Long::longValue).sum();
+        long activeUsers = userStatusCounts.getOrDefault(UserStatus.ACTIVE, 0L);
+        long blockedUsers = userStatusCounts.getOrDefault(UserStatus.BLOCKED, 0L);
+
+        Map<String, Long> roleCounts = new HashMap<>();
+        List<Object[]> rawUserRoleCounts = userRepository.countUsersGroupByRole();
+        if (rawUserRoleCounts != null) {
+            for (Object[] row : rawUserRoleCounts) {
+                if (row != null && row.length >= 2 && row[0] != null && row[1] instanceof Number cnt) {
+                    roleCounts.put(row[0].toString().toUpperCase(), cnt.longValue());
+                }
+            }
+        }
+        long residentCount = roleCounts.getOrDefault("RESIDENT", 0L);
+        long staffCount = roleCounts.getOrDefault("STAFF", 0L);
+        long managerCount = roleCounts.getOrDefault("MANAGER", 0L);
+        long adminCount = roleCounts.getOrDefault("ADMIN", 0L);
 
         AccountKpiSummary accountSummary = AccountKpiSummary.builder()
                 .totalUsers(totalUsers)
@@ -126,32 +149,30 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .adminCount(adminCount)
                 .build();
 
-        // 3. Config Summary
-        List<Department> activeDepartments = departmentRepository.findAll().stream()
-                .filter(d -> d != null && !d.isDeleted())
-                .toList();
-        List<Category> categories = categoryRepository.findAllByIsDeletedFalse();
-        long activeCategoriesCount = categories.stream().filter(Category::isActive).count();
-        List<SubCategory> subCategories = subCategoryRepository.findByIsDeletedFalse();
-        long activeSubCategoriesCount = subCategories.stream().filter(SubCategory::isActive).count();
-        List<Step> steps = stepRepository.findByIsDeletedFalse();
-        List<RoutingRule> activeRoutingRules = routingRuleRepository.findAll().stream()
-                .filter(r -> r != null && !r.isDeleted())
-                .toList();
+        // 3. Config Summary (DB-level counts & active rules)
+        List<Department> activeDepartments = departmentRepository.findAllByIsDeletedFalse();
+        long totalCategories = categoryRepository.countByIsDeletedFalse();
+        long activeCategoriesCount = categoryRepository.countByIsActiveTrueAndIsDeletedFalse();
+        long totalSubCategories = subCategoryRepository.countByIsDeletedFalse();
+        long activeSubCategoriesCount = subCategoryRepository.countByIsActiveTrueAndIsDeletedFalse();
+        long totalSteps = stepRepository.countByIsDeletedFalse();
+        List<RoutingRule> activeRoutingRules = routingRuleRepository.findByIsDeletedFalse();
         long totalRoutingRules = activeRoutingRules.size();
 
         ConfigKpiSummary configSummary = ConfigKpiSummary.builder()
                 .totalDepartments(activeDepartments.size())
-                .totalCategories(categories.size())
+                .totalCategories(totalCategories)
                 .activeCategories(activeCategoriesCount)
-                .totalSubCategories(subCategories.size())
+                .totalSubCategories(totalSubCategories)
                 .activeSubCategories(activeSubCategoriesCount)
-                .totalSteps(steps.size())
+                .totalSteps(totalSteps)
                 .totalRoutingRules(totalRoutingRules)
                 .build();
 
-        // 4. Department Summaries
-        List<DepartmentKpiItem> departmentSummaries = buildDepartmentKpiItems(activeDepartments, allTickets, activeRoutingRules, now);
+        // 4. Department Summaries (batched ticket & step processing without holding all tickets in memory)
+        List<DepartmentKpiItem> departmentSummaries = buildDepartmentKpiItemsInBatches(
+                activeDepartments, activeRoutingRules, now
+        );
 
         return AdminDashboardSummaryResponse.builder()
                 .ticketSummary(ticketSummary)
@@ -183,23 +204,34 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .categoryId(categoryId)
                 .build();
 
-        List<Ticket> tickets = ticketRepository.findAll(TicketSpecification.withFilter(filter));
+        List<Ticket> tickets = new ArrayList<>();
+        Map<UUID, List<TicketStep>> stepsByTicket = new HashMap<>();
+        Map<UUID, List<Rating>> ratingsByTicket = new HashMap<>();
 
-        Set<UUID> ticketIds = tickets.stream()
-                .map(Ticket::getTicketId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        processTicketBatches(TicketSpecification.withFilter(filter), (batchTickets, batchStepsMap) -> {
+            tickets.addAll(batchTickets);
+            stepsByTicket.putAll(batchStepsMap);
 
-        Map<UUID, List<Rating>> ratingsByTicket = ratingRepository.findAll().stream()
-                .filter(r -> r != null && !r.isDeleted() && r.getTicket() != null && ticketIds.contains(r.getTicket().getTicketId()))
-                .collect(Collectors.groupingBy(r -> r.getTicket().getTicketId()));
+            List<UUID> batchIds = batchTickets.stream()
+                    .map(Ticket::getTicketId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (!batchIds.isEmpty()) {
+                List<Rating> batchRatings = ratingRepository.findByTicket_TicketIdInAndIsDeletedFalse(batchIds);
+                if (batchRatings != null) {
+                    for (Rating r : batchRatings) {
+                        if (r != null && !r.isDeleted() && r.getTicket() != null && r.getTicket().getTicketId() != null) {
+                            ratingsByTicket.computeIfAbsent(r.getTicket().getTicketId(), k -> new ArrayList<>()).add(r);
+                        }
+                    }
+                }
+            }
+        });
 
-        List<RoutingRule> activeRoutingRules = routingRuleRepository.findAll().stream()
-                .filter(r -> r != null && !r.isDeleted())
-                .toList();
+        List<RoutingRule> activeRoutingRules = routingRuleRepository.findByIsDeletedFalse();
 
         // 1. Overview
-        AnalyticsOverview overview = buildAnalyticsOverview(tickets, ratingsByTicket, now);
+        AnalyticsOverview overview = buildAnalyticsOverview(tickets, stepsByTicket, ratingsByTicket, now);
 
         // 2. Time Series
         List<TimeSeriesItem> timeSeries = buildTimeSeries(tickets, groupBy);
@@ -208,12 +240,11 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         List<GeographicAnalyticsItem> geographicBreakdown = buildGeographicBreakdown(tickets, now);
 
         // 4. Department Breakdown
-        List<Department> departments = departmentRepository.findAll().stream()
-                .filter(d -> d != null && !d.isDeleted())
+        List<Department> departments = departmentRepository.findAllByIsDeletedFalse().stream()
                 .filter(d -> departmentId == null || departmentId.equals(d.getDepartmentId()))
                 .toList();
         List<DepartmentAnalyticsItem> departmentBreakdown = buildDepartmentBreakdown(
-                departments, tickets, ratingsByTicket, activeRoutingRules, now
+                departments, tickets, stepsByTicket, ratingsByTicket, activeRoutingRules, now
         );
 
         // 5. Category Breakdown
@@ -344,8 +375,123 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
+    private void processTicketBatches(
+            Specification<Ticket> spec,
+            BiConsumer<List<Ticket>, Map<UUID, List<TicketStep>>> batchConsumer) {
+
+        int pageNumber = 0;
+        Sort sort = Sort.by(Sort.Direction.ASC, "createdAt").and(Sort.by(Sort.Direction.ASC, "ticketId"));
+        while (true) {
+            Pageable pageable = PageRequest.of(pageNumber, BATCH_SIZE, sort);
+            Page<Ticket> page = ticketRepository.findAll(spec, pageable);
+            if (page == null || page.isEmpty()) {
+                break;
+            }
+            List<Ticket> batchTickets = page.getContent();
+            List<UUID> batchIds = batchTickets.stream()
+                    .map(Ticket::getTicketId)
+                    .filter(Objects::nonNull)
+                    .toList();
+
+            Map<UUID, List<TicketStep>> batchStepsMap = new HashMap<>();
+            if (!batchIds.isEmpty()) {
+                List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdIn(batchIds);
+                if (steps != null) {
+                    for (TicketStep step : steps) {
+                        if (step != null && step.getTicket() != null && step.getTicket().getTicketId() != null) {
+                            batchStepsMap.computeIfAbsent(step.getTicket().getTicketId(), k -> new ArrayList<>()).add(step);
+                        }
+                    }
+                }
+            }
+
+            batchConsumer.accept(batchTickets, batchStepsMap);
+
+            if (!page.hasNext()) {
+                break;
+            }
+            pageNumber++;
+        }
+    }
+
+    private List<DepartmentKpiItem> buildDepartmentKpiItemsInBatches(
+            List<Department> departments,
+            List<RoutingRule> activeRoutingRules,
+            LocalDateTime now) {
+
+        if (departments == null || departments.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<UUID, long[]> deptCounters = new LinkedHashMap<>();
+        for (Department dept : departments) {
+            if (dept != null && dept.getDepartmentId() != null) {
+                // [0]=total, [1]=inProgress, [2]=resolvedOrCompleted, [3]=overdue, [4]=valid
+                deptCounters.put(dept.getDepartmentId(), new long[5]);
+            }
+        }
+
+        processTicketBatches(TicketSpecification.withFilter(null), (batchTickets, batchStepsMap) -> {
+            for (Ticket ticket : batchTickets) {
+                if (ticket == null) {
+                    continue;
+                }
+                TicketStatus st = ticket.getStatus();
+                boolean isInProgress = (st == TicketStatus.ASSIGNED || st == TicketStatus.IN_PROGRESS);
+                boolean isResolved = isResolvedOrCompleted(st);
+                boolean isOverdue = isTicketOverdue(ticket, now);
+                boolean isValid = (st != TicketStatus.REJECTED && st != TicketStatus.CANCELLED);
+
+                for (Department dept : departments) {
+                    if (dept == null || dept.getDepartmentId() == null) {
+                        continue;
+                    }
+                    UUID deptId = dept.getDepartmentId();
+                    if (isTicketBelongingToDepartment(ticket, deptId, batchStepsMap, activeRoutingRules)) {
+                        long[] counters = deptCounters.get(deptId);
+                        counters[0]++;
+                        if (isInProgress) counters[1]++;
+                        if (isResolved) counters[2]++;
+                        if (isOverdue) counters[3]++;
+                        if (isValid) counters[4]++;
+                    }
+                }
+            }
+        });
+
+        List<DepartmentKpiItem> items = new ArrayList<>();
+        for (Department dept : departments) {
+            if (dept == null || dept.getDepartmentId() == null) {
+                continue;
+            }
+            UUID deptId = dept.getDepartmentId();
+            long[] counters = deptCounters.getOrDefault(deptId, new long[5]);
+            long total = counters[0];
+            long inProgress = counters[1];
+            long resolvedOrCompleted = counters[2];
+            long overdue = counters[3];
+            long valid = counters[4];
+
+            double resolutionRate = valid > 0
+                    ? round2(((double) resolvedOrCompleted / valid) * 100.0)
+                    : 0.0;
+
+            items.add(DepartmentKpiItem.builder()
+                    .departmentId(deptId)
+                    .departmentName(dept.getName())
+                    .totalAssignedTickets(total)
+                    .inProgressTickets(inProgress)
+                    .resolvedOrCompletedTickets(resolvedOrCompleted)
+                    .overdueTickets(overdue)
+                    .resolutionRate(resolutionRate)
+                    .build());
+        }
+        return items;
+    }
+
     private AnalyticsOverview buildAnalyticsOverview(
             List<Ticket> tickets,
+            Map<UUID, List<TicketStep>> stepsByTicket,
             Map<UUID, List<Rating>> ratingsByTicket,
             LocalDateTime now) {
 
@@ -373,18 +519,18 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .toList();
 
         List<Ticket> slaEligibleResolvedList = resolvedTicketsList.stream()
-                .filter(this::hasSlaData)
+                .filter(t -> hasSlaData(t, stepsByTicket))
                 .toList();
 
         long onTimeCount = slaEligibleResolvedList.stream()
-                .filter(this::isResolvedOnTime)
+                .filter(t -> isResolvedOnTime(t, stepsByTicket))
                 .count();
 
         double onTimeResolutionRate = !slaEligibleResolvedList.isEmpty()
                 ? round2(((double) onTimeCount / slaEligibleResolvedList.size()) * 100.0)
                 : 0.0;
 
-        double avgResolutionHours = calculateAverageResolutionHours(resolvedTicketsList);
+        double avgResolutionHours = calculateAverageResolutionHours(resolvedTicketsList, stepsByTicket);
 
         List<Rating> flatRatings = ratingsByTicket.values().stream()
                 .flatMap(Collection::stream)
@@ -499,53 +645,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return items;
     }
 
-    private List<DepartmentKpiItem> buildDepartmentKpiItems(
-            List<Department> departments,
-            List<Ticket> allTickets,
-            List<RoutingRule> activeRoutingRules,
-            LocalDateTime now) {
-
-        List<DepartmentKpiItem> items = new ArrayList<>();
-        for (Department dept : departments) {
-            UUID deptId = dept.getDepartmentId();
-            List<Ticket> deptTickets = allTickets.stream()
-                    .filter(t -> isTicketBelongingToDepartment(t, deptId, activeRoutingRules))
-                    .toList();
-
-            long total = deptTickets.size();
-            long inProgress = deptTickets.stream()
-                    .filter(t -> t.getStatus() == TicketStatus.ASSIGNED || t.getStatus() == TicketStatus.IN_PROGRESS)
-                    .count();
-            long resolvedOrCompleted = deptTickets.stream()
-                    .filter(t -> isResolvedOrCompleted(t.getStatus()))
-                    .count();
-            long overdue = deptTickets.stream()
-                    .filter(t -> isTicketOverdue(t, now))
-                    .count();
-            long valid = deptTickets.stream()
-                    .filter(t -> t.getStatus() != TicketStatus.REJECTED && t.getStatus() != TicketStatus.CANCELLED)
-                    .count();
-
-            double resolutionRate = valid > 0
-                    ? round2(((double) resolvedOrCompleted / valid) * 100.0)
-                    : 0.0;
-
-            items.add(DepartmentKpiItem.builder()
-                    .departmentId(deptId)
-                    .departmentName(dept.getName())
-                    .totalAssignedTickets(total)
-                    .inProgressTickets(inProgress)
-                    .resolvedOrCompletedTickets(resolvedOrCompleted)
-                    .overdueTickets(overdue)
-                    .resolutionRate(resolutionRate)
-                    .build());
-        }
-        return items;
-    }
-
     private List<DepartmentAnalyticsItem> buildDepartmentBreakdown(
             List<Department> departments,
             List<Ticket> tickets,
+            Map<UUID, List<TicketStep>> stepsByTicket,
             Map<UUID, List<Rating>> ratingsByTicket,
             List<RoutingRule> activeRoutingRules,
             LocalDateTime now) {
@@ -554,7 +657,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         for (Department dept : departments) {
             UUID deptId = dept.getDepartmentId();
             List<Ticket> deptTickets = tickets.stream()
-                    .filter(t -> isTicketBelongingToDepartment(t, deptId, activeRoutingRules))
+                    .filter(t -> isTicketBelongingToDepartment(t, deptId, stepsByTicket, activeRoutingRules))
                     .toList();
 
             long total = deptTickets.size();
@@ -575,14 +678,14 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             double resolutionRate = valid > 0 ? round2(((double) resolved / valid) * 100.0) : 0.0;
 
             List<Ticket> slaEligibleResolved = resolvedList.stream()
-                    .filter(this::hasSlaData)
+                    .filter(t -> hasSlaData(t, stepsByTicket))
                     .toList();
-            long onTime = slaEligibleResolved.stream().filter(this::isResolvedOnTime).count();
+            long onTime = slaEligibleResolved.stream().filter(t -> isResolvedOnTime(t, stepsByTicket)).count();
             double onTimeRate = !slaEligibleResolved.isEmpty()
                     ? round2(((double) onTime / slaEligibleResolved.size()) * 100.0)
                     : 0.0;
 
-            double avgHours = calculateAverageResolutionHours(resolvedList);
+            double avgHours = calculateAverageResolutionHours(resolvedList, stepsByTicket);
 
             List<Rating> deptRatings = deptTickets.stream()
                     .map(t -> ratingsByTicket.getOrDefault(t.getTicketId(), Collections.emptyList()))
@@ -635,41 +738,63 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return items;
     }
 
-    private boolean isTicketUnassigned(Ticket ticket) {
+    private List<TicketStep> getPreloadedOrInitializedSteps(Ticket ticket, Map<UUID, List<TicketStep>> stepsByTicket) {
+        if (ticket == null) {
+            return Collections.emptyList();
+        }
+        if (stepsByTicket != null && ticket.getTicketId() != null) {
+            List<TicketStep> preloaded = stepsByTicket.get(ticket.getTicketId());
+            if (preloaded != null && !preloaded.isEmpty()) {
+                return preloaded;
+            }
+        }
+        if (ticket.getSteps() != null && Hibernate.isInitialized(ticket.getSteps())) {
+            return ticket.getSteps();
+        }
+        return Collections.emptyList();
+    }
+
+    private boolean isTicketUnassigned(Ticket ticket, Map<UUID, List<TicketStep>> stepsByTicket) {
         if (ticket == null) {
             return false;
         }
-        if (ticket.getSteps() == null || ticket.getSteps().isEmpty()) {
+        List<TicketStep> steps = getPreloadedOrInitializedSteps(ticket, stepsByTicket);
+        if (steps.isEmpty()) {
             return true;
         }
-        return ticket.getSteps().stream()
+        return steps.stream()
                 .noneMatch(s -> s != null && !s.isDeleted() && s.getAssignee() != null);
     }
 
-    private boolean isTicketBelongingToDepartment(Ticket ticket, UUID departmentId, List<RoutingRule> activeRoutingRules) {
+    private boolean isTicketBelongingToDepartment(
+            Ticket ticket,
+            UUID departmentId,
+            Map<UUID, List<TicketStep>> stepsByTicket,
+            List<RoutingRule> activeRoutingRules) {
         if (ticket == null || departmentId == null) {
             return false;
         }
-        if (isTicketAssignedToDepartment(ticket, departmentId)) {
+        if (isTicketAssignedToDepartment(ticket, departmentId, stepsByTicket)) {
             return true;
         }
-        if (!isTicketUnassigned(ticket) || activeRoutingRules == null || activeRoutingRules.isEmpty()) {
+        if (!isTicketUnassigned(ticket, stepsByTicket) || activeRoutingRules == null || activeRoutingRules.isEmpty()) {
             return false;
         }
         return isUnassignedTicketRoutedToDepartment(ticket, departmentId, activeRoutingRules);
     }
 
-    private boolean isTicketAssignedToDepartment(Ticket ticket, UUID departmentId) {
-        if (ticket == null || departmentId == null || ticket.getSteps() == null) {
+    private boolean isTicketAssignedToDepartment(Ticket ticket, UUID departmentId, Map<UUID, List<TicketStep>> stepsByTicket) {
+        if (ticket == null || departmentId == null) {
             return false;
         }
-        for (TicketStep step : ticket.getSteps()) {
+        List<TicketStep> steps = getPreloadedOrInitializedSteps(ticket, stepsByTicket);
+        for (TicketStep step : steps) {
             if (step != null && !step.isDeleted() && step.getAssignee() != null) {
                 User assignee = step.getAssignee();
                 if (assignee.getDepartment() != null && departmentId.equals(assignee.getDepartment().getDepartmentId())) {
                     return true;
                 }
-                if (assignee.getUserDepartments() != null) {
+                if (assignee.getUserDepartments() != null && Hibernate.isInitialized(assignee.getUserDepartments())) {
                     for (UserDepartment ud : assignee.getUserDepartments()) {
                         if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()
                                 && departmentId.equals(ud.getDepartment().getDepartmentId())) {
@@ -744,40 +869,41 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return ticket.getDeadline().isBefore(now);
     }
 
-    private boolean hasSlaData(Ticket ticket) {
-        return ticket != null && ticket.getDeadline() != null && resolveCompletionTime(ticket) != null;
+    private boolean hasSlaData(Ticket ticket, Map<UUID, List<TicketStep>> stepsByTicket) {
+        return ticket != null && ticket.getDeadline() != null && resolveCompletionTime(ticket, stepsByTicket) != null;
     }
 
-    private boolean isResolvedOnTime(Ticket ticket) {
+    private boolean isResolvedOnTime(Ticket ticket, Map<UUID, List<TicketStep>> stepsByTicket) {
         if (ticket == null || ticket.getDeadline() == null) {
             return false;
         }
-        LocalDateTime resolvedTime = resolveCompletionTime(ticket);
+        LocalDateTime resolvedTime = resolveCompletionTime(ticket, stepsByTicket);
         if (resolvedTime == null) {
             return false;
         }
         return !resolvedTime.isAfter(ticket.getDeadline());
     }
 
-    private LocalDateTime resolveCompletionTime(Ticket ticket) {
-        if (ticket == null || ticket.getSteps() == null || ticket.getSteps().isEmpty()) {
+    private LocalDateTime resolveCompletionTime(Ticket ticket, Map<UUID, List<TicketStep>> stepsByTicket) {
+        List<TicketStep> steps = getPreloadedOrInitializedSteps(ticket, stepsByTicket);
+        if (steps.isEmpty()) {
             return null;
         }
-        return ticket.getSteps().stream()
+        return steps.stream()
                 .filter(s -> s != null && !s.isDeleted() && s.getCompletedAt() != null)
                 .map(TicketStep::getCompletedAt)
                 .max(LocalDateTime::compareTo)
                 .orElse(null);
     }
 
-    private double calculateAverageResolutionHours(List<Ticket> resolvedTickets) {
+    private double calculateAverageResolutionHours(List<Ticket> resolvedTickets, Map<UUID, List<TicketStep>> stepsByTicket) {
         if (resolvedTickets == null || resolvedTickets.isEmpty()) {
             return 0.0;
         }
         List<Double> hoursList = new ArrayList<>();
         for (Ticket t : resolvedTickets) {
             LocalDateTime start = t.getCreatedAt();
-            LocalDateTime end = resolveCompletionTime(t);
+            LocalDateTime end = resolveCompletionTime(t, stepsByTicket);
             if (start != null && end != null && !end.isBefore(start)) {
                 double hours = Duration.between(start, end).toMinutes() / 60.0;
                 hoursList.add(hours);
@@ -797,18 +923,8 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return status == TicketStatus.INITIATED || status == TicketStatus.ASSIGNED || status == TicketStatus.IN_PROGRESS;
     }
 
-    private boolean isTerminalNonActiveStatus(TicketStatus status) {
-        return status == TicketStatus.COMPLETED || status == TicketStatus.REJECTED || status == TicketStatus.CANCELLED;
-    }
-
     private long countByStatus(List<Ticket> tickets, TicketStatus status) {
         return tickets.stream().filter(t -> t.getStatus() == status).count();
-    }
-
-    private long countUsersByRole(List<User> users, String roleName) {
-        return users.stream()
-                .filter(u -> u.getRole() != null && roleName.equalsIgnoreCase(u.getRole().getRoleName()))
-                .count();
     }
 
     private String extractLocationPart(String address, String type) {

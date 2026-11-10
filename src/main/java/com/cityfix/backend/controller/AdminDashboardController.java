@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -122,7 +123,7 @@ public class AdminDashboardController {
         }
         try {
             LocalDate date = LocalDate.parse(trimmed);
-            return endOfDayIfDateOnly ? date.atTime(23, 59, 59) : date.atStartOfDay();
+            return endOfDayIfDateOnly ? date.atTime(LocalTime.MAX) : date.atStartOfDay();
         } catch (Exception ignored) {
         }
         throw new AppException(ErrorCode.INVALID_REQUEST, "Định dạng ngày giờ không hợp lệ: " + raw);

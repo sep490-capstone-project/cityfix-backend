@@ -22,7 +22,7 @@ public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
     @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
     List<TicketStep> findByTicketTicketId(UUID ticketId);
 
-    @EntityGraph(attributePaths = {"step", "assignee", "assignee.department"})
+    @EntityGraph(attributePaths = {"ticket", "step", "assignee", "assignee.department", "assignee.userDepartments", "assignee.userDepartments.department"})
     List<TicketStep> findByTicketTicketIdIn(java.util.Collection<UUID> ticketIds);
 
     @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})

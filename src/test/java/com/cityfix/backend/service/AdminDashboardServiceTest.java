@@ -16,6 +16,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.nio.charset.StandardCharsets;
@@ -25,13 +28,15 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AdminDashboardServiceTest {
 
     @Mock
     private TicketRepository ticketRepository;
+    @Mock
+    private TicketStepRepository ticketStepRepository;
     @Mock
     private UserRepository userRepository;
     @Mock
@@ -58,6 +63,8 @@ class AdminDashboardServiceTest {
     private Ticket completedTicket;
     private Ticket overdueInProgressTicket;
     private Ticket initiatedUnassignedTicket;
+    private TicketStep completedStep;
+    private TicketStep activeStep;
     private Rating rating;
 
     @BeforeEach
@@ -105,7 +112,7 @@ class AdminDashboardServiceTest {
                 .updatedAt(now.minusHours(4))
                 .deadline(now.minusHours(2))
                 .build();
-        TicketStep completedStep = TicketStep.builder()
+        completedStep = TicketStep.builder()
                 .id(UUID.randomUUID())
                 .ticket(completedTicket)
                 .assignee(staffUser)
@@ -131,7 +138,7 @@ class AdminDashboardServiceTest {
                 .updatedAt(now.minusHours(5))
                 .deadline(now.minusHours(3))
                 .build();
-        TicketStep activeStep = TicketStep.builder()
+        activeStep = TicketStep.builder()
                 .id(UUID.randomUUID())
                 .ticket(overdueInProgressTicket)
                 .assignee(staffUser)
@@ -165,39 +172,46 @@ class AdminDashboardServiceTest {
     }
 
     @Test
-    @DisplayName("getDashboardSummary_calculatesAllKpisCorrectly")
+    @DisplayName("getDashboardSummary_calculatesAllKpisUsingDbAggregationsAndBatchedDepartmentProcessing")
     @SuppressWarnings("unchecked")
     void getDashboardSummary_calculatesAllKpisCorrectly() {
-        User resident = User.builder()
-                .userId(UUID.randomUUID())
-                .role(new Role(UUID.randomUUID(), "RESIDENT"))
-                .status(UserStatus.ACTIVE)
-                .build();
-        User staff = User.builder()
-                .userId(UUID.randomUUID())
-                .role(new Role(UUID.randomUUID(), "STAFF"))
-                .status(UserStatus.ACTIVE)
-                .build();
-        User manager = User.builder()
-                .userId(UUID.randomUUID())
-                .role(new Role(UUID.randomUUID(), "MANAGER"))
-                .status(UserStatus.BLOCKED)
-                .build();
-        User admin = User.builder()
-                .userId(UUID.randomUUID())
-                .role(new Role(UUID.randomUUID(), "ADMIN"))
-                .status(UserStatus.ACTIVE)
-                .build();
+        when(ticketRepository.countTicketsGroupByStatus()).thenReturn(List.of(
+                new Object[]{TicketStatus.COMPLETED, 1L},
+                new Object[]{TicketStatus.IN_PROGRESS, 1L},
+                new Object[]{TicketStatus.INITIATED, 1L}
+        ));
+        when(ticketRepository.countUnassignedTickets()).thenReturn(1L);
+        when(ticketRepository.countByNeedsManualReviewTrue()).thenReturn(1L);
+        when(ticketRepository.countActiveLifeThreateningTickets(any())).thenReturn(1L);
+        when(ticketRepository.countOverdueTickets(any(), any())).thenReturn(1L);
+        when(ratingRepository.findAverageActiveRating()).thenReturn(4.0);
 
-        when(ticketRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(completedTicket, overdueInProgressTicket, initiatedUnassignedTicket));
-        when(ratingRepository.findAll()).thenReturn(List.of(rating));
-        when(userRepository.findAllByIsDeletedFalse()).thenReturn(List.of(resident, staff, manager, admin));
-        when(departmentRepository.findAll()).thenReturn(List.of(department));
-        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(category));
-        when(subCategoryRepository.findByIsDeletedFalse()).thenReturn(List.of(subCategory));
-        when(stepRepository.findByIsDeletedFalse()).thenReturn(List.of(new Step()));
-        when(routingRuleRepository.findAll()).thenReturn(List.of(new RoutingRule()));
+        when(userRepository.countUsersGroupByStatus()).thenReturn(List.of(
+                new Object[]{UserStatus.ACTIVE, 3L},
+                new Object[]{UserStatus.BLOCKED, 1L}
+        ));
+        when(userRepository.countUsersGroupByRole()).thenReturn(List.of(
+                new Object[]{"RESIDENT", 1L},
+                new Object[]{"STAFF", 1L},
+                new Object[]{"MANAGER", 1L},
+                new Object[]{"ADMIN", 1L}
+        ));
+
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of(department));
+        when(categoryRepository.countByIsDeletedFalse()).thenReturn(1L);
+        when(categoryRepository.countByIsActiveTrueAndIsDeletedFalse()).thenReturn(1L);
+        when(subCategoryRepository.countByIsDeletedFalse()).thenReturn(1L);
+        when(subCategoryRepository.countByIsActiveTrueAndIsDeletedFalse()).thenReturn(1L);
+        when(stepRepository.countByIsDeletedFalse()).thenReturn(1L);
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of(new RoutingRule()));
+
+        // Simulate 2 paginated batches for department KPI calculation
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(completedTicket, overdueInProgressTicket), PageRequest.of(0, 2), 3))
+                .thenReturn(new PageImpl<>(List.of(initiatedUnassignedTicket), PageRequest.of(1, 2), 3));
+        when(ticketStepRepository.findByTicketTicketIdIn(any()))
+                .thenReturn(List.of(completedStep, activeStep))
+                .thenReturn(List.of());
 
         AdminDashboardSummaryResponse summary = adminDashboardService.getDashboardSummary();
 
@@ -230,24 +244,29 @@ class AdminDashboardServiceTest {
         assertThat(summary.getConfigSummary().getTotalSteps()).isEqualTo(1L);
         assertThat(summary.getConfigSummary().getTotalRoutingRules()).isEqualTo(1L);
 
-        // Department KPIs
+        // Department KPIs across 2 batches
         assertThat(summary.getDepartmentSummaries()).hasSize(1);
         assertThat(summary.getDepartmentSummaries().get(0).getDepartmentId()).isEqualTo(deptId);
         assertThat(summary.getDepartmentSummaries().get(0).getTotalAssignedTickets()).isEqualTo(2L);
         assertThat(summary.getDepartmentSummaries().get(0).getResolvedOrCompletedTickets()).isEqualTo(1L);
         assertThat(summary.getDepartmentSummaries().get(0).getResolutionRate()).isEqualTo(50.0);
+
+        verify(ticketRepository, never()).findAll(any(Specification.class));
+        verify(ratingRepository, never()).findAll();
     }
 
     @Test
     @DisplayName("getAnalytics_and_exportAnalyticsCsv_returnsCompleteAnalyticsAndUtf8Csv")
     @SuppressWarnings("unchecked")
     void getAnalytics_and_exportAnalyticsCsv_returnsCompleteAnalyticsAndUtf8Csv() {
-        when(ticketRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(completedTicket, overdueInProgressTicket, initiatedUnassignedTicket));
-        when(ratingRepository.findAll()).thenReturn(List.of(rating));
-        when(departmentRepository.findAll()).thenReturn(List.of(department));
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(completedTicket, overdueInProgressTicket, initiatedUnassignedTicket)));
+        when(ticketStepRepository.findByTicketTicketIdIn(any()))
+                .thenReturn(List.of(completedStep, activeStep));
+        when(ratingRepository.findByTicket_TicketIdInAndIsDeletedFalse(any())).thenReturn(List.of(rating));
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of(department));
         when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(category));
-        when(routingRuleRepository.findAll()).thenReturn(List.of());
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of());
 
         AdminAnalyticsResponse analytics = adminDashboardService.getAnalytics(
                 null, null, "MONTH", null, null, null, null
@@ -294,12 +313,14 @@ class AdminDashboardServiceTest {
                 .ward("Phường Bến Nghé")
                 .build();
 
-        when(ticketRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(completedTicket, initiatedUnassignedTicket));
-        when(ratingRepository.findAll()).thenReturn(List.of());
-        when(departmentRepository.findAll()).thenReturn(List.of(department));
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(completedTicket, initiatedUnassignedTicket)));
+        when(ticketStepRepository.findByTicketTicketIdIn(any()))
+                .thenReturn(List.of(completedStep));
+        when(ratingRepository.findByTicket_TicketIdInAndIsDeletedFalse(any())).thenReturn(List.of());
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of(department));
         when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(category));
-        when(routingRuleRepository.findAll()).thenReturn(List.of(routingRule));
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of(routingRule));
 
         AdminAnalyticsResponse analytics = adminDashboardService.getAnalytics(
                 null, null, "DAY", null, null, deptId, null
@@ -333,7 +354,7 @@ class AdminDashboardServiceTest {
         TicketStep lateStep = TicketStep.builder()
                 .id(UUID.randomUUID())
                 .ticket(lateResolvedTicket)
-                .assignee(completedTicket.getSteps().get(0).getAssignee())
+                .assignee(completedStep.getAssignee())
                 .status(AssignmentStatus.RESOLVED)
                 .completedAt(now.minusHours(1))
                 .build();
@@ -352,7 +373,7 @@ class AdminDashboardServiceTest {
         TicketStep noDeadlineStep = TicketStep.builder()
                 .id(UUID.randomUUID())
                 .ticket(noDeadlineResolvedTicket)
-                .assignee(completedTicket.getSteps().get(0).getAssignee())
+                .assignee(completedStep.getAssignee())
                 .status(AssignmentStatus.COMPLETED)
                 .completedAt(now.minusHours(2))
                 .build();
@@ -372,18 +393,20 @@ class AdminDashboardServiceTest {
         TicketStep stepWithoutCompletedAt = TicketStep.builder()
                 .id(UUID.randomUUID())
                 .ticket(noStepCompletedAtTicket)
-                .assignee(completedTicket.getSteps().get(0).getAssignee())
+                .assignee(completedStep.getAssignee())
                 .status(AssignmentStatus.COMPLETED)
                 .completedAt(null)
                 .build();
         noStepCompletedAtTicket.setSteps(List.of(stepWithoutCompletedAt));
 
-        when(ticketRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(lateResolvedTicket, noDeadlineResolvedTicket, noStepCompletedAtTicket));
-        when(ratingRepository.findAll()).thenReturn(List.of());
-        when(departmentRepository.findAll()).thenReturn(List.of(department));
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(lateResolvedTicket, noDeadlineResolvedTicket, noStepCompletedAtTicket)));
+        when(ticketStepRepository.findByTicketTicketIdIn(any()))
+                .thenReturn(List.of(lateStep, noDeadlineStep, stepWithoutCompletedAt));
+        when(ratingRepository.findByTicket_TicketIdInAndIsDeletedFalse(any())).thenReturn(List.of());
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of(department));
         when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of());
-        when(routingRuleRepository.findAll()).thenReturn(List.of());
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of());
 
         AdminAnalyticsResponse analytics = adminDashboardService.getAnalytics(
                 null, null, "DAY", null, null, null, null
@@ -420,11 +443,13 @@ class AdminDashboardServiceTest {
                 .isActive(true)
                 .build();
 
-        when(ticketRepository.findAll(any(Specification.class))).thenReturn(List.of(formulaTicket));
-        when(ratingRepository.findAll()).thenReturn(List.of());
-        when(departmentRepository.findAll()).thenReturn(List.of(formulaDept));
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(formulaTicket)));
+        when(ticketStepRepository.findByTicketTicketIdIn(any())).thenReturn(List.of());
+        when(ratingRepository.findByTicket_TicketIdInAndIsDeletedFalse(any())).thenReturn(List.of());
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of(formulaDept));
         when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(formulaCat));
-        when(routingRuleRepository.findAll()).thenReturn(List.of());
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of());
 
         byte[] csvBytes = adminDashboardService.exportAnalyticsCsv(
                 null, null, "DAY", null, null, null, null

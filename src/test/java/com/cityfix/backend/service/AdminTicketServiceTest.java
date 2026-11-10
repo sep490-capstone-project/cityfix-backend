@@ -188,6 +188,42 @@ class AdminTicketServiceTest {
     }
 
     @Test
+    @DisplayName("getAllTickets_routingRuleDoesNotMatchLocation_doesNotAssignArbitraryDepartment")
+    @SuppressWarnings("unchecked")
+    void getAllTickets_routingRuleDoesNotMatchLocation_doesNotAssignArbitraryDepartment() {
+        Pageable pageable = PageRequest.of(0, 20);
+        AdminTicketFilterRequest filter = AdminTicketFilterRequest.builder().build();
+
+        TicketResponse mappedResponse = TicketResponse.builder()
+                .id(ticketId)
+                .description(ticket.getDescription())
+                .status(TicketStatus.INITIATED)
+                .build();
+
+        // RoutingRule belongs to the same category, but for a completely different province/ward (Hà Nội)
+        RoutingRule nonMatchingRule = RoutingRule.builder()
+                .ruleId(UUID.randomUUID())
+                .category(category)
+                .department(department)
+                .province("Thành phố Hà Nội")
+                .ward("Phường Hàng Trống")
+                .build();
+
+        when(ticketRepository.findAll(any(Specification.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(ticket), pageable, 1));
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(mappedResponse);
+        when(routingRuleRepository.findByCategoryCategoryIdInAndIsDeletedFalse(any()))
+                .thenReturn(List.of(nonMatchingRule));
+
+        Page<TicketResponse> result = adminTicketService.getAllTickets(filter, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        TicketResponse item = result.getContent().get(0);
+        assertThat(item.getDepartmentId()).isNull();
+        assertThat(item.getDepartmentName()).isNull();
+    }
+
+    @Test
     @DisplayName("getTicketDetail_existingTicket_returnsFullAdminTicketDetailResponse")
     void getTicketDetail_existingTicket_returnsFullAdminTicketDetailResponse() {
         User staff = User.builder()

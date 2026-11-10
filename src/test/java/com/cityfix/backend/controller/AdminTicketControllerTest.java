@@ -24,6 +24,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -67,7 +69,7 @@ class AdminTicketControllerTest {
     }
 
     @Test
-    @DisplayName("getAllTickets_validFilterParams_returns200OK")
+    @DisplayName("getAllTickets_validFilterParams_returns200OKAndIncludesFullEndOfDay")
     void getAllTickets_validFilterParams_returns200OK() {
         Pageable pageable = PageRequest.of(0, 20);
         Page<TicketResponse> page = new PageImpl<>(List.of(sampleTicketResponse), pageable, 1);
@@ -104,8 +106,8 @@ class AdminTicketControllerTest {
         assertThat(captured.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         assertThat(captured.getPriority()).isEqualTo(Priority.MEDIUM);
         assertThat(captured.getUnassigned()).isFalse();
-        assertThat(captured.getFromDate()).isNotNull();
-        assertThat(captured.getToDate()).isNotNull();
+        assertThat(captured.getFromDate()).isEqualTo(LocalDate.of(2026, 11, 1).atStartOfDay());
+        assertThat(captured.getToDate()).isEqualTo(LocalDate.of(2026, 11, 10).atTime(LocalTime.MAX));
     }
 
     @Test
