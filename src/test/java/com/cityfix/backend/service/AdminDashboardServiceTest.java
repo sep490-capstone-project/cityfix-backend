@@ -358,8 +358,28 @@ class AdminDashboardServiceTest {
                 .build();
         noDeadlineResolvedTicket.setSteps(List.of(noDeadlineStep));
 
+        // 3. Resolved ticket with deadline and updatedAt before deadline, but missing TicketStep.completedAt
+        // Must NOT fallback to updatedAt and must be excluded from SLA denominator
+        Ticket noStepCompletedAtTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sự cố thiếu completedAt trên step")
+                .priority(Priority.MEDIUM)
+                .status(TicketStatus.COMPLETED)
+                .createdAt(now.minusHours(12))
+                .updatedAt(now.minusHours(8))
+                .deadline(now.minusHours(2))
+                .build();
+        TicketStep stepWithoutCompletedAt = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(noStepCompletedAtTicket)
+                .assignee(completedTicket.getSteps().get(0).getAssignee())
+                .status(AssignmentStatus.COMPLETED)
+                .completedAt(null)
+                .build();
+        noStepCompletedAtTicket.setSteps(List.of(stepWithoutCompletedAt));
+
         when(ticketRepository.findAll(any(Specification.class)))
-                .thenReturn(List.of(lateResolvedTicket, noDeadlineResolvedTicket));
+                .thenReturn(List.of(lateResolvedTicket, noDeadlineResolvedTicket, noStepCompletedAtTicket));
         when(ratingRepository.findAll()).thenReturn(List.of());
         when(departmentRepository.findAll()).thenReturn(List.of(department));
         when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of());
@@ -369,8 +389,8 @@ class AdminDashboardServiceTest {
                 null, null, "DAY", null, null, null, null
         );
 
-        // Total resolved = 2, but only lateResolvedTicket has SLA deadline, and it was late -> 0.0% on-time rate
-        assertThat(analytics.getOverview().getResolvedOrCompletedTickets()).isEqualTo(2L);
+        // Total resolved = 3, but only lateResolvedTicket has both deadline and TicketStep.completedAt, and it was late -> 0.0% on-time rate
+        assertThat(analytics.getOverview().getResolvedOrCompletedTickets()).isEqualTo(3L);
         assertThat(analytics.getOverview().getOnTimeResolutionRate()).isEqualTo(0.0);
         assertThat(analytics.getDepartmentBreakdown()).hasSize(1);
         assertThat(analytics.getDepartmentBreakdown().get(0).getOnTimeRate()).isEqualTo(0.0);

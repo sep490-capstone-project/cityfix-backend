@@ -760,16 +760,14 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     private LocalDateTime resolveCompletionTime(Ticket ticket) {
-        if (ticket.getSteps() != null && !ticket.getSteps().isEmpty()) {
-            Optional<LocalDateTime> maxStepCompletion = ticket.getSteps().stream()
-                    .filter(s -> s != null && !s.isDeleted() && s.getCompletedAt() != null)
-                    .map(TicketStep::getCompletedAt)
-                    .max(LocalDateTime::compareTo);
-            if (maxStepCompletion.isPresent()) {
-                return maxStepCompletion.get();
-            }
+        if (ticket == null || ticket.getSteps() == null || ticket.getSteps().isEmpty()) {
+            return null;
         }
-        return ticket.getUpdatedAt();
+        return ticket.getSteps().stream()
+                .filter(s -> s != null && !s.isDeleted() && s.getCompletedAt() != null)
+                .map(TicketStep::getCompletedAt)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
     }
 
     private double calculateAverageResolutionHours(List<Ticket> resolvedTickets) {
