@@ -247,6 +247,7 @@ class AdminDashboardServiceTest {
         when(ratingRepository.findAll()).thenReturn(List.of(rating));
         when(departmentRepository.findAll()).thenReturn(List.of(department));
         when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(category));
+        when(routingRuleRepository.findAll()).thenReturn(List.of());
 
         AdminAnalyticsResponse analytics = adminDashboardService.getAnalytics(
                 null, null, "MONTH", null, null, null, null
@@ -273,5 +274,146 @@ class AdminDashboardServiceTest {
         assertThat(csvContent).contains("=== THONG KE THEO KHU VUC DIA LY (GEOGRAPHIC BREAKDOWN) ===");
         assertThat(csvContent).contains("Sở Hạ tầng Kỹ thuật");
         assertThat(csvContent).contains("Chiếu sáng đô thị");
+    }
+
+    @Test
+    @DisplayName("getAnalytics_unassignedTicketMatchedByRoutingRule_includedInDepartmentBreakdown")
+    @SuppressWarnings("unchecked")
+    void getAnalytics_unassignedTicketMatchedByRoutingRule_includedInDepartmentBreakdown() {
+        initiatedUnassignedTicket.setAddress("12 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh");
+        initiatedUnassignedTicket.setSubCategories(List.of(TicketSubCategory.builder()
+                .ticket(initiatedUnassignedTicket)
+                .subCategory(subCategory)
+                .build()));
+
+        RoutingRule routingRule = RoutingRule.builder()
+                .ruleId(UUID.randomUUID())
+                .category(category)
+                .department(department)
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .build();
+
+        when(ticketRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of(completedTicket, initiatedUnassignedTicket));
+        when(ratingRepository.findAll()).thenReturn(List.of());
+        when(departmentRepository.findAll()).thenReturn(List.of(department));
+        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(category));
+        when(routingRuleRepository.findAll()).thenReturn(List.of(routingRule));
+
+        AdminAnalyticsResponse analytics = adminDashboardService.getAnalytics(
+                null, null, "DAY", null, null, deptId, null
+        );
+
+        assertThat(analytics.getDepartmentBreakdown()).hasSize(1);
+        AdminAnalyticsResponse.DepartmentAnalyticsItem deptItem = analytics.getDepartmentBreakdown().get(0);
+        // Includes both completedTicket (assigned via step) and initiatedUnassignedTicket (matched via RoutingRule)
+        assertThat(deptItem.getTotalTickets()).isEqualTo(2L);
+        assertThat(deptItem.getResolvedOrCompletedTickets()).isEqualTo(1L);
+        assertThat(deptItem.getInProgressTickets()).isEqualTo(1L);
+        assertThat(deptItem.getResolutionRate()).isEqualTo(50.0);
+    }
+
+    @Test
+    @DisplayName("getAnalytics_resolvedTicketsMissingSlaData_excludedFromOnTimeRateDenominator")
+    @SuppressWarnings("unchecked")
+    void getAnalytics_resolvedTicketsMissingSlaData_excludedFromOnTimeRateDenominator() {
+        LocalDateTime now = LocalDateTime.now();
+
+        // 1. Late resolved ticket (completedAt AFTER deadline -> NOT on time)
+        Ticket lateResolvedTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sự cố trễ hạn")
+                .priority(Priority.HIGH)
+                .status(TicketStatus.RESOLVED)
+                .createdAt(now.minusHours(20))
+                .updatedAt(now.minusHours(1))
+                .deadline(now.minusHours(5))
+                .build();
+        TicketStep lateStep = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(lateResolvedTicket)
+                .assignee(completedTicket.getSteps().get(0).getAssignee())
+                .status(AssignmentStatus.RESOLVED)
+                .completedAt(now.minusHours(1))
+                .build();
+        lateResolvedTicket.setSteps(List.of(lateStep));
+
+        // 2. Resolved ticket without deadline (missing SLA data -> must NOT inflate onTimeResolutionRate)
+        Ticket noDeadlineResolvedTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sự cố không có deadline")
+                .priority(Priority.LOW)
+                .status(TicketStatus.COMPLETED)
+                .createdAt(now.minusHours(10))
+                .updatedAt(now.minusHours(2))
+                .deadline(null)
+                .build();
+        TicketStep noDeadlineStep = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(noDeadlineResolvedTicket)
+                .assignee(completedTicket.getSteps().get(0).getAssignee())
+                .status(AssignmentStatus.COMPLETED)
+                .completedAt(now.minusHours(2))
+                .build();
+        noDeadlineResolvedTicket.setSteps(List.of(noDeadlineStep));
+
+        when(ticketRepository.findAll(any(Specification.class)))
+                .thenReturn(List.of(lateResolvedTicket, noDeadlineResolvedTicket));
+        when(ratingRepository.findAll()).thenReturn(List.of());
+        when(departmentRepository.findAll()).thenReturn(List.of(department));
+        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of());
+        when(routingRuleRepository.findAll()).thenReturn(List.of());
+
+        AdminAnalyticsResponse analytics = adminDashboardService.getAnalytics(
+                null, null, "DAY", null, null, null, null
+        );
+
+        // Total resolved = 2, but only lateResolvedTicket has SLA deadline, and it was late -> 0.0% on-time rate
+        assertThat(analytics.getOverview().getResolvedOrCompletedTickets()).isEqualTo(2L);
+        assertThat(analytics.getOverview().getOnTimeResolutionRate()).isEqualTo(0.0);
+        assertThat(analytics.getDepartmentBreakdown()).hasSize(1);
+        assertThat(analytics.getDepartmentBreakdown().get(0).getOnTimeRate()).isEqualTo(0.0);
+    }
+
+    @Test
+    @DisplayName("exportAnalyticsCsv_formulaPrefixInValues_neutralizedWithSingleQuote")
+    @SuppressWarnings("unchecked")
+    void exportAnalyticsCsv_formulaPrefixInValues_neutralizedWithSingleQuote() {
+        Ticket formulaTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Test CSV injection")
+                .address("12 Đường A, =CMD|' /C calc'!A0, Quận 1, @SUM(1+1)")
+                .priority(Priority.LOW)
+                .status(TicketStatus.INITIATED)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        Department formulaDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("+Sở Công thức")
+                .build();
+
+        Category formulaCat = Category.builder()
+                .categoryId(UUID.randomUUID())
+                .name("-Danh mục âm")
+                .isActive(true)
+                .build();
+
+        when(ticketRepository.findAll(any(Specification.class))).thenReturn(List.of(formulaTicket));
+        when(ratingRepository.findAll()).thenReturn(List.of());
+        when(departmentRepository.findAll()).thenReturn(List.of(formulaDept));
+        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(formulaCat));
+        when(routingRuleRepository.findAll()).thenReturn(List.of());
+
+        byte[] csvBytes = adminDashboardService.exportAnalyticsCsv(
+                null, null, "DAY", null, null, null, null
+        );
+        String csv = new String(csvBytes, StandardCharsets.UTF_8);
+
+        assertThat(csv).contains("'@SUM(1+1)");
+        assertThat(csv).contains("'=CMD|' /C calc'!A0");
+        assertThat(csv).contains("'+Sở Công thức");
+        assertThat(csv).contains("'-Danh mục âm");
     }
 }

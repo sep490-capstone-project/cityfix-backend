@@ -135,9 +135,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         List<SubCategory> subCategories = subCategoryRepository.findByIsDeletedFalse();
         long activeSubCategoriesCount = subCategories.stream().filter(SubCategory::isActive).count();
         List<Step> steps = stepRepository.findByIsDeletedFalse();
-        long totalRoutingRules = routingRuleRepository.findAll().stream()
+        List<RoutingRule> activeRoutingRules = routingRuleRepository.findAll().stream()
                 .filter(r -> r != null && !r.isDeleted())
-                .count();
+                .toList();
+        long totalRoutingRules = activeRoutingRules.size();
 
         ConfigKpiSummary configSummary = ConfigKpiSummary.builder()
                 .totalDepartments(activeDepartments.size())
@@ -150,7 +151,7 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .build();
 
         // 4. Department Summaries
-        List<DepartmentKpiItem> departmentSummaries = buildDepartmentKpiItems(activeDepartments, allTickets, now);
+        List<DepartmentKpiItem> departmentSummaries = buildDepartmentKpiItems(activeDepartments, allTickets, activeRoutingRules, now);
 
         return AdminDashboardSummaryResponse.builder()
                 .ticketSummary(ticketSummary)
@@ -193,6 +194,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .filter(r -> r != null && !r.isDeleted() && r.getTicket() != null && ticketIds.contains(r.getTicket().getTicketId()))
                 .collect(Collectors.groupingBy(r -> r.getTicket().getTicketId()));
 
+        List<RoutingRule> activeRoutingRules = routingRuleRepository.findAll().stream()
+                .filter(r -> r != null && !r.isDeleted())
+                .toList();
+
         // 1. Overview
         AnalyticsOverview overview = buildAnalyticsOverview(tickets, ratingsByTicket, now);
 
@@ -207,7 +212,9 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .filter(d -> d != null && !d.isDeleted())
                 .filter(d -> departmentId == null || departmentId.equals(d.getDepartmentId()))
                 .toList();
-        List<DepartmentAnalyticsItem> departmentBreakdown = buildDepartmentBreakdown(departments, tickets, ratingsByTicket, now);
+        List<DepartmentAnalyticsItem> departmentBreakdown = buildDepartmentBreakdown(
+                departments, tickets, ratingsByTicket, activeRoutingRules, now
+        );
 
         // 5. Category Breakdown
         List<Category> categories = categoryRepository.findAllByIsDeletedFalse().stream()
@@ -365,12 +372,16 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .filter(t -> isResolvedOrCompleted(t.getStatus()))
                 .toList();
 
-        long onTimeCount = resolvedTicketsList.stream()
+        List<Ticket> slaEligibleResolvedList = resolvedTicketsList.stream()
+                .filter(this::hasSlaData)
+                .toList();
+
+        long onTimeCount = slaEligibleResolvedList.stream()
                 .filter(this::isResolvedOnTime)
                 .count();
 
-        double onTimeResolutionRate = !resolvedTicketsList.isEmpty()
-                ? round2(((double) onTimeCount / resolvedTicketsList.size()) * 100.0)
+        double onTimeResolutionRate = !slaEligibleResolvedList.isEmpty()
+                ? round2(((double) onTimeCount / slaEligibleResolvedList.size()) * 100.0)
                 : 0.0;
 
         double avgResolutionHours = calculateAverageResolutionHours(resolvedTicketsList);
@@ -491,13 +502,14 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     private List<DepartmentKpiItem> buildDepartmentKpiItems(
             List<Department> departments,
             List<Ticket> allTickets,
+            List<RoutingRule> activeRoutingRules,
             LocalDateTime now) {
 
         List<DepartmentKpiItem> items = new ArrayList<>();
         for (Department dept : departments) {
             UUID deptId = dept.getDepartmentId();
             List<Ticket> deptTickets = allTickets.stream()
-                    .filter(t -> isTicketAssignedToDepartment(t, deptId))
+                    .filter(t -> isTicketBelongingToDepartment(t, deptId, activeRoutingRules))
                     .toList();
 
             long total = deptTickets.size();
@@ -535,13 +547,14 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             List<Department> departments,
             List<Ticket> tickets,
             Map<UUID, List<Rating>> ratingsByTicket,
+            List<RoutingRule> activeRoutingRules,
             LocalDateTime now) {
 
         List<DepartmentAnalyticsItem> items = new ArrayList<>();
         for (Department dept : departments) {
             UUID deptId = dept.getDepartmentId();
             List<Ticket> deptTickets = tickets.stream()
-                    .filter(t -> isTicketAssignedToDepartment(t, deptId))
+                    .filter(t -> isTicketBelongingToDepartment(t, deptId, activeRoutingRules))
                     .toList();
 
             long total = deptTickets.size();
@@ -561,8 +574,13 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
 
             double resolutionRate = valid > 0 ? round2(((double) resolved / valid) * 100.0) : 0.0;
 
-            long onTime = resolvedList.stream().filter(this::isResolvedOnTime).count();
-            double onTimeRate = !resolvedList.isEmpty() ? round2(((double) onTime / resolvedList.size()) * 100.0) : 0.0;
+            List<Ticket> slaEligibleResolved = resolvedList.stream()
+                    .filter(this::hasSlaData)
+                    .toList();
+            long onTime = slaEligibleResolved.stream().filter(this::isResolvedOnTime).count();
+            double onTimeRate = !slaEligibleResolved.isEmpty()
+                    ? round2(((double) onTime / slaEligibleResolved.size()) * 100.0)
+                    : 0.0;
 
             double avgHours = calculateAverageResolutionHours(resolvedList);
 
@@ -628,6 +646,19 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                 .noneMatch(s -> s != null && !s.isDeleted() && s.getAssignee() != null);
     }
 
+    private boolean isTicketBelongingToDepartment(Ticket ticket, UUID departmentId, List<RoutingRule> activeRoutingRules) {
+        if (ticket == null || departmentId == null) {
+            return false;
+        }
+        if (isTicketAssignedToDepartment(ticket, departmentId)) {
+            return true;
+        }
+        if (!isTicketUnassigned(ticket) || activeRoutingRules == null || activeRoutingRules.isEmpty()) {
+            return false;
+        }
+        return isUnassignedTicketRoutedToDepartment(ticket, departmentId, activeRoutingRules);
+    }
+
     private boolean isTicketAssignedToDepartment(Ticket ticket, UUID departmentId) {
         if (ticket == null || departmentId == null || ticket.getSteps() == null) {
             return false;
@@ -645,6 +676,43 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
                             return true;
                         }
                     }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isUnassignedTicketRoutedToDepartment(
+            Ticket ticket,
+            UUID departmentId,
+            List<RoutingRule> activeRoutingRules) {
+
+        if (ticket.getSubCategories() == null || ticket.getSubCategories().isEmpty()) {
+            return false;
+        }
+        String address = ticket.getAddress() != null ? ticket.getAddress().toLowerCase() : "";
+        for (TicketSubCategory tsc : ticket.getSubCategories()) {
+            if (tsc == null || tsc.getSubCategory() == null || tsc.getSubCategory().getCategory() == null) {
+                continue;
+            }
+            UUID catId = tsc.getSubCategory().getCategory().getCategoryId();
+            if (catId == null) {
+                continue;
+            }
+            for (RoutingRule rule : activeRoutingRules) {
+                if (rule == null || rule.isDeleted() || rule.getDepartment() == null || rule.getCategory() == null) {
+                    continue;
+                }
+                if (!departmentId.equals(rule.getDepartment().getDepartmentId())
+                        || !catId.equals(rule.getCategory().getCategoryId())) {
+                    continue;
+                }
+                boolean provinceMatch = rule.getProvince() == null || rule.getProvince().isBlank()
+                        || address.contains(rule.getProvince().toLowerCase());
+                boolean wardMatch = rule.getWard() == null || rule.getWard().isBlank()
+                        || address.contains(rule.getWard().toLowerCase());
+                if (provinceMatch && wardMatch) {
+                    return true;
                 }
             }
         }
@@ -676,16 +744,17 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         return ticket.getDeadline().isBefore(now);
     }
 
+    private boolean hasSlaData(Ticket ticket) {
+        return ticket != null && ticket.getDeadline() != null && resolveCompletionTime(ticket) != null;
+    }
+
     private boolean isResolvedOnTime(Ticket ticket) {
-        if (ticket == null) {
+        if (ticket == null || ticket.getDeadline() == null) {
             return false;
-        }
-        if (ticket.getDeadline() == null) {
-            return true;
         }
         LocalDateTime resolvedTime = resolveCompletionTime(ticket);
         if (resolvedTime == null) {
-            return true;
+            return false;
         }
         return !resolvedTime.isAfter(ticket.getDeadline());
     }
@@ -772,13 +841,22 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
     }
 
     private String escapeCsv(String value) {
-        if (value == null) {
+        if (value == null || value.isEmpty()) {
             return "";
         }
-        if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
-            return "\"" + value.replace("\"", "\"\"") + "\"";
+        String sanitized = value;
+        String trimmedLeading = sanitized.stripLeading();
+        if (!trimmedLeading.isEmpty()) {
+            char firstChar = trimmedLeading.charAt(0);
+            if (firstChar == '=' || firstChar == '+' || firstChar == '-' || firstChar == '@'
+                    || sanitized.charAt(0) == '\t' || sanitized.charAt(0) == '\r') {
+                sanitized = "'" + sanitized;
+            }
         }
-        return value;
+        if (sanitized.contains(",") || sanitized.contains("\"") || sanitized.contains("\n") || sanitized.contains("\r")) {
+            return "\"" + sanitized.replace("\"", "\"\"") + "\"";
+        }
+        return sanitized;
     }
 
     private double round2(double value) {

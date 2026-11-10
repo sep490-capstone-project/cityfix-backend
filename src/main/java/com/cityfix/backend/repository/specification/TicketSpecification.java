@@ -82,6 +82,7 @@ public final class TicketSpecification {
             if (filter.getDepartmentId() != null && query != null) {
                 UUID deptId = filter.getDepartmentId();
 
+                // 6a. Assigned directly via TicketStep.assignee.department or UserDepartment
                 Subquery<Integer> stepDeptSubquery = query.subquery(Integer.class);
                 Root<TicketStep> tsRoot = stepDeptSubquery.from(TicketStep.class);
                 Join<TicketStep, User> assigneeJoin = tsRoot.join("assignee", JoinType.INNER);
@@ -106,7 +107,48 @@ public final class TicketSpecification {
                                 )
                         );
 
-                predicates.add(cb.exists(stepDeptSubquery));
+                // 6b. Fallback via RoutingRule when ticket has no active assigned TicketStep
+                Subquery<Integer> anyAssignedStepSubquery = query.subquery(Integer.class);
+                Root<TicketStep> tsAssignedRoot = anyAssignedStepSubquery.from(TicketStep.class);
+                anyAssignedStepSubquery.select(cb.literal(1))
+                        .where(
+                                cb.equal(tsAssignedRoot.get("ticket"), root),
+                                cb.isFalse(tsAssignedRoot.get("isDeleted")),
+                                cb.isNotNull(tsAssignedRoot.get("assignee"))
+                        );
+
+                Subquery<Integer> routingRuleSubquery = query.subquery(Integer.class);
+                Root<RoutingRule> rrRoot = routingRuleSubquery.from(RoutingRule.class);
+                Root<TicketSubCategory> tscRoot = routingRuleSubquery.from(TicketSubCategory.class);
+
+                Expression<String> lowerAddress = cb.lower(cb.coalesce(root.get("address"), ""));
+                Predicate provinceMatch = cb.or(
+                        cb.isNull(rrRoot.get("province")),
+                        cb.equal(cb.trim(rrRoot.get("province")), ""),
+                        cb.like(lowerAddress, cb.concat(cb.concat("%", cb.lower(rrRoot.get("province"))), "%"))
+                );
+                Predicate wardMatch = cb.or(
+                        cb.isNull(rrRoot.get("ward")),
+                        cb.equal(cb.trim(rrRoot.get("ward")), ""),
+                        cb.like(lowerAddress, cb.concat(cb.concat("%", cb.lower(rrRoot.get("ward"))), "%"))
+                );
+
+                routingRuleSubquery.select(cb.literal(1))
+                        .where(
+                                cb.equal(tscRoot.get("ticket"), root),
+                                cb.equal(rrRoot.get("category"), tscRoot.get("subCategory").get("category")),
+                                cb.equal(rrRoot.get("department").get("departmentId"), deptId),
+                                cb.isFalse(rrRoot.get("isDeleted")),
+                                provinceMatch,
+                                wardMatch
+                        );
+
+                Predicate unassignedAndRoutedToDept = cb.and(
+                        cb.not(cb.exists(anyAssignedStepSubquery)),
+                        cb.exists(routingRuleSubquery)
+                );
+
+                predicates.add(cb.or(cb.exists(stepDeptSubquery), unassignedAndRoutedToDept));
             }
 
             // 7. Unassigned flag (true = no active TicketStep with non-null assignee; false = has at least one assigned TicketStep)
