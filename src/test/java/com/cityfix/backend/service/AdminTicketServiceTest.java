@@ -225,6 +225,23 @@ class AdminTicketServiceTest {
     }
 
     @Test
+    @DisplayName("getAllTickets_pageBeyondLastPage_returnsEmptyContentButPreservesTotalElements")
+    @SuppressWarnings("unchecked")
+    void getAllTickets_pageBeyondLastPage_returnsEmptyContentButPreservesTotalElements() {
+        Pageable outOfRangePageable = PageRequest.of(5, 20);
+        AdminTicketFilterRequest filter = AdminTicketFilterRequest.builder().build();
+
+        when(ticketRepository.findAll(any(Specification.class), eq(outOfRangePageable)))
+                .thenReturn(new PageImpl<>(List.of(), outOfRangePageable, 42L));
+
+        Page<TicketResponse> result = adminTicketService.getAllTickets(filter, outOfRangePageable);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(42L);
+        assertThat(result.getTotalPages()).isEqualTo(3);
+    }
+
+    @Test
     @DisplayName("getTicketDetail_existingTicket_returnsFullAdminTicketDetailResponse")
     void getTicketDetail_existingTicket_returnsFullAdminTicketDetailResponse() {
         User staff = User.builder()

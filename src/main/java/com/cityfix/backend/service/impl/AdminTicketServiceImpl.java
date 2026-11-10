@@ -45,7 +45,7 @@ public class AdminTicketServiceImpl implements AdminTicketService {
         Page<Ticket> ticketsPage = ticketRepository.findAll(TicketSpecification.withFilter(filter), pageable);
         List<Ticket> pageTickets = ticketsPage.getContent();
         if (pageTickets.isEmpty()) {
-            return Page.empty(pageable);
+            return new PageImpl<>(Collections.emptyList(), pageable, ticketsPage.getTotalElements());
         }
 
         List<UUID> ticketIds = pageTickets.stream()
