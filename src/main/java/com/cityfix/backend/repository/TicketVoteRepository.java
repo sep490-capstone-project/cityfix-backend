@@ -14,6 +14,8 @@ import java.util.UUID;
 public interface TicketVoteRepository extends JpaRepository<TicketVote, UUID> {
     boolean existsByTicket_TicketIdAndUser_UserId(UUID ticketId, UUID userId);
 
+    long countByTicket_TicketId(UUID ticketId);
+
     @Query("SELECT DISTINCT tv.user FROM TicketVote tv WHERE tv.ticket.ticketId = :ticketId AND tv.user.isDeleted = false AND tv.user.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE")
     List<User> findUpvotersByTicketId(@Param("ticketId") UUID ticketId);
 }
