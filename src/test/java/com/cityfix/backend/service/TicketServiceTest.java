@@ -60,6 +60,9 @@ class TicketServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private UserDepartmentRepository userDepartmentRepository;
+
+    @Mock
     private CategoryRepository categoryRepository;
 
     @Mock
@@ -1839,7 +1842,7 @@ class TicketServiceTest {
         when(ticketRepository.findLifeThreateningTicketsByWard(
                 eq("Phường Bến Nghé"),
                 eq("Bến Nghé"),
-                eq("TP. Hồ Chí Minh"),
+                eq("Hồ Chí Minh"),
                 eq(expectedStatuses),
                 eq(pageable)
         )).thenReturn(ticketPage);
@@ -1854,7 +1857,7 @@ class TicketServiceTest {
         assertThat(result.getContent().get(0).getId()).isEqualTo(ticket.getTicketId());
 
         verify(ticketRepository).findLifeThreateningTicketsByWard(
-                "Phường Bến Nghé", "Bến Nghé", "TP. Hồ Chí Minh", expectedStatuses, pageable
+                "Phường Bến Nghé", "Bến Nghé", "Hồ Chí Minh", expectedStatuses, pageable
         );
         verify(ticketMapper).toTicketResponse(ticket);
     }
@@ -1998,7 +2001,7 @@ class TicketServiceTest {
         when(ticketRepository.findLifeThreateningTicketsByWard(
                 eq("P. 1"),
                 eq("Phường 1"),
-                eq("TP. Hồ Chí Minh"),
+                eq("Hồ Chí Minh"),
                 eq(expectedStatuses),
                 eq(pageable)
         )).thenReturn(ticketPage);
@@ -2013,9 +2016,115 @@ class TicketServiceTest {
         assertThat(result.getContent().get(0).getId()).isEqualTo(ticket.getTicketId());
 
         verify(ticketRepository).findLifeThreateningTicketsByWard(
-                "P. 1", "Phường 1", "TP. Hồ Chí Minh", expectedStatuses, pageable
+                "P. 1", "Phường 1", "Hồ Chí Minh", expectedStatuses, pageable
         );
         verify(ticketMapper).toTicketResponse(ticket);
+    }
+
+    @Test
+    @DisplayName("getLifeThreateningTicketsInSameWard_provinceVariants_normalizesToCoreKeywordHoChiMinh")
+    void getLifeThreateningTicketsInSameWard_provinceVariants_normalizesToCoreKeywordHoChiMinh() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        mockUser.setWard("Phường Bến Nghé");
+
+        Ticket ticket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Cháy trạm biến áp")
+                .address("10 Đồng Khởi, Phường Bến Nghé, TP. Hồ Chí Minh")
+                .isLifeThreatening(true)
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+
+        TicketResponse expectedResponse = TicketResponse.builder()
+                .id(ticket.getTicketId())
+                .description(ticket.getDescription())
+                .address(ticket.getAddress())
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+
+        List<TicketStatus> expectedStatuses = List.of(
+                TicketStatus.ASSIGNED,
+                TicketStatus.IN_PROGRESS,
+                TicketStatus.RESOLVED
+        );
+
+        org.springframework.data.domain.Page<Ticket> ticketPage =
+                new org.springframework.data.domain.PageImpl<>(List.of(ticket), pageable, 1);
+
+        when(ticketRepository.findLifeThreateningTicketsByWard(
+                eq("Phường Bến Nghé"),
+                eq("Bến Nghé"),
+                eq("Hồ Chí Minh"),
+                eq(expectedStatuses),
+                eq(pageable)
+        )).thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(expectedResponse);
+
+        for (String variant : List.of("TP.HCM", "Thành phố Hồ Chí Minh", "Hồ Chí Minh")) {
+            mockUser.setProvince(variant);
+            org.springframework.data.domain.Page<TicketResponse> result =
+                    ticketService.getLifeThreateningTicketsInSameWard(pageable);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getContent()).hasSize(1);
+            assertThat(result.getContent().get(0).getId()).isEqualTo(ticket.getTicketId());
+        }
+
+        verify(ticketRepository, times(3)).findLifeThreateningTicketsByWard(
+                "Phường Bến Nghé", "Bến Nghé", "Hồ Chí Minh", expectedStatuses, pageable
+        );
+    }
+
+    @Test
+    @DisplayName("createTicket_normalizedPrefixAndUserDepartmentFallback_assignsSuccessfully")
+    void createTicket_normalizedPrefixAndUserDepartmentFallback_assignsSuccessfully() {
+        UUID subId = UUID.randomUUID();
+        createRequest.setSubCategoryIds(List.of(subId));
+        createRequest.setPriority(Priority.LOW);
+        createRequest.setConfidenceScore(95.0);
+        createRequest.setLatitude(10.776530);
+        createRequest.setLongitude(106.700980);
+        createRequest.setAddress("12 Lê Lợi, P. Bến Nghé, TP. Hồ Chí Minh");
+
+        SubCategory validSub = SubCategory.builder().subCategoryId(subId).category(mockCategory).isActive(true).build();
+        when(subCategoryRepository.findById(subId)).thenReturn(Optional.of(validSub));
+
+        when(locationService.getBoundaryFromCoordinates(10.776530, 106.700980))
+                .thenReturn(com.cityfix.backend.model.dto.response.LocationBoundary.builder()
+                        .province("TP. Hồ Chí Minh")
+                        .ward("P. Bến Nghé")
+                        .build());
+
+        UUID deptId = UUID.randomUUID();
+        Department dept = Department.builder().departmentId(deptId).name("UBND Phường Bến Nghé").build();
+        RoutingRule rule = RoutingRule.builder()
+                .department(dept)
+                .category(mockCategory)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .build();
+
+        when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(categoryId, "TP. Hồ Chí Minh", "P. Bến Nghé"))
+                .thenReturn(Optional.empty());
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(categoryId))
+                .thenReturn(List.of(rule));
+
+        // Bảng chính user_account không có staff, fallback sang bảng phụ user_department
+        when(userRepository.findRepresentativeStaffByDepartmentId(deptId)).thenReturn(Optional.empty());
+        User secondaryStaff = User.builder().userId(UUID.randomUUID()).fullName("Cán bộ kiêm nhiệm").build();
+        when(userDepartmentRepository.findActiveStaffByDepartmentId(deptId)).thenReturn(List.of(secondaryStaff));
+
+        Step stepEntity = Step.builder().stepId(UUID.randomUUID()).subCategory(validSub).stepName("Bước 1").build();
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subId)).thenReturn(List.of(stepEntity));
+
+        when(ticketRepository.save(any(Ticket.class))).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(any(Ticket.class))).thenReturn(mockResponse);
+
+        TicketResponse response = ticketService.createTicket(createRequest);
+
+        assertThat(response).isNotNull();
+        verify(userDepartmentRepository).findActiveStaffByDepartmentId(deptId);
+        verify(ticketStepRepository, atLeastOnce()).save(argThat(ts -> ts != null && secondaryStaff.equals(ts.getAssignee())));
     }
 }
 

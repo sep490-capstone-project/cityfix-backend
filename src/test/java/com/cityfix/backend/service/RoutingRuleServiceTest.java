@@ -182,14 +182,28 @@ class RoutingRuleServiceTest {
     @Test
     @DisplayName("getRoutingRulesByDepartment_validDepartmentId_returnsList")
     void getRoutingRulesByDepartment_validDepartmentId_returnsList() {
-        when(departmentRepository.existsById(departmentId)).thenReturn(true);
+        when(departmentRepository.existsByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(true);
         when(routingRuleRepository.findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(List.of(mockRule));
         when(routingRuleMapper.toResponseList(List.of(mockRule))).thenReturn(List.of(mockResponse));
 
         List<RoutingRuleResponse> result = routingRuleService.getRoutingRulesByDepartment(departmentId);
 
         assertThat(result).hasSize(1);
+        verify(departmentRepository, times(1)).existsByDepartmentIdAndIsDeletedFalse(departmentId);
         verify(routingRuleRepository, times(1)).findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);
+    }
+
+    @Test
+    @DisplayName("getRoutingRulesByDepartment_softDeletedOrNonExistentDepartment_throwsDepartmentNotFoundException")
+    void getRoutingRulesByDepartment_softDeletedOrNonExistentDepartment_throwsDepartmentNotFoundException() {
+        when(departmentRepository.existsByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(false);
+
+        assertThatThrownBy(() -> routingRuleService.getRoutingRulesByDepartment(departmentId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(routingRuleRepository, never()).findByDepartmentDepartmentIdAndIsDeletedFalse(any());
     }
 
     @Test
@@ -202,5 +216,60 @@ class RoutingRuleServiceTest {
         verify(routingRuleRepository, times(1)).save(mockRule);
         assertThat(mockRule.isDeleted()).isTrue();
         assertThat(mockRule.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("createRoutingRule_overlappingNormalizedLocation_throwsRoutingRuleConflictException")
+    void createRoutingRule_overlappingNormalizedLocation_throwsRoutingRuleConflictException() {
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+
+        CreateRoutingRuleRequest variantRequest = new CreateRoutingRuleRequest(
+                departmentId,
+                categoryId,
+                "TP. Hồ Chí Minh",
+                "P. Long Trường"
+        );
+
+        when(routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
+                categoryId, variantRequest.province(), variantRequest.ward())).thenReturn(false);
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(categoryId))
+                .thenReturn(List.of(mockRule));
+
+        assertThatThrownBy(() -> routingRuleService.createRoutingRule(variantRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ROUTING_RULE_CONFLICT);
+
+        verify(routingRuleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createRoutingRule_softDeletedDepartment_throwsDepartmentNotFoundException")
+    void createRoutingRule_softDeletedDepartment_throwsDepartmentNotFoundException() {
+        mockDepartment.setDeleted(true);
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+
+        assertThatThrownBy(() -> routingRuleService.createRoutingRule(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(routingRuleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createRoutingRule_softDeletedOrInactiveCategory_throwsCategoryNotFoundException")
+    void createRoutingRule_softDeletedOrInactiveCategory_throwsCategoryNotFoundException() {
+        mockCategory.setActive(false);
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(categoryRepository.findById(categoryId)).thenReturn(Optional.of(mockCategory));
+
+        assertThatThrownBy(() -> routingRuleService.createRoutingRule(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.CATEGORY_NOT_FOUND);
+
+        verify(routingRuleRepository, never()).save(any());
     }
 }

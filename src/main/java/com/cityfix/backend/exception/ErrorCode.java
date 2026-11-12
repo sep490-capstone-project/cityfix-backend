@@ -246,6 +246,16 @@ public enum ErrorCode {
     MANAGER_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "Không tìm thấy người quản lý phụ trách phòng ban của bạn"
+    ),
+
+    INVALID_TOKEN(
+            HttpStatus.BAD_REQUEST,
+            "Token xác thực không hợp lệ"
+    ),
+
+    USER_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Không tìm thấy người dùng"
     );
 
     private final HttpStatus status;
