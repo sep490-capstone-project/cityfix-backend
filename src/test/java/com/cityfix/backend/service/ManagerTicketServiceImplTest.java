@@ -1307,4 +1307,171 @@ class ManagerTicketServiceImplTest {
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.FORBIDDEN);
     }
+
+    @Test
+    @DisplayName("getInitiatedTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment")
+    void getInitiatedTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment() {
+        Department softDeletedDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng ban đã xóa")
+                .build();
+        softDeletedDept.setDeleted(true);
+
+        managerUser.setDepartment(softDeletedDept);
+        mockCurrentUser(managerUser);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(Collections.emptyList());
+
+        Pageable pageable = PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> managerTicketService.getInitiatedTickets(pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+
+        verify(ticketRepository, never()).findInitiatedTicketsByDepartmentIds(any(), any());
+    }
+
+    @Test
+    @DisplayName("getResolvedTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment")
+    void getResolvedTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment() {
+        Department softDeletedDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng ban đã xóa")
+                .build();
+        softDeletedDept.setDeleted(true);
+
+        managerUser.setDepartment(softDeletedDept);
+        mockCurrentUser(managerUser);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(Collections.emptyList());
+
+        Pageable pageable = PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> managerTicketService.getResolvedTickets(pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+
+        verify(ticketRepository, never()).findResolvedTicketsWithAllStepsResolvedByDepartmentIds(any(), any());
+    }
+
+    @Test
+    @DisplayName("getManagerAssignedDepartmentTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment")
+    void getManagerAssignedDepartmentTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment() {
+        Department softDeletedDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng ban đã xóa")
+                .build();
+        softDeletedDept.setDeleted(true);
+
+        managerUser.setDepartment(softDeletedDept);
+        mockCurrentUser(managerUser);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(Collections.emptyList());
+
+        Pageable pageable = PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> managerTicketService.getManagerAssignedDepartmentTickets(null, pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+
+        verify(ticketRepository, never()).findTicketsByAssigneeDepartmentIds(any(), any());
+    }
+
+    @Test
+    @DisplayName("getDepartmentTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment")
+    void getDepartmentTickets_asManagerWithSoftDeletedDepartment_throwsUserNotInDepartment() {
+        Department softDeletedDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng ban đã xóa")
+                .build();
+        softDeletedDept.setDeleted(true);
+
+        managerUser.setDepartment(softDeletedDept);
+        mockCurrentUser(managerUser);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(Collections.emptyList());
+
+        Pageable pageable = PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(null, null, null, pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+
+        verify(ticketRepository, never()).findTicketsByDepartmentAndCriteria(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("getManagerDepartments_asManagerWithSoftDeletedDepartment_returnsEmptyList")
+    void getManagerDepartments_asManagerWithSoftDeletedDepartment_returnsEmptyList() {
+        Department softDeletedDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng ban đã xóa")
+                .build();
+        softDeletedDept.setDeleted(true);
+
+        managerUser.setDepartment(softDeletedDept);
+        mockCurrentUser(managerUser);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(Collections.emptyList());
+
+        assertThat(managerTicketService.getManagerDepartments()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("reviewTicket_withAssigneeInSoftDeletedDepartment_throwsUserNotInDepartment")
+    void reviewTicket_withAssigneeInSoftDeletedDepartment_throwsUserNotInDepartment() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        UUID subCatId = UUID.randomUUID();
+        SubCategory mockSubCat = SubCategory.builder()
+                .subCategoryId(subCatId)
+                .name("Sự cố đường bộ")
+                .isActive(true)
+                .sla(24)
+                .build();
+
+        UUID stepId = UUID.randomUUID();
+        Step mockStep = Step.builder()
+                .stepId(stepId)
+                .stepName("Khảo sát hiện trường")
+                .build();
+
+        Department softDeletedDept = Department.builder()
+                .departmentId(UUID.randomUUID())
+                .name("Phòng đã xóa")
+                .build();
+        softDeletedDept.setDeleted(true);
+
+        User staffInDeletedDept = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Nguyễn Văn B")
+                .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
+                .department(softDeletedDept)
+                .build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
+        when(stepRepository.findAllById(any())).thenReturn(List.of(mockStep));
+        when(userRepository.findAllById(any())).thenReturn(List.of(staffInDeletedDept));
+        when(userDepartmentRepository.findUserIdsWithDepartment(any())).thenReturn(Collections.emptySet());
+
+        com.cityfix.backend.model.dto.request.ReviewTicketRequest request = com.cityfix.backend.model.dto.request.ReviewTicketRequest.builder()
+                .subCategoryIds(List.of(subCatId))
+                .steps(List.of(com.cityfix.backend.model.dto.request.ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(stepId)
+                        .assigneeId(staffInDeletedDept.getUserId())
+                        .deadline(LocalDateTime.now().plusHours(12))
+                        .build()))
+                .build();
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+    }
 }
