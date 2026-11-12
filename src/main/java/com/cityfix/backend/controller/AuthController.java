@@ -3,7 +3,9 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.mapper.UserMapper;
 import com.cityfix.backend.model.dto.request.LoginRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
+import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
+import com.cityfix.backend.model.dto.request.VerifyFirebaseTokenRequest;
 import com.cityfix.backend.model.dto.request.VerifyOtpRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.LoginResponse;
@@ -34,9 +36,12 @@ public class AuthController {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(BaseResponse.success("Mã OTP đã được gửi. Vui lòng kiểm tra email của bạn.", data));
+                .body(BaseResponse.success("Đăng ký thành công. Vui lòng xác thực số điện thoại của bạn.", data));
     }
 
+    /*
+     * [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+     *
     @PostMapping("/verify-email")
     public ResponseEntity<BaseResponse<Void>> verifyEmail(
             @Valid @RequestBody VerifyOtpRequest request) {
@@ -46,7 +51,31 @@ public class AuthController {
         return ResponseEntity
                 .ok(BaseResponse.success("Email đã được xác thực", null));
     }
+    */
 
+    @PostMapping("/verify-phone-firebase")
+    public ResponseEntity<BaseResponse<LoginResponse>> verifyPhoneFirebase(
+            @Valid @RequestBody VerifyFirebaseTokenRequest request) {
+
+        LoginResponse data = userService.verifyPhoneByFirebaseToken(request.getFirebaseIdToken());
+
+        return ResponseEntity
+                .ok(BaseResponse.success("Xác thực số điện thoại thành công", data));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<BaseResponse<Void>> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request) {
+
+        userService.resetPassword(request);
+
+        return ResponseEntity
+                .ok(BaseResponse.success("Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới.", null));
+    }
+
+    /*
+     * [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+     *
     @PostMapping("/resend-otp")
     public ResponseEntity<BaseResponse<Void>> resendOtp(
             @Valid @RequestBody ResendOtpRequest request) {
@@ -56,6 +85,7 @@ public class AuthController {
         return ResponseEntity
                 .ok(BaseResponse.success("Mã OPT mới đã được gửi tới email của bạn", null));
     }
+    */
 
     @PostMapping("/login")
     public ResponseEntity<BaseResponse<?>> login(@Valid @RequestBody LoginRequest request) {

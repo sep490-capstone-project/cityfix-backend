@@ -102,7 +102,7 @@ class UserServiceImplTest {
                 .role("RESIDENT")
                 .status(UserStatus.BLOCKED)
                 .createdAt(LocalDateTime.now())
-                .nextStep("VERIFY_EMAIL")
+                .nextStep("VERIFY_PHONE")
                 .build();
 
 
@@ -112,12 +112,13 @@ class UserServiceImplTest {
 
         assertThat(actualResponse).isNotNull();
         assertThat(actualResponse.getEmail()).isEqualTo("nguyenvana@gmail.com");
-        assertThat(actualResponse.getNextStep()).isEqualTo("VERIFY_EMAIL");
+        assertThat(actualResponse.getNextStep()).isEqualTo("VERIFY_PHONE");
 
         verify(passwordEncoder, times(1)).encode("password123");
         verify(userRepository, times(1)).save(any(User.class));
-        verify(otpService, times(1)).generateAndStore("nguyenvana@gmail.com");
-        verify(emailService, times(1)).sendOtpEmail("nguyenvana@gmail.com", "123456");
+        // [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+        // verify(otpService, times(1)).generateAndStore("nguyenvana@gmail.com");
+        // verify(emailService, times(1)).sendOtpEmail("nguyenvana@gmail.com", "123456");
     }
 
     @Test
@@ -273,5 +274,86 @@ class UserServiceImplTest {
         verify(userRepository, times(1)).save(mockUser);
 
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("verifyPhoneByFirebaseToken_validE164Phone_activatesUserAndReturnsTokens")
+    void verifyPhoneByFirebaseToken_validE164Phone_activatesUserAndReturnsTokens() throws Exception {
+        mockUser.setStatus(UserStatus.BLOCKED);
+        mockUser.setEmailVerified(false);
+        mockUser.setPhoneNumber("0912345678");
+
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Map.of("phone_number", "+84912345678"));
+        when(mockFirebaseAuth.verifyIdToken("valid-firebase-token")).thenReturn(mockFirebaseToken);
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0912345678")).thenReturn(Optional.of(mockUser));
+        when(tokenService.generateAccessToken(mockUser)).thenReturn("jwt-access-token");
+        when(tokenService.generateRefreshToken(mockUser)).thenReturn("jwt-refresh-token");
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            LoginResponse result = userService.verifyPhoneByFirebaseToken("valid-firebase-token");
+
+            assertThat(result).isNotNull();
+            assertThat(result.getAccessToken()).isEqualTo("jwt-access-token");
+            assertThat(result.getRefreshToken()).isEqualTo("jwt-refresh-token");
+            assertThat(mockUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
+            assertThat(mockUser.isEmailVerified()).isTrue();
+            verify(userRepository).save(mockUser);
+        }
+    }
+
+    @Test
+    @DisplayName("verifyPhoneByFirebaseToken_missingPhoneClaim_throwsInvalidToken")
+    void verifyPhoneByFirebaseToken_missingPhoneClaim_throwsInvalidToken() throws Exception {
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Collections.emptyMap());
+        when(mockFirebaseAuth.verifyIdToken("token-without-phone")).thenReturn(mockFirebaseToken);
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.verifyPhoneByFirebaseToken("token-without-phone"))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_TOKEN);
+        }
+    }
+
+    @Test
+    @DisplayName("resetPassword_validFirebaseToken_encodesAndSavesNewPassword")
+    void resetPassword_validFirebaseToken_encodesAndSavesNewPassword() throws Exception {
+        mockUser.setPhoneNumber("0912345678");
+        com.cityfix.backend.model.dto.request.ResetPasswordRequest resetRequest =
+                com.cityfix.backend.model.dto.request.ResetPasswordRequest.builder()
+                        .firebaseIdToken("valid-firebase-reset-token")
+                        .newPassword("newSecret123")
+                        .build();
+
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Map.of("phone_number", "+84912345678"));
+        when(mockFirebaseAuth.verifyIdToken("valid-firebase-reset-token")).thenReturn(mockFirebaseToken);
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0912345678")).thenReturn(Optional.of(mockUser));
+        when(passwordEncoder.encode("newSecret123")).thenReturn("encodedNewSecret123");
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            userService.resetPassword(resetRequest);
+
+            assertThat(mockUser.getPasswordHash()).isEqualTo("encodedNewSecret123");
+            verify(passwordEncoder).encode("newSecret123");
+            verify(userRepository).save(mockUser);
+        }
     }
 }

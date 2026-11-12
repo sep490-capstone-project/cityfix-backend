@@ -25,6 +25,7 @@ import com.cityfix.backend.service.TicketService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -140,10 +141,70 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
     }
 
+    private Set<UUID> getManagedDepartmentIds(User currentUser) {
+        if (currentUser == null) {
+            return Collections.emptySet();
+        }
+        List<Department> mgrDepts = new ArrayList<>();
+        if (currentUser.getUserId() != null) {
+            List<Department> fromUserDept = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
+            if (fromUserDept != null) {
+                mgrDepts.addAll(fromUserDept);
+            }
+        }
+        if (currentUser.getDepartment() != null && currentUser.getDepartment().getDepartmentId() != null) {
+            UUID directDeptId = currentUser.getDepartment().getDepartmentId();
+            if (mgrDepts.stream().noneMatch(d -> d != null && directDeptId.equals(d.getDepartmentId()))) {
+                mgrDepts.add(currentUser.getDepartment());
+            }
+        }
+        return mgrDepts.stream()
+                .filter(Objects::nonNull)
+                .map(Department::getDepartmentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private String normalizeLocationName(String rawName, String type) {
+        if (rawName == null) {
+            return null;
+        }
+        String cleaned = rawName.trim().replaceAll("\\s+", " ");
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        if ("PROVINCE".equalsIgnoreCase(type)) {
+            cleaned = cleaned.replaceFirst("(?iu)^(thành\\s+phố\\s+|tỉnh\\s+|tp\\.\\s*|tp\\s+)", "").trim();
+        } else if ("WARD".equalsIgnoreCase(type)) {
+            cleaned = cleaned.replaceFirst("(?iu)^(phường\\s+|p\\.\\s*|xã\\s+|thị\\s+trấn\\s+|tt\\.\\s*)", "").trim();
+        } else {
+            cleaned = cleaned.replaceFirst("(?iu)^(thành\\s+phố\\s+|tỉnh\\s+|tp\\.\\s*|tp\\s+|phường\\s+|p\\.\\s*|xã\\s+|thị\\s+trấn\\s+|tt\\.\\s*)", "").trim();
+        }
+        return cleaned.replaceAll("\\s+", " ").trim();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public Page<TicketResponse> getInitiatedTickets(Pageable pageable) {
-        Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
+        User currentUser = getCurrentUser();
+        boolean isMgr = isManager(currentUser);
+        boolean isAdm = isAdmin(currentUser);
+
+        if (!isMgr && !isAdm) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        Page<Ticket> tickets;
+        if (isAdm) {
+            tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
+        } else {
+            Set<UUID> mgrDeptIds = getManagedDepartmentIds(currentUser);
+            if (mgrDeptIds.isEmpty()) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+            }
+            tickets = ticketRepository.findInitiatedTicketsByDepartmentIds(mgrDeptIds, pageable);
+        }
+
         Page<TicketResponse> responses = tickets.map(ticketMapper::toTicketResponse);
         enrichInitiatedTicketsDepartment(tickets.getContent(), responses.getContent());
         return responses;
@@ -303,16 +364,30 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                     String address = t.getAddress() != null ? t.getAddress().toLowerCase() : "";
                     Department matchedDept = categoryRules.stream()
                             .filter(rule -> {
-                                boolean provinceMatch = rule.getProvince() == null || rule.getProvince().isBlank()
-                                        || address.contains(rule.getProvince().toLowerCase());
-                                boolean wardMatch = rule.getWard() == null || rule.getWard().isBlank()
-                                        || address.contains(rule.getWard().toLowerCase());
+                                String ruleProvince = rule.getProvince();
+                                String normRuleProvince = normalizeLocationName(ruleProvince, "PROVINCE");
+                                boolean provinceMatch = ruleProvince == null || ruleProvince.isBlank()
+                                        || address.contains(ruleProvince.trim().toLowerCase())
+                                        || (normRuleProvince != null && !normRuleProvince.isEmpty()
+                                            && address.contains(normRuleProvince.toLowerCase()));
+
+                                String ruleWard = rule.getWard();
+                                String normRuleWard = normalizeLocationName(ruleWard, "WARD");
+                                boolean wardMatch = ruleWard == null || ruleWard.isBlank()
+                                        || address.contains(ruleWard.trim().toLowerCase())
+                                        || (normRuleWard != null && !normRuleWard.isEmpty()
+                                            && address.contains(normRuleWard.toLowerCase()));
                                 return provinceMatch && wardMatch;
+                            })
+                            .sorted((r1, r2) -> {
+                                boolean r1HasWard = r1.getWard() != null && !r1.getWard().isBlank();
+                                boolean r2HasWard = r2.getWard() != null && !r2.getWard().isBlank();
+                                return Boolean.compare(r2HasWard, r1HasWard);
                             })
                             .map(RoutingRule::getDepartment)
                             .filter(Objects::nonNull)
                             .findFirst()
-                            .orElse(categoryRules.get(0).getDepartment());
+                            .orElse(null);
 
                     if (matchedDept != null) {
                         res.setDepartmentId(matchedDept.getDepartmentId());
@@ -1081,11 +1156,23 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     @Transactional(readOnly = true)
     public Page<TicketResponse> getResolvedTickets(Pageable pageable) {
         User currentUser = getCurrentUser();
-        if (!isManager(currentUser)) {
+        boolean isMgr = isManager(currentUser);
+        boolean isAdm = isAdmin(currentUser);
+
+        if (!isMgr && !isAdm) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        Page<Ticket> tickets = ticketRepository.findResolvedTicketsWithAllStepsResolved(pageable);
+        Page<Ticket> tickets;
+        if (isAdm) {
+            tickets = ticketRepository.findResolvedTicketsWithAllStepsResolved(pageable);
+        } else {
+            Set<UUID> mgrDeptIds = getManagedDepartmentIds(currentUser);
+            if (mgrDeptIds.isEmpty()) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+            }
+            tickets = ticketRepository.findResolvedTicketsWithAllStepsResolvedByDepartmentIds(mgrDeptIds, pageable);
+        }
 
         return tickets.map(ticket -> {
             TicketResponse response = ticketMapper.toTicketResponse(ticket);

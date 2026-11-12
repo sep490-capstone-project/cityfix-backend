@@ -5,7 +5,9 @@ import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.model.dto.request.LoginRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
+import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
+import com.cityfix.backend.model.dto.request.VerifyFirebaseTokenRequest;
 import com.cityfix.backend.model.dto.request.VerifyOtpRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.LoginResponse;
@@ -138,6 +140,54 @@ class AuthControllerTest {
     }
 
     @Test
+    @DisplayName("verifyPhoneFirebase_validToken_returns200WithLoginResponse")
+    void verifyPhoneFirebase_validToken_returns200WithLoginResponse() {
+        VerifyFirebaseTokenRequest request = VerifyFirebaseTokenRequest.builder()
+                .firebaseIdToken("firebase-id-token-xyz")
+                .build();
+
+        LoginResponse expectedLogin = LoginResponse.builder()
+                .accessToken("jwt-access-token")
+                .refreshToken("jwt-refresh-token")
+                .build();
+
+        when(userService.verifyPhoneByFirebaseToken("firebase-id-token-xyz")).thenReturn(expectedLogin);
+
+        ResponseEntity<BaseResponse<LoginResponse>> response = authController.verifyPhoneFirebase(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData()).isEqualTo(expectedLogin);
+
+        verify(userService, times(1)).verifyPhoneByFirebaseToken("firebase-id-token-xyz");
+    }
+
+    @Test
+    @DisplayName("resetPassword_validRequest_returns200Success")
+    void resetPassword_validRequest_returns200Success() {
+        ResetPasswordRequest request = ResetPasswordRequest.builder()
+                .firebaseIdToken("firebase-reset-token")
+                .newPassword("newSecret123")
+                .build();
+
+        doNothing().when(userService).resetPassword(any(ResetPasswordRequest.class));
+
+        ResponseEntity<BaseResponse<Void>> response = authController.resetPassword(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage())
+                .isEqualTo("Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới.");
+
+        verify(userService, times(1)).resetPassword(request);
+    }
+
+    /*
+     * [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+     *
+    @Test
     @DisplayName("verifyOtp_validCode_returns200Success: Nhập đúng OTP kích hoạt tài khoản thành công")
     void verifyOtp_validCode_returns200Success() {
         VerifyOtpRequest request = VerifyOtpRequest.builder()
@@ -175,4 +225,5 @@ class AuthControllerTest {
 
         verify(userService, times(1)).resendOtp(request);
     }
+    */
 }
