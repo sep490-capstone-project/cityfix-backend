@@ -164,11 +164,25 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND rr.isDeleted = false
                 AND (
                     rr.province IS NULL OR TRIM(rr.province) = ''
-                    OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.province), '%')))
+                    OR (
+                        t.address IS NOT NULL
+                        AND LOWER(t.address) LIKE CONCAT(
+                            '%',
+                            TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
+                            '%'
+                        )
+                    )
                 )
                 AND (
                     rr.ward IS NULL OR TRIM(rr.ward) = ''
-                    OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.ward), '%')))
+                    OR (
+                        t.address IS NOT NULL
+                        AND LOWER(t.address) LIKE CONCAT(
+                            '%',
+                            TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
+                            '%'
+                        )
+                    )
                 )
           )
         """,
@@ -183,11 +197,25 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND rr.isDeleted = false
                 AND (
                     rr.province IS NULL OR TRIM(rr.province) = ''
-                    OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.province), '%')))
+                    OR (
+                        t.address IS NOT NULL
+                        AND LOWER(t.address) LIKE CONCAT(
+                            '%',
+                            TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
+                            '%'
+                        )
+                    )
                 )
                 AND (
                     rr.ward IS NULL OR TRIM(rr.ward) = ''
-                    OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.ward), '%')))
+                    OR (
+                        t.address IS NOT NULL
+                        AND LOWER(t.address) LIKE CONCAT(
+                            '%',
+                            TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
+                            '%'
+                        )
+                    )
                 )
           )
         """)
@@ -371,11 +399,25 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND rr.isDeleted = false
                       AND (
                           rr.province IS NULL OR TRIM(rr.province) = ''
-                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.province), '%')))
+                          OR (
+                              t.address IS NOT NULL
+                              AND LOWER(t.address) LIKE CONCAT(
+                                  '%',
+                                  TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
+                                  '%'
+                              )
+                          )
                       )
                       AND (
                           rr.ward IS NULL OR TRIM(rr.ward) = ''
-                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.ward), '%')))
+                          OR (
+                              t.address IS NOT NULL
+                              AND LOWER(t.address) LIKE CONCAT(
+                                  '%',
+                                  TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
+                                  '%'
+                              )
+                          )
                       )
                 )
             )
@@ -419,11 +461,25 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND rr.isDeleted = false
                       AND (
                           rr.province IS NULL OR TRIM(rr.province) = ''
-                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.province), '%')))
+                          OR (
+                              t.address IS NOT NULL
+                              AND LOWER(t.address) LIKE CONCAT(
+                                  '%',
+                                  TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
+                                  '%'
+                              )
+                          )
                       )
                       AND (
                           rr.ward IS NULL OR TRIM(rr.ward) = ''
-                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.ward), '%')))
+                          OR (
+                              t.address IS NOT NULL
+                              AND LOWER(t.address) LIKE CONCAT(
+                                  '%',
+                                  TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
+                                  '%'
+                              )
+                          )
                       )
                 )
             )

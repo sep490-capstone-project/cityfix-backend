@@ -182,14 +182,28 @@ class RoutingRuleServiceTest {
     @Test
     @DisplayName("getRoutingRulesByDepartment_validDepartmentId_returnsList")
     void getRoutingRulesByDepartment_validDepartmentId_returnsList() {
-        when(departmentRepository.existsById(departmentId)).thenReturn(true);
+        when(departmentRepository.existsByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(true);
         when(routingRuleRepository.findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(List.of(mockRule));
         when(routingRuleMapper.toResponseList(List.of(mockRule))).thenReturn(List.of(mockResponse));
 
         List<RoutingRuleResponse> result = routingRuleService.getRoutingRulesByDepartment(departmentId);
 
         assertThat(result).hasSize(1);
+        verify(departmentRepository, times(1)).existsByDepartmentIdAndIsDeletedFalse(departmentId);
         verify(routingRuleRepository, times(1)).findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);
+    }
+
+    @Test
+    @DisplayName("getRoutingRulesByDepartment_softDeletedOrNonExistentDepartment_throwsDepartmentNotFoundException")
+    void getRoutingRulesByDepartment_softDeletedOrNonExistentDepartment_throwsDepartmentNotFoundException() {
+        when(departmentRepository.existsByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(false);
+
+        assertThatThrownBy(() -> routingRuleService.getRoutingRulesByDepartment(departmentId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(routingRuleRepository, never()).findByDepartmentDepartmentIdAndIsDeletedFalse(any());
     }
 
     @Test

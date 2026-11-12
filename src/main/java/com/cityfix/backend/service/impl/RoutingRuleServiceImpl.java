@@ -205,10 +205,7 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
     @Override
     @Transactional(readOnly = true)
     public List<RoutingRuleResponse> getRoutingRulesByDepartment(UUID departmentId) {
-        boolean activeDeptExists = departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId).isPresent()
-                || departmentRepository.findById(departmentId).filter(d -> !d.isDeleted()).isPresent()
-                || departmentRepository.existsById(departmentId);
-        if (!activeDeptExists) {
+        if (!departmentRepository.existsByDepartmentIdAndIsDeletedFalse(departmentId)) {
             throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
         }
         List<RoutingRule> rules = routingRuleRepository.findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);
