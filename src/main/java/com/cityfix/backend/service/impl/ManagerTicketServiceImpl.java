@@ -194,32 +194,20 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
+        Page<Ticket> tickets;
         if (isAdm) {
-            Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
-            Page<TicketResponse> responses = tickets.map(ticketMapper::toTicketResponse);
-            enrichInitiatedTicketsDepartment(tickets.getContent(), responses.getContent());
-            return responses;
+            tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
+        } else {
+            Set<UUID> mgrDeptIds = getManagedDepartmentIds(currentUser);
+            if (mgrDeptIds.isEmpty()) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
+            }
+            tickets = ticketRepository.findInitiatedTicketsByDepartmentIds(mgrDeptIds, pageable);
         }
 
-        Set<UUID> mgrDeptIds = getManagedDepartmentIds(currentUser);
-        if (mgrDeptIds.isEmpty()) {
-            throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
-        }
-
-        Page<Ticket> tickets = ticketRepository.findByStatus(TicketStatus.INITIATED, pageable);
-        List<Ticket> ticketList = tickets != null ? tickets.getContent() : Collections.emptyList();
-        List<TicketResponse> mappedList = ticketList.stream()
-                .map(ticketMapper::toTicketResponse)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
-
-        enrichInitiatedTicketsDepartment(ticketList, mappedList);
-
-        List<TicketResponse> filteredResponses = mappedList.stream()
-                .filter(res -> res.getDepartmentId() != null && mgrDeptIds.contains(res.getDepartmentId()))
-                .collect(Collectors.toList());
-
-        return new PageImpl<>(filteredResponses, pageable, filteredResponses.size());
+        Page<TicketResponse> responses = tickets.map(ticketMapper::toTicketResponse);
+        enrichInitiatedTicketsDepartment(tickets.getContent(), responses.getContent());
+        return responses;
     }
 
     @Override
@@ -1180,11 +1168,10 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             tickets = ticketRepository.findResolvedTicketsWithAllStepsResolved(pageable);
         } else {
             Set<UUID> mgrDeptIds = getManagedDepartmentIds(currentUser);
-            if (!mgrDeptIds.isEmpty()) {
-                tickets = ticketRepository.findResolvedTicketsWithAllStepsResolvedByDepartmentIds(mgrDeptIds, pageable);
-            } else {
-                tickets = ticketRepository.findResolvedTicketsWithAllStepsResolved(pageable);
+            if (mgrDeptIds.isEmpty()) {
+                throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
             }
+            tickets = ticketRepository.findResolvedTicketsWithAllStepsResolvedByDepartmentIds(mgrDeptIds, pageable);
         }
 
         return tickets.map(ticket -> {

@@ -798,6 +798,9 @@ class ManagerTicketServiceImplTest {
     @Test
     @DisplayName("getResolvedTickets_asManager_returnsResolvedTicketsWithSteps")
     void getResolvedTickets_asManager_returnsResolvedTicketsWithSteps() {
+        UUID deptId = UUID.randomUUID();
+        Department dept = Department.builder().departmentId(deptId).name("Phòng QLĐT").build();
+        managerUser.setDepartment(dept);
         mockCurrentUser(managerUser);
         ticket.setStatus(TicketStatus.RESOLVED);
 
@@ -817,7 +820,8 @@ class ManagerTicketServiceImplTest {
         Pageable pageable = PageRequest.of(0, 20);
         Page<Ticket> ticketPage = new PageImpl<>(List.of(ticket), pageable, 1);
 
-        when(ticketRepository.findResolvedTicketsWithAllStepsResolved(pageable)).thenReturn(ticketPage);
+        when(ticketRepository.findResolvedTicketsWithAllStepsResolvedByDepartmentIds(eq(Set.of(deptId)), eq(pageable)))
+                .thenReturn(ticketPage);
         when(ticketMapper.toTicketResponse(ticket)).thenReturn(
                 TicketResponse.builder().id(ticketId).status(TicketStatus.RESOLVED).build()
         );
@@ -831,6 +835,7 @@ class ManagerTicketServiceImplTest {
         assertThat(result.getContent().get(0).getSteps()).hasSize(1);
         assertThat(result.getContent().get(0).getSteps().get(0).getStatus())
                 .isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED);
+        verify(ticketRepository, never()).findResolvedTicketsWithAllStepsResolved(any());
     }
 
     @Test
@@ -1197,23 +1202,41 @@ class ManagerTicketServiceImplTest {
                 .build();
 
         Pageable pageable = PageRequest.of(0, 20);
-        when(ticketRepository.findByStatus(TicketStatus.INITIATED, pageable))
-                .thenReturn(new PageImpl<>(List.of(ticketWardA, ticketWardB, ticketUnmatchedWard), pageable, 3));
+        when(ticketRepository.findInitiatedTicketsByDepartmentIds(eq(Set.of(deptAId)), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(ticketWardA), pageable, 25));
         when(routingRuleRepository.findByCategoryCategoryIdInAndIsDeletedFalse(any()))
                 .thenReturn(List.of(ruleA, ruleB));
 
         when(ticketMapper.toTicketResponse(ticketWardA))
                 .thenReturn(TicketResponse.builder().id(ticketWardA.getTicketId()).status(TicketStatus.INITIATED).build());
-        when(ticketMapper.toTicketResponse(ticketWardB))
-                .thenReturn(TicketResponse.builder().id(ticketWardB.getTicketId()).status(TicketStatus.INITIATED).build());
-        when(ticketMapper.toTicketResponse(ticketUnmatchedWard))
-                .thenReturn(TicketResponse.builder().id(ticketUnmatchedWard.getTicketId()).status(TicketStatus.INITIATED).build());
 
         Page<TicketResponse> result = managerTicketService.getInitiatedTickets(pageable);
 
         assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getTotalElements()).isEqualTo(25);
         assertThat(result.getContent().get(0).getId()).isEqualTo(ticketWardA.getTicketId());
         assertThat(result.getContent().get(0).getDepartmentId()).isEqualTo(deptAId);
+        verify(ticketRepository).findInitiatedTicketsByDepartmentIds(eq(Set.of(deptAId)), eq(pageable));
+        verify(ticketRepository, never()).findByStatus(eq(TicketStatus.INITIATED), any());
+    }
+
+    @Test
+    @DisplayName("getResolvedTickets_asManagerWithoutDepartment_throwsUserNotInDepartment")
+    void getResolvedTickets_asManagerWithoutDepartment_throwsUserNotInDepartment() {
+        managerUser.setDepartment(null);
+        mockCurrentUser(managerUser);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(Collections.emptyList());
+
+        Pageable pageable = PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> managerTicketService.getResolvedTickets(pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_IN_DEPARTMENT);
+
+        verify(ticketRepository, never()).findResolvedTicketsWithAllStepsResolved(any());
+        verify(ticketRepository, never()).findResolvedTicketsWithAllStepsResolvedByDepartmentIds(any(), any());
     }
 
     @Test
