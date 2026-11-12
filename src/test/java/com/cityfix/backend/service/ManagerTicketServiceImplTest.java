@@ -1146,4 +1146,142 @@ class ManagerTicketServiceImplTest {
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_STEP_DEPENDENCY);
     }
+
+    @Test
+    @DisplayName("getInitiatedTickets_asManager_filtersByManagerDepartmentAndDoesNotLeakOtherWards")
+    void getInitiatedTickets_asManager_filtersByManagerDepartmentAndDoesNotLeakOtherWards() {
+        UUID deptAId = UUID.randomUUID();
+        UUID deptBId = UUID.randomUUID();
+        Department deptA = Department.builder().departmentId(deptAId).name("Phường Bến Nghé").build();
+        Department deptB = Department.builder().departmentId(deptBId).name("Phường Bến Thành").build();
+
+        managerUser.setDepartment(deptA);
+        mockCurrentUser(managerUser);
+
+        UUID catId = UUID.randomUUID();
+        Category cat = Category.builder().categoryId(catId).name("Giao thông").build();
+        SubCategory subCat = SubCategory.builder().subCategoryId(UUID.randomUUID()).category(cat).build();
+
+        Ticket ticketWardA = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(TicketStatus.INITIATED)
+                .address("12 Lê Lợi, P. Bến Nghé, TP. Hồ Chí Minh")
+                .build();
+        ticketWardA.setSubCategories(List.of(TicketSubCategory.builder().ticket(ticketWardA).subCategory(subCat).build()));
+
+        Ticket ticketWardB = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(TicketStatus.INITIATED)
+                .address("50 Lê Lai, Phường Bến Thành, TP. Hồ Chí Minh")
+                .build();
+        ticketWardB.setSubCategories(List.of(TicketSubCategory.builder().ticket(ticketWardB).subCategory(subCat).build()));
+
+        Ticket ticketUnmatchedWard = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .status(TicketStatus.INITIATED)
+                .address("99 Nguyễn Văn Linh, Phường Tân Phong, TP. Hồ Chí Minh")
+                .build();
+        ticketUnmatchedWard.setSubCategories(List.of(TicketSubCategory.builder().ticket(ticketUnmatchedWard).subCategory(subCat).build()));
+
+        RoutingRule ruleA = RoutingRule.builder()
+                .category(cat)
+                .department(deptA)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .build();
+        RoutingRule ruleB = RoutingRule.builder()
+                .category(cat)
+                .department(deptB)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("Phường Bến Thành")
+                .build();
+
+        Pageable pageable = PageRequest.of(0, 20);
+        when(ticketRepository.findByStatus(TicketStatus.INITIATED, pageable))
+                .thenReturn(new PageImpl<>(List.of(ticketWardA, ticketWardB, ticketUnmatchedWard), pageable, 3));
+        when(routingRuleRepository.findByCategoryCategoryIdInAndIsDeletedFalse(any()))
+                .thenReturn(List.of(ruleA, ruleB));
+
+        when(ticketMapper.toTicketResponse(ticketWardA))
+                .thenReturn(TicketResponse.builder().id(ticketWardA.getTicketId()).status(TicketStatus.INITIATED).build());
+        when(ticketMapper.toTicketResponse(ticketWardB))
+                .thenReturn(TicketResponse.builder().id(ticketWardB.getTicketId()).status(TicketStatus.INITIATED).build());
+        when(ticketMapper.toTicketResponse(ticketUnmatchedWard))
+                .thenReturn(TicketResponse.builder().id(ticketUnmatchedWard.getTicketId()).status(TicketStatus.INITIATED).build());
+
+        Page<TicketResponse> result = managerTicketService.getInitiatedTickets(pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getId()).isEqualTo(ticketWardA.getTicketId());
+        assertThat(result.getContent().get(0).getDepartmentId()).isEqualTo(deptAId);
+    }
+
+    @Test
+    @DisplayName("getResolvedTickets_asManagerWithDepartment_queriesByManagerDepartmentIds")
+    void getResolvedTickets_asManagerWithDepartment_queriesByManagerDepartmentIds() {
+        UUID deptId = UUID.randomUUID();
+        Department dept = Department.builder().departmentId(deptId).name("Phòng QLĐT").build();
+        managerUser.setDepartment(dept);
+        mockCurrentUser(managerUser);
+
+        ticket.setStatus(TicketStatus.RESOLVED);
+        TicketStep step1 = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                .build();
+        ticket.setSteps(List.of(step1));
+
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Ticket> ticketPage = new PageImpl<>(List.of(ticket), pageable, 1);
+
+        when(ticketRepository.findResolvedTicketsWithAllStepsResolvedByDepartmentIds(any(), eq(pageable)))
+                .thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(
+                TicketResponse.builder().id(ticketId).status(TicketStatus.RESOLVED).build()
+        );
+        when(ticketStepMapper.toTicketStepResponseList(List.of(step1))).thenReturn(Collections.emptyList());
+
+        Page<TicketResponse> result = managerTicketService.getResolvedTickets(pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        verify(ticketRepository).findResolvedTicketsWithAllStepsResolvedByDepartmentIds(eq(Set.of(deptId)), eq(pageable));
+    }
+
+    @Test
+    @DisplayName("departmentIsolation_ticketAutoRoutedToDepartmentB_managerOfDepartmentAGetsEmptyList")
+    void departmentIsolation_ticketAutoRoutedToDepartmentB_managerOfDepartmentAGetsEmptyList() {
+        UUID deptAId = UUID.randomUUID();
+        UUID deptBId = UUID.randomUUID();
+        Department deptA = Department.builder().departmentId(deptAId).name("Phòng ban A").build();
+        Department deptB = Department.builder().departmentId(deptBId).name("Phòng ban B").build();
+
+        managerUser.setDepartment(deptA);
+        mockCurrentUser(managerUser);
+
+        Pageable pageable = PageRequest.of(0, 20);
+        when(userDepartmentRepository.findDepartmentsByUserId(managerUser.getUserId()))
+                .thenReturn(List.of(deptA));
+        when(ticketRepository.findTicketsByAssigneeDepartmentIds(eq(Set.of(deptAId)), eq(pageable)))
+                .thenReturn(Page.empty(pageable));
+        when(ticketRepository.findTicketsByDepartmentAndCriteria(eq(deptAId), eq(null), eq(null), eq(pageable)))
+                .thenReturn(Page.empty(pageable));
+        when(departmentRepository.findById(deptAId)).thenReturn(Optional.of(deptA));
+
+        // 1. Gọi API danh sách vé đã gán cho phòng ban của Manager A -> rỗng (0 kết quả)
+        Page<TicketResponse> assignedResult = managerTicketService.getManagerAssignedDepartmentTickets(null, pageable);
+        assertThat(assignedResult.getContent()).isEmpty();
+        assertThat(assignedResult.getTotalElements()).isZero();
+
+        // 2. Gọi API danh sách vé theo phòng ban của Manager A -> rỗng (0 kết quả)
+        Page<TicketResponse> deptResult = managerTicketService.getDepartmentTickets(null, null, null, pageable);
+        assertThat(deptResult.getContent()).isEmpty();
+        assertThat(deptResult.getTotalElements()).isZero();
+
+        // 3. Nếu Manager A cố tình truyền ID của Phòng ban B -> bị chặn FORBIDDEN
+        assertThatThrownBy(() -> managerTicketService.getDepartmentTickets(deptBId, null, null, pageable))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
 }

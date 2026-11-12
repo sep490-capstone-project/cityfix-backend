@@ -22,11 +22,9 @@ public interface RoutingRuleRepository extends JpaRepository<RoutingRule, UUID>,
 
     Optional<RoutingRule> findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(UUID categoryId, String province, String ward);
 
-    List<RoutingRule> findByDepartmentDepartmentId(UUID departmentId);
-
     List<RoutingRule> findByDepartmentDepartmentIdAndIsDeletedFalse(UUID departmentId);
 
-    Page<RoutingRule> findByDepartmentDepartmentId(UUID departmentId, Pageable pageable);
+    Page<RoutingRule> findByDepartmentDepartmentIdAndIsDeletedFalse(UUID departmentId, Pageable pageable);
     
     List<RoutingRule> findByCategoryCategoryIdAndIsDeletedFalse(UUID categoryId);
 

@@ -61,6 +61,7 @@ public class TicketServiceImpl implements TicketService {
     private final TicketRepository ticketRepository;
     private final TicketVoteRepository ticketVoteRepository;
     private final UserRepository userRepository;
+    private final UserDepartmentRepository userDepartmentRepository;
     private final CategoryRepository categoryRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final ReportImageRepository reportImageRepository;
@@ -262,6 +263,12 @@ public class TicketServiceImpl implements TicketService {
             String province = parts[length - 1];
             return province.isEmpty() ? null : province;
         } else if ("WARD".equalsIgnoreCase(type)) {
+            // Ưu tiên tìm thành phần có tiền tố Phường/P./Xã/Thị trấn rõ ràng (hỗ trợ cả địa chỉ 3 cấp và 2 cấp)
+            for (int i = length - 2; i >= 0; i--) {
+                if (parts[i].matches("(?iu)^(phường\\s+|p\\.\\s*|xã\\s+|thị\\s+trấn\\s+|tt\\.\\s*).*")) {
+                    return parts[i];
+                }
+            }
             // Chuẩn 4-5 thành phần: "..., Phường/Xã, Quận/Huyện, Tỉnh/Thành phố" -> (length - 3)
             if (length >= 3) {
                 String ward = parts[length - 3];
@@ -274,6 +281,140 @@ public class TicketServiceImpl implements TicketService {
         }
 
         return null;
+    }
+
+    /**
+     * Chuẩn hóa tên Tỉnh/Thành phố hoặc Phường/Xã/Thị trấn:
+     * Loại bỏ khoảng trắng thừa và các tiền tố hành chính phổ biến
+     * ("TP.", "Thành phố", "Tỉnh", "Phường", "P.", "Xã", "Thị trấn")
+     * trước khi đối chiếu với RoutingRule.
+     */
+    private String normalizeLocationName(String rawName, String type) {
+        if (rawName == null) {
+            return null;
+        }
+        String cleaned = rawName.trim().replaceAll("\\s+", " ");
+        if (cleaned.isEmpty()) {
+            return null;
+        }
+        if ("PROVINCE".equalsIgnoreCase(type)) {
+            cleaned = cleaned.replaceFirst("(?iu)^(thành\\s+phố|tp\\.|tp|tỉnh)\\s*", "").trim();
+            if ("HCM".equalsIgnoreCase(cleaned) || "TPHCM".equalsIgnoreCase(cleaned)) {
+                cleaned = "Hồ Chí Minh";
+            }
+        } else if ("WARD".equalsIgnoreCase(type)) {
+            cleaned = cleaned.replaceFirst("(?iu)^(phường\\s+|p\\.\\s*|xã\\s+|thị\\s+trấn\\s+|tt\\.\\s*)", "").trim();
+        } else {
+            cleaned = cleaned.replaceFirst("(?iu)^(thành\\s+phố\\s+|tỉnh\\s+|tp\\.\\s*|tp\\s+|phường\\s+|p\\.\\s*|xã\\s+|thị\\s+trấn\\s+|tt\\.\\s*)", "").trim();
+        }
+        return cleaned.replaceAll("\\s+", " ").trim();
+    }
+
+    /**
+     * Tìm kiếm nhân viên đại diện (active staff) cho phòng ban:
+     * Ưu tiên tìm ở bảng chính (user_account.department_id), nếu không có sẽ fallback sang bảng phụ (user_department).
+     */
+    private Optional<User> findRepresentativeStaffForDepartment(UUID departmentId) {
+        if (departmentId == null) {
+            return Optional.empty();
+        }
+        Optional<User> primaryStaff = userRepository.findRepresentativeStaffByDepartmentId(departmentId);
+        if (primaryStaff.isPresent()) {
+            return primaryStaff;
+        }
+        if (userDepartmentRepository != null) {
+            List<User> secondaryStaffs = userDepartmentRepository.findActiveStaffByDepartmentId(departmentId);
+            if (secondaryStaffs != null && !secondaryStaffs.isEmpty()) {
+                return secondaryStaffs.stream()
+                        .filter(Objects::nonNull)
+                        .findFirst();
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Tìm kiếm RoutingRule phù hợp cho Category, Tỉnh/Thành phố và Phường/Xã
+     * kết hợp cả so khớp chính xác và so khớp chuẩn hóa linh hoạt.
+     */
+    private Optional<RoutingRule> findMatchingRoutingRule(UUID categoryId, String province, String ward, String rawAddress) {
+        Optional<RoutingRule> ruleOpt = Optional.empty();
+        if (province != null && ward != null) {
+            ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
+                    categoryId, province, ward);
+        }
+        if (ruleOpt.isPresent()) {
+            return ruleOpt;
+        }
+
+        String normProvince = normalizeLocationName(province, "PROVINCE");
+        String normWard = normalizeLocationName(ward, "WARD");
+        String lowerAddress = rawAddress != null ? rawAddress.trim().replaceAll("\\s+", " ").toLowerCase() : "";
+
+        List<RoutingRule> categoryRules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(categoryId);
+        if (categoryRules != null && !categoryRules.isEmpty()) {
+            // 1. So khớp chuẩn hóa cả Tỉnh/Thành phố và Phường/Xã
+            if (normProvince != null && !normProvince.isEmpty() && normWard != null && !normWard.isEmpty()) {
+                ruleOpt = categoryRules.stream()
+                        .filter(r -> r != null && !r.isDeleted() && r.getDepartment() != null)
+                        .filter(r -> r.getProvince() != null && !r.getProvince().isBlank()
+                                && r.getWard() != null && !r.getWard().isBlank())
+                        .filter(r -> {
+                            String ruleProvince = normalizeLocationName(r.getProvince(), "PROVINCE");
+                            String ruleWard = normalizeLocationName(r.getWard(), "WARD");
+                            return normProvince.equalsIgnoreCase(ruleProvince)
+                                    && normWard.equalsIgnoreCase(ruleWard);
+                        })
+                        .findFirst();
+                if (ruleOpt.isPresent()) {
+                    return ruleOpt;
+                }
+            }
+
+            // 2. Đối chiếu chuẩn hóa trực tiếp trên chuỗi địa chỉ (trường hợp địa chỉ không chuẩn dấu phẩy)
+            if (!lowerAddress.isEmpty()) {
+                ruleOpt = categoryRules.stream()
+                        .filter(r -> r != null && !r.isDeleted() && r.getDepartment() != null)
+                        .filter(r -> r.getProvince() != null && !r.getProvince().isBlank()
+                                && r.getWard() != null && !r.getWard().isBlank())
+                        .filter(r -> {
+                            String ruleProvince = normalizeLocationName(r.getProvince(), "PROVINCE");
+                            String ruleWard = normalizeLocationName(r.getWard(), "WARD");
+                            boolean provMatch = (ruleProvince != null && !ruleProvince.isEmpty() && lowerAddress.contains(ruleProvince.toLowerCase()))
+                                    || (normProvince != null && normProvince.equalsIgnoreCase(ruleProvince));
+                            boolean wardMatch = (ruleWard != null && !ruleWard.isEmpty() && lowerAddress.contains(ruleWard.toLowerCase()))
+                                    || (normWard != null && normWard.equalsIgnoreCase(ruleWard));
+                            return provMatch && wardMatch;
+                        })
+                        .findFirst();
+                if (ruleOpt.isPresent()) {
+                    return ruleOpt;
+                }
+            }
+        }
+
+        // 3. Fallback cấp Tỉnh/Thành phố (ward = null)
+        if (province != null) {
+            ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
+                    categoryId, province, null);
+            if (ruleOpt.isPresent()) {
+                return ruleOpt;
+            }
+        }
+
+        if (categoryRules != null && !categoryRules.isEmpty() && normProvince != null && !normProvince.isEmpty()) {
+            ruleOpt = categoryRules.stream()
+                    .filter(r -> r != null && !r.isDeleted() && r.getDepartment() != null)
+                    .filter(r -> r.getProvince() != null && !r.getProvince().isBlank()
+                            && (r.getWard() == null || r.getWard().isBlank()))
+                    .filter(r -> {
+                        String ruleProvince = normalizeLocationName(r.getProvince(), "PROVINCE");
+                        return normProvince.equalsIgnoreCase(ruleProvince);
+                    })
+                    .findFirst();
+        }
+
+        return ruleOpt;
     }
 
     @Override
@@ -341,16 +482,8 @@ public class TicketServiceImpl implements TicketService {
                     }
                 }
 
-                Optional<RoutingRule> ruleOpt = Optional.empty();
-                if (province != null && ward != null) {
-                    ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
-                            singleCategory.getCategoryId(), province, ward);
-                }
-
-                if (ruleOpt.isEmpty() && province != null) {
-                    ruleOpt = routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
-                            singleCategory.getCategoryId(), province, null);
-                }
+                Optional<RoutingRule> ruleOpt = findMatchingRoutingRule(
+                        singleCategory.getCategoryId(), province, ward, request.getAddress());
 
                 if (ruleOpt.isPresent()) {
                     assignedDepartment = ruleOpt.get().getDepartment();
@@ -358,7 +491,7 @@ public class TicketServiceImpl implements TicketService {
             }
 
             if (assignedDepartment != null) {
-                autoStaff = userRepository.findRepresentativeStaffByDepartmentId(assignedDepartment.getDepartmentId()).orElse(null);
+                autoStaff = findRepresentativeStaffForDepartment(assignedDepartment.getDepartmentId()).orElse(null);
             }
 
             // Nếu không tìm thấy department hoặc không tìm thấy staff -> chuyển sang duyệt thủ công
@@ -640,9 +773,15 @@ public class TicketServiceImpl implements TicketService {
                 ? "Phường " + coreWard
                 : coreWard;
 
-        String province = (currentUser.getProvince() != null && !currentUser.getProvince().isBlank())
-                ? currentUser.getProvince().trim()
-                : "";
+        String province = "";
+        if (currentUser.getProvince() != null && !currentUser.getProvince().isBlank()) {
+            province = currentUser.getProvince().trim()
+                    .replaceFirst("^(?iu)(thành phố|tp\\.|tp|tỉnh)\\s*", "")
+                    .trim();
+            if ("HCM".equalsIgnoreCase(province) || "TPHCM".equalsIgnoreCase(province)) {
+                province = "Hồ Chí Minh";
+            }
+        }
 
         List<TicketStatus> targetStatuses = List.of(
                 TicketStatus.ASSIGNED,
@@ -673,7 +812,7 @@ public class TicketServiceImpl implements TicketService {
         Department targetDepartment = departmentRepository.findById(request.getTargetDepartmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
-        User targetStaff = userRepository.findRepresentativeStaffByDepartmentId(targetDepartment.getDepartmentId())
+        User targetStaff = findRepresentativeStaffForDepartment(targetDepartment.getDepartmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
 
         // Reset old active steps to ASSIGNED before re-assigning

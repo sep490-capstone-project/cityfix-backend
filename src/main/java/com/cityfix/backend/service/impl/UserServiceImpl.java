@@ -5,6 +5,7 @@ import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.UserMapper;
 import com.cityfix.backend.model.dto.request.LoginRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
+import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
 import com.cityfix.backend.model.dto.request.VerifyOtpRequest;
 import com.cityfix.backend.model.dto.response.LoginResponse;
@@ -17,12 +18,17 @@ import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.OtpService;
 import com.cityfix.backend.service.TokenService;
 import com.cityfix.backend.service.UserService;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.cityfix.backend.util.SecurityUtils;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
@@ -53,11 +59,13 @@ public class UserServiceImpl implements UserService {
                 existingUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
                 userRepository.save(existingUser);
 
-                String otp = otpService.generateAndStore(request.getEmail());
-                emailService.sendOtpEmail(request.getEmail(), otp);
+                // [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+                // String otp = otpService.generateAndStore(request.getEmail());
+                // emailService.sendOtpEmail(request.getEmail(), otp);
 
                 UserRegisterResponse response = userMapper.toCustomerRegisterResponse(existingUser);
-                response.setNextStep("VERIFY_EMAIL");
+                // response.setNextStep("VERIFY_EMAIL");
+                response.setNextStep("VERIFY_PHONE");
                 return response;
             }
         }
@@ -76,15 +84,19 @@ public class UserServiceImpl implements UserService {
 
         userRepository.save(user);
 
-        // Generate OTP, cache in Redis, send via Resend
-        String otp = otpService.generateAndStore(request.getEmail());
-        emailService.sendOtpEmail(request.getEmail(), otp);
+        // [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+        // String otp = otpService.generateAndStore(request.getEmail());
+        // emailService.sendOtpEmail(request.getEmail(), otp);
 
         UserRegisterResponse response = userMapper.toCustomerRegisterResponse(user);
-        response.setNextStep("VERIFY_EMAIL");
+        // response.setNextStep("VERIFY_EMAIL");
+        response.setNextStep("VERIFY_PHONE");
         return response;
     }
 
+    /*
+     * [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+     *
     @Override
     @Transactional
     public void verifyEmail(VerifyOtpRequest request) {
@@ -103,7 +115,80 @@ public class UserServiceImpl implements UserService {
         user.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
         userRepository.save(user);
     }
+    */
 
+    @Override
+    @Transactional
+    public LoginResponse verifyPhoneByFirebaseToken(String firebaseIdToken) {
+        try {
+            FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(firebaseIdToken);
+            String verifiedPhone = (String) decodedToken.getClaims().get("phone_number");
+
+            if (verifiedPhone == null || verifiedPhone.isBlank()) {
+                throw new AppException(ErrorCode.INVALID_TOKEN);
+            }
+
+            // Chuẩn hóa +84 thành đầu 0 (VD: +84948030249 -> 0948030249)
+            String localPhone = verifiedPhone.startsWith("+84")
+                    ? "0" + verifiedPhone.substring(3)
+                    : verifiedPhone;
+
+            User user = userRepository.findByPhoneNumberAndIsDeletedFalse(localPhone)
+                    .or(() -> userRepository.findByPhoneNumberAndIsDeletedFalse(verifiedPhone))
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+            user.setEmailVerified(true);
+            user.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
+            userRepository.save(user);
+
+            // Sinh JWT token của hệ thống và trả về cho client tương tự luồng verify/login cũ
+            String accessToken = tokenService.generateAccessToken(user);
+            String refreshToken = tokenService.generateRefreshToken(user);
+            return LoginResponse.builder()
+                    .accessToken(accessToken)
+                    .refreshToken(refreshToken)
+                    .build();
+        } catch (FirebaseAuthException e) {
+            log.error("Firebase verify token failed: {}", e.getMessage());
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        try {
+            // 1. Xác thực và giải mã Firebase ID Token
+            FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(request.getFirebaseIdToken());
+            String verifiedPhone = (String) decodedToken.getClaims().get("phone_number");
+
+            if (verifiedPhone == null || verifiedPhone.isBlank()) {
+                throw new AppException(ErrorCode.INVALID_TOKEN);
+            }
+
+            // 2. Chuẩn hóa số điện thoại về định dạng local (ví dụ: +84948030249 -> 0948030249)
+            String localPhone = verifiedPhone.startsWith("+84")
+                    ? "0" + verifiedPhone.substring(3)
+                    : verifiedPhone;
+
+            // 3. Tìm kiếm người dùng trong cơ sở dữ liệu
+            User user = userRepository.findByPhoneNumberAndIsDeletedFalse(localPhone)
+                    .or(() -> userRepository.findByPhoneNumberAndIsDeletedFalse(verifiedPhone))
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+            // 4. Mã hóa mật khẩu mới và lưu
+            user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+            userRepository.save(user);
+
+        } catch (FirebaseAuthException e) {
+            log.error("Firebase token verification failed during password reset: {}", e.getMessage());
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+    }
+
+    /*
+     * [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
+     *
     @Override
     public void resendOtp(ResendOtpRequest request) {
         User user = userRepository.findByEmailAndIsDeletedFalse(request.getEmail())
@@ -119,6 +204,7 @@ public class UserServiceImpl implements UserService {
         String otp = otpService.generateAndStore(request.getEmail());
         emailService.sendOtpEmail(request.getEmail(), otp);
     }
+    */
 
     @Override
     public LoginResponse login(LoginRequest request) {

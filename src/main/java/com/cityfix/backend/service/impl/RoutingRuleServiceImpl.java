@@ -36,17 +36,82 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
     private final CategoryRepository categoryRepository;
     private final RoutingRuleMapper routingRuleMapper;
 
+    private Department resolveActiveDepartment(UUID departmentId) {
+        if (departmentId == null) {
+            throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
+        }
+        Department department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)
+                .or(() -> departmentRepository.findById(departmentId).filter(d -> !d.isDeleted()))
+                .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
+        if (department.isDeleted()) {
+            throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
+        }
+        return department;
+    }
+
+    private Category resolveActiveCategory(UUID categoryId) {
+        if (categoryId == null) {
+            throw new AppException(ErrorCode.CATEGORY_NOT_FOUND);
+        }
+        Category category = categoryRepository.findByCategoryIdAndIsDeletedFalse(categoryId)
+                .or(() -> categoryRepository.findById(categoryId).filter(c -> !c.isDeleted()))
+                .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
+        if (category.isDeleted() || !category.isActive()) {
+            throw new AppException(ErrorCode.CATEGORY_NOT_FOUND);
+        }
+        return category;
+    }
+
+    private String normalizeLocationName(String rawName, String type) {
+        if (rawName == null) {
+            return "";
+        }
+        String cleaned = rawName.trim().replaceAll("\\s+", " ");
+        if (cleaned.isEmpty()) {
+            return "";
+        }
+        if ("PROVINCE".equalsIgnoreCase(type)) {
+            cleaned = cleaned.replaceFirst("(?iu)^(thành\\s+phố|tp\\.|tp|tỉnh)\\s*", "").trim();
+            if ("HCM".equalsIgnoreCase(cleaned) || "TPHCM".equalsIgnoreCase(cleaned)) {
+                cleaned = "Hồ Chí Minh";
+            }
+        } else if ("WARD".equalsIgnoreCase(type)) {
+            cleaned = cleaned.replaceFirst("(?iu)^(phường\\s+|p\\.\\s*|xã\\s+|thị\\s+trấn\\s+|tt\\.\\s*)", "").trim();
+        }
+        return cleaned.replaceAll("\\s+", " ").trim().toLowerCase();
+    }
+
+    private boolean hasOverlappingActiveRule(UUID categoryId, String province, String ward, UUID excludeRuleId) {
+        if (categoryId == null) {
+            return false;
+        }
+        List<RoutingRule> existingRules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(categoryId);
+        if (existingRules == null || existingRules.isEmpty()) {
+            return false;
+        }
+        String normProvince = normalizeLocationName(province, "PROVINCE");
+        String normWard = normalizeLocationName(ward, "WARD");
+
+        return existingRules.stream()
+                .filter(Objects::nonNull)
+                .filter(r -> !r.isDeleted())
+                .filter(r -> excludeRuleId == null || !Objects.equals(r.getRuleId(), excludeRuleId))
+                .anyMatch(r -> {
+                    String rProvince = normalizeLocationName(r.getProvince(), "PROVINCE");
+                    String rWard = normalizeLocationName(r.getWard(), "WARD");
+                    return normProvince.equals(rProvince) && normWard.equals(rWard);
+                });
+    }
+
     @Override
     @Transactional
     public RoutingRuleResponse createRoutingRule(CreateRoutingRuleRequest request) {
-        Department department = departmentRepository.findById(request.departmentId())
-                .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
-
-        Category category = categoryRepository.findById(request.categoryId())
-                .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
+        Department department = resolveActiveDepartment(request.departmentId());
+        Category category = resolveActiveCategory(request.categoryId());
 
         boolean exists = routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(
-                request.categoryId(), request.province(), request.ward());
+                request.categoryId(), request.province(), request.ward())
+                || hasOverlappingActiveRule(request.categoryId(), request.province(), request.ward(), null);
         if (exists) {
             throw new AppException(ErrorCode.ROUTING_RULE_CONFLICT);
         }
@@ -68,15 +133,17 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
         Department department = routingRule.getDepartment();
         UUID currentDepartmentId = department != null ? department.getDepartmentId() : null;
         if (request.departmentId() != null && !Objects.equals(request.departmentId(), currentDepartmentId)) {
-            department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(request.departmentId())
-                    .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
+            department = resolveActiveDepartment(request.departmentId());
+        } else if (department != null && department.isDeleted()) {
+            throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
         }
 
         Category category = routingRule.getCategory();
         UUID currentCategoryId = category != null ? category.getCategoryId() : null;
         if (request.categoryId() != null && !Objects.equals(request.categoryId(), currentCategoryId)) {
-            category = categoryRepository.findById(request.categoryId())
-                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
+            category = resolveActiveCategory(request.categoryId());
+        } else if (category != null && (category.isDeleted() || !category.isActive())) {
+            throw new AppException(ErrorCode.CATEGORY_NOT_FOUND);
         }
 
         UUID targetCategoryId = category != null ? category.getCategoryId() : null;
@@ -84,7 +151,8 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
         String targetWard = request.ward() != null ? request.ward() : routingRule.getWard();
 
         boolean conflict = routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndRuleIdNotAndIsDeletedFalse(
-                targetCategoryId, targetProvince, targetWard, id);
+                targetCategoryId, targetProvince, targetWard, id)
+                || hasOverlappingActiveRule(targetCategoryId, targetProvince, targetWard, id);
         if (conflict) {
             throw new AppException(ErrorCode.ROUTING_RULE_CONFLICT);
         }
@@ -137,7 +205,10 @@ public class RoutingRuleServiceImpl implements RoutingRuleService {
     @Override
     @Transactional(readOnly = true)
     public List<RoutingRuleResponse> getRoutingRulesByDepartment(UUID departmentId) {
-        if (!departmentRepository.existsById(departmentId)) {
+        boolean activeDeptExists = departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId).isPresent()
+                || departmentRepository.findById(departmentId).filter(d -> !d.isDeleted()).isPresent()
+                || departmentRepository.existsById(departmentId);
+        if (!activeDeptExists) {
             throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
         }
         List<RoutingRule> rules = routingRuleRepository.findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);

@@ -46,3 +46,5 @@ build_catalog.ps1
 generate_report5.ps1
 functions_catalog.json
 **/DatabaseSeeder.java
+firebase-service-account.json
+**/firebase-service-account.json

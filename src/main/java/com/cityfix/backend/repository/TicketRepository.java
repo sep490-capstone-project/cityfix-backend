@@ -195,6 +195,78 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
         """)
     Page<Ticket> findResolvedTicketsWithAllStepsResolved(Pageable pageable);
 
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @Query(value = """
+        SELECT t FROM Ticket t
+        WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.RESOLVED
+          AND EXISTS (
+              SELECT 1 FROM TicketStep ts
+              WHERE ts.ticket = t
+                AND ts.isDeleted = false
+                AND ts.status = com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED
+                AND ts.assignee IS NOT NULL
+                AND (
+                    ts.assignee.department.departmentId IN :departmentIds
+                    OR (
+                        ts.assignee.department IS NULL
+                        AND EXISTS (
+                            SELECT 1 FROM UserDepartment ud
+                            WHERE ud.user = ts.assignee
+                              AND ud.department.departmentId IN :departmentIds
+                              AND ud.department.isDeleted = false
+                        )
+                    )
+                )
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM TicketStep ts2
+              WHERE ts2.ticket = t
+                AND ts2.isDeleted = false
+                AND ts2.status NOT IN (
+                    com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.CANCELLED
+                )
+          )
+        """,
+        countQuery = """
+        SELECT COUNT(t) FROM Ticket t
+        WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.RESOLVED
+          AND EXISTS (
+              SELECT 1 FROM TicketStep ts
+              WHERE ts.ticket = t
+                AND ts.isDeleted = false
+                AND ts.status = com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED
+                AND ts.assignee IS NOT NULL
+                AND (
+                    ts.assignee.department.departmentId IN :departmentIds
+                    OR (
+                        ts.assignee.department IS NULL
+                        AND EXISTS (
+                            SELECT 1 FROM UserDepartment ud
+                            WHERE ud.user = ts.assignee
+                              AND ud.department.departmentId IN :departmentIds
+                              AND ud.department.isDeleted = false
+                        )
+                    )
+                )
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM TicketStep ts2
+              WHERE ts2.ticket = t
+                AND ts2.isDeleted = false
+                AND ts2.status NOT IN (
+                    com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED,
+                    com.cityfix.backend.model.enums.AssignmentStatus.CANCELLED
+                )
+          )
+        """)
+    Page<Ticket> findResolvedTicketsWithAllStepsResolvedByDepartmentIds(
+            @Param("departmentIds") java.util.Collection<UUID> departmentIds,
+            Pageable pageable
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
     @Query("SELECT t FROM Ticket t WHERE t.ticketId = :ticketId")
@@ -225,8 +297,20 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             EXISTS (
                 SELECT 1 FROM TicketStep ts
                 WHERE ts.ticket = t
-                   AND ts.assignee.department.departmentId = :departmentId
                   AND ts.isDeleted = false
+                  AND ts.assignee IS NOT NULL
+                  AND (
+                      ts.assignee.department.departmentId = :departmentId
+                      OR (
+                          ts.assignee.department IS NULL
+                          AND EXISTS (
+                              SELECT 1 FROM UserDepartment ud
+                              WHERE ud.user = ts.assignee
+                                AND ud.department.departmentId = :departmentId
+                                AND ud.department.isDeleted = false
+                          )
+                      )
+                  )
             )
             OR (
                 NOT EXISTS (
@@ -241,10 +325,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND rr.category = tsc.subCategory.category
                       AND rr.department.departmentId = :departmentId
                       AND rr.isDeleted = false
+                      AND (
+                          rr.province IS NULL OR TRIM(rr.province) = ''
+                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.province), '%')))
+                      )
+                      AND (
+                          rr.ward IS NULL OR TRIM(rr.ward) = ''
+                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.ward), '%')))
+                      )
                 )
             )
         )
-
         AND (:priority IS NULL OR t.priority = :priority)
         AND (:status IS NULL OR t.status = :status)
         """,
@@ -254,8 +345,20 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             EXISTS (
                 SELECT 1 FROM TicketStep ts
                 WHERE ts.ticket = t
-                  AND ts.assignee.department.departmentId = :departmentId
                   AND ts.isDeleted = false
+                  AND ts.assignee IS NOT NULL
+                  AND (
+                      ts.assignee.department.departmentId = :departmentId
+                      OR (
+                          ts.assignee.department IS NULL
+                          AND EXISTS (
+                              SELECT 1 FROM UserDepartment ud
+                              WHERE ud.user = ts.assignee
+                                AND ud.department.departmentId = :departmentId
+                                AND ud.department.isDeleted = false
+                          )
+                      )
+                  )
             )
             OR (
                 NOT EXISTS (
@@ -270,10 +373,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND rr.category = tsc.subCategory.category
                       AND rr.department.departmentId = :departmentId
                       AND rr.isDeleted = false
+                      AND (
+                          rr.province IS NULL OR TRIM(rr.province) = ''
+                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.province), '%')))
+                      )
+                      AND (
+                          rr.ward IS NULL OR TRIM(rr.ward) = ''
+                          OR (t.address IS NOT NULL AND LOWER(t.address) LIKE LOWER(CONCAT('%', TRIM(rr.ward), '%')))
+                      )
                 )
             )
         )
-
         AND (:priority IS NULL OR t.priority = :priority)
         AND (:status IS NULL OR t.status = :status)
         """)
@@ -295,11 +405,14 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
               AND ts.assignee IS NOT NULL
               AND (
                   ts.assignee.department.departmentId IN :departmentIds
-                  OR EXISTS (
-                      SELECT 1 FROM UserDepartment ud
-                      WHERE ud.user = ts.assignee
-                        AND ud.department.departmentId IN :departmentIds
-                        AND ud.department.isDeleted = false
+                  OR (
+                      ts.assignee.department IS NULL
+                      AND EXISTS (
+                          SELECT 1 FROM UserDepartment ud
+                          WHERE ud.user = ts.assignee
+                            AND ud.department.departmentId IN :departmentIds
+                            AND ud.department.isDeleted = false
+                      )
                   )
               )
         )
@@ -313,11 +426,14 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
               AND ts.assignee IS NOT NULL
               AND (
                   ts.assignee.department.departmentId IN :departmentIds
-                  OR EXISTS (
-                      SELECT 1 FROM UserDepartment ud
-                      WHERE ud.user = ts.assignee
-                        AND ud.department.departmentId IN :departmentIds
-                        AND ud.department.isDeleted = false
+                  OR (
+                      ts.assignee.department IS NULL
+                      AND EXISTS (
+                          SELECT 1 FROM UserDepartment ud
+                          WHERE ud.user = ts.assignee
+                            AND ud.department.departmentId IN :departmentIds
+                            AND ud.department.isDeleted = false
+                      )
                   )
               )
         )
