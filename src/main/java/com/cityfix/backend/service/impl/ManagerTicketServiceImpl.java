@@ -141,25 +141,32 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
     }
 
-    private Set<UUID> getManagedDepartmentIds(User currentUser) {
+    private List<Department> getManagedDepartments(User currentUser) {
         if (currentUser == null) {
-            return Collections.emptySet();
+            return Collections.emptyList();
         }
         List<Department> mgrDepts = new ArrayList<>();
         if (currentUser.getUserId() != null) {
             List<Department> fromUserDept = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
             if (fromUserDept != null) {
-                mgrDepts.addAll(fromUserDept);
+                fromUserDept.stream()
+                        .filter(d -> d != null && !d.isDeleted())
+                        .forEach(mgrDepts::add);
             }
         }
-        if (currentUser.getDepartment() != null && currentUser.getDepartment().getDepartmentId() != null) {
-            UUID directDeptId = currentUser.getDepartment().getDepartmentId();
+        Department directDept = currentUser.getDepartment();
+        if (directDept != null && !directDept.isDeleted() && directDept.getDepartmentId() != null) {
+            UUID directDeptId = directDept.getDepartmentId();
             if (mgrDepts.stream().noneMatch(d -> d != null && directDeptId.equals(d.getDepartmentId()))) {
-                mgrDepts.add(currentUser.getDepartment());
+                mgrDepts.add(directDept);
             }
         }
-        return mgrDepts.stream()
-                .filter(Objects::nonNull)
+        return mgrDepts;
+    }
+
+    private Set<UUID> getManagedDepartmentIds(User currentUser) {
+        return getManagedDepartments(currentUser).stream()
+                .filter(d -> d != null && !d.isDeleted())
                 .map(Department::getDepartmentId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -218,20 +225,14 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        List<Department> mgrDepts = new ArrayList<>(userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId()));
-        if (currentUser.getDepartment() != null && currentUser.getDepartment().getDepartmentId() != null) {
-            UUID directDeptId = currentUser.getDepartment().getDepartmentId();
-            if (mgrDepts.stream().noneMatch(d -> d != null && directDeptId.equals(d.getDepartmentId()))) {
-                mgrDepts.add(currentUser.getDepartment());
-            }
-        }
+        List<Department> mgrDepts = getManagedDepartments(currentUser);
 
         if (mgrDepts.isEmpty()) {
             throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
         }
 
         Set<UUID> mgrDeptIds = mgrDepts.stream()
-                .filter(Objects::nonNull)
+                .filter(d -> d != null && !d.isDeleted())
                 .map(Department::getDepartmentId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -281,14 +282,15 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         UUID targetDeptId;
         if (isMgr) {
-            List<Department> mgrDepts = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
-            if (mgrDepts.isEmpty() && currentUser.getDepartment() != null && currentUser.getDepartment().getDepartmentId() != null) {
-                mgrDepts = List.of(currentUser.getDepartment());
-            }
+            List<Department> mgrDepts = getManagedDepartments(currentUser);
             if (mgrDepts.isEmpty()) {
                 throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
             }
-            Set<UUID> mgrDeptIds = mgrDepts.stream().map(Department::getDepartmentId).collect(Collectors.toSet());
+            Set<UUID> mgrDeptIds = mgrDepts.stream()
+                    .filter(d -> d != null && !d.isDeleted())
+                    .map(Department::getDepartmentId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
             if (departmentId != null) {
                 if (!mgrDeptIds.contains(departmentId)) {
                     throw new AppException(ErrorCode.FORBIDDEN);
@@ -301,7 +303,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             // ADMIN
             if (departmentId != null) {
                 targetDeptId = departmentId;
-            } else if (currentUser.getDepartment() != null) {
+            } else if (currentUser.getDepartment() != null && !currentUser.getDepartment().isDeleted()) {
                 targetDeptId = currentUser.getDepartment().getDepartmentId();
             } else {
                 throw new AppException(ErrorCode.INVALID_REQUEST);
@@ -417,7 +419,14 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         }
 
         List<Department> departments = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
-        if (departments.isEmpty() && currentUser.getDepartment() != null) {
+        if (departments != null) {
+            departments = departments.stream()
+                    .filter(d -> d != null && !d.isDeleted())
+                    .toList();
+        } else {
+            departments = Collections.emptyList();
+        }
+        if (departments.isEmpty() && currentUser.getDepartment() != null && !currentUser.getDepartment().isDeleted()) {
             departments = List.of(currentUser.getDepartment());
         }
 
@@ -615,7 +624,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         // Batch query kiểm tra phòng ban qua bảng user_department để tránh N+1 query
         Set<UUID> staffsToCheck = assignees.stream()
-                .filter(staff -> staff.getDepartment() == null)
+                .filter(staff -> staff.getDepartment() == null || staff.getDepartment().isDeleted())
                 .map(User::getUserId)
                 .collect(Collectors.toSet());
 
@@ -624,7 +633,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 : userDepartmentRepository.findUserIdsWithDepartment(staffsToCheck);
 
         for (User staff : assignees) {
-            boolean hasDept = staff.getDepartment() != null || userIdsWithNNDept.contains(staff.getUserId());
+            boolean hasDept = (staff.getDepartment() != null && !staff.getDepartment().isDeleted())
+                    || userIdsWithNNDept.contains(staff.getUserId());
             if (!hasDept) {
                 throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT, "Nhân viên '" + staff.getFullName() + "' không thuộc phòng ban nào");
             }
