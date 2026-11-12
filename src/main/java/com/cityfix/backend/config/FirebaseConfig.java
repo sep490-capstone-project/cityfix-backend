@@ -18,28 +18,29 @@ import java.io.InputStream;
 @Configuration
 public class FirebaseConfig {
 
-    // Lấy giá trị từ biến môi trường FIREBASE_CONFIG_PATH, nếu không có thì để rỗng
     @Value("${FIREBASE_CONFIG_PATH:}")
     private String firebaseConfigPath;
 
     @PostConstruct
     public void initFirebase() {
+        if (!FirebaseApp.getApps().isEmpty()) {
+            return;
+        }
+
+        InputStream serviceAccount = null;
         try {
-            if (FirebaseApp.getApps().isEmpty()) {
-                InputStream serviceAccount;
+            // 1. Lấy luồng đọc file (từ VPS hoặc Local)
+            if (StringUtils.hasText(firebaseConfigPath)) {
+                log.info("Khởi tạo Firebase bằng file mount ngoài: {}", firebaseConfigPath);
+                serviceAccount = new FileInputStream(firebaseConfigPath);
+            } else {
+                log.info("Khởi tạo Firebase bằng file trong classpath resources");
+                serviceAccount = new ClassPathResource("firebase-service-account.json").getInputStream();
+            }
 
-                // 1. Kiểm tra nếu đang chạy trên VPS (có biến môi trường FIREBASE_CONFIG_PATH)
-                if (StringUtils.hasText(firebaseConfigPath)) {
-                    log.info("Khởi tạo Firebase bằng file mount ngoài: {}", firebaseConfigPath);
-                    serviceAccount = new FileInputStream(firebaseConfigPath); // Đọc file từ đường dẫn tuyệt đối
-                } 
-                // 2. Fallback nếu chạy ở local dev (đọc từ src/main/resources)
-                else {
-                    log.info("Khởi tạo Firebase bằng file trong classpath resources");
-                    serviceAccount = new ClassPathResource("firebase-service-account.json").getInputStream();
-                }
-
-                GoogleCredentials credentials = GoogleCredentials.fromStream(serviceAccount);
+            // 2. Sử dụng try-with-resources để đảm bảo InputStream luôn được đóng (Close)
+            try (InputStream is = serviceAccount) {
+                GoogleCredentials credentials = GoogleCredentials.fromStream(is);
 
                 // Khởi tạo HttpTransport can thiệp bỏ nén gzip tự động
                 NetHttpTransport transport = new NetHttpTransport.Builder().build();
@@ -52,9 +53,11 @@ public class FirebaseConfig {
                 FirebaseApp.initializeApp(options);
                 log.info("Firebase Admin SDK initialized successfully");
             }
+
         } catch (Exception e) {
             log.error("Failed to initialize Firebase Admin SDK: {}", e.getMessage(), e);
+            // 3. Ném ra RuntimeException để Spring Boot NGỪNG KHỞI ĐỘNG (Fail-fast)
+            throw new IllegalStateException("Critical Error: Không thể khởi tạo Firebase. Backend dừng hoạt động.", e);
         }
     }
 }
-
