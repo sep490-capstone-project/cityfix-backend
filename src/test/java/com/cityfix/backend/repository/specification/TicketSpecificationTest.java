@@ -46,5 +46,35 @@ class TicketSpecificationTest {
         verify(anyAssignedStepSubquery).from(TicketStep.class);
         verify(routingRuleSubquery).from(RoutingRule.class);
         verify(routingRuleSubquery).from(TicketSubCategory.class);
+        verify(root).join("ticketLocation", JoinType.LEFT);
+    }
+
+    @Test
+    @DisplayName("withFilter_keywordAndAssessmentFilters_joinsTicketLocationTicketAssessmentAndUserProfile")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void withFilter_keywordAndAssessmentFilters_joinsTicketLocationTicketAssessmentAndUserProfile() {
+        AdminTicketFilterRequest filter = AdminTicketFilterRequest.builder()
+                .keyword("sụt lún")
+                .priority(com.cityfix.backend.model.enums.Priority.HIGH)
+                .isLifeThreatening(true)
+                .needsManualReview(true)
+                .province("Hồ Chí Minh")
+                .ward("Bến Nghé")
+                .build();
+
+        Root<Ticket> root = mock(Root.class, RETURNS_DEEP_STUBS);
+        CriteriaQuery<?> query = mock(CriteriaQuery.class, RETURNS_DEEP_STUBS);
+        CriteriaBuilder cb = mock(CriteriaBuilder.class, RETURNS_DEEP_STUBS);
+        Join<Object, Object> userJoin = mock(Join.class, RETURNS_DEEP_STUBS);
+
+        when(root.join("user", JoinType.LEFT)).thenReturn(userJoin);
+
+        Specification<Ticket> spec = TicketSpecification.withFilter(filter);
+        spec.toPredicate(root, query, cb);
+
+        verify(root, times(1)).join("ticketLocation", JoinType.LEFT);
+        verify(root, times(1)).join("ticketAssessment", JoinType.LEFT);
+        verify(root, times(1)).join("user", JoinType.LEFT);
+        verify(userJoin, times(1)).join("userProfile", JoinType.LEFT);
     }
 }

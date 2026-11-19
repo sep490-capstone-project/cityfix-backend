@@ -81,6 +81,22 @@ public class StaffTicketServiceImpl implements StaffTicketService {
         return user != null && user.getRole() != null && "STAFF".equalsIgnoreCase(user.getRole().getRoleName());
     }
 
+    private Set<UUID> extractUserDepartmentIds(User user) {
+        if (user == null || user.getUserDepartments() == null) {
+            return Collections.emptySet();
+        }
+        Set<UUID> deptIds = new LinkedHashSet<>();
+        try {
+            for (UserDepartment ud : user.getUserDepartments()) {
+                if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted() && ud.getDepartment().getDepartmentId() != null) {
+                    deptIds.add(ud.getDepartment().getDepartmentId());
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return deptIds;
+    }
+
     private boolean isStepAssignedToUserOrDepartment(TicketStep step, User user) {
         if (step == null || step.getAssignee() == null || user == null) {
             return false;
@@ -88,9 +104,9 @@ public class StaffTicketServiceImpl implements StaffTicketService {
         if (user.getUserId() != null && user.getUserId().equals(step.getAssignee().getUserId())) {
             return true;
         }
-        return user.getDepartment() != null 
-                && step.getAssignee().getDepartment() != null 
-                && user.getDepartment().getDepartmentId().equals(step.getAssignee().getDepartment().getDepartmentId());
+        Set<UUID> userDeptIds = extractUserDepartmentIds(user);
+        Set<UUID> assigneeDeptIds = extractUserDepartmentIds(step.getAssignee());
+        return !userDeptIds.isEmpty() && assigneeDeptIds.stream().anyMatch(userDeptIds::contains);
     }
 
     private void validateStepPrerequisites(TicketStep targetStep) {

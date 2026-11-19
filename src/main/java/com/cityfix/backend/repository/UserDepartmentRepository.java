@@ -35,20 +35,20 @@ public interface UserDepartmentRepository extends JpaRepository<UserDepartment, 
     @Query("SELECT ud.department FROM UserDepartment ud WHERE ud.user.userId = :userId AND ud.department.isDeleted = false")
     List<Department> findDepartmentsByUserId(@Param("userId") UUID userId);
 
-    @Query("SELECT ud.user FROM UserDepartment ud WHERE ud.department.departmentId = :departmentId AND UPPER(ud.user.role.roleName) = 'STAFF' AND ud.user.status = :status AND ud.user.isDeleted = false ORDER BY ud.user.createdAt ASC, ud.user.userId ASC")
+    @Query("SELECT ud.user FROM UserDepartment ud JOIN ud.user u JOIN u.userProfile up JOIN up.role r WHERE ud.department.departmentId = :departmentId AND UPPER(r.roleName) = 'STAFF' AND u.status = :status AND u.isDeleted = false ORDER BY u.createdAt ASC, u.userId ASC")
     List<User> findStaffByDepartmentIdAndStatus(@Param("departmentId") UUID departmentId, @Param("status") UserStatus status);
 
     default List<User> findActiveStaffByDepartmentId(UUID departmentId) {
         return findStaffByDepartmentIdAndStatus(departmentId, UserStatus.ACTIVE);
     }
 
-    @Query("SELECT DISTINCT ud.user.userId FROM UserDepartment ud WHERE ud.user.userId IN :userIds")
+    @Query("SELECT DISTINCT ud.user.userId FROM UserDepartment ud WHERE ud.user.userId IN :userIds AND ud.department.isDeleted = false")
     Set<UUID> findUserIdsWithDepartment(@Param("userIds") Collection<UUID> userIds);
 
-    @Query("SELECT ud FROM UserDepartment ud JOIN FETCH ud.user u JOIN FETCH u.role WHERE ud.department.departmentId = :departmentId AND u.isDeleted = false ORDER BY ud.createdAt ASC")
+    @Query("SELECT ud FROM UserDepartment ud JOIN FETCH ud.user u JOIN FETCH u.userProfile up JOIN FETCH up.role WHERE ud.department.departmentId = :departmentId AND u.isDeleted = false ORDER BY ud.createdAt ASC")
     List<UserDepartment> findDepartmentUsersWithRole(@Param("departmentId") UUID departmentId);
 
-    @Query("SELECT DISTINCT ud.user FROM UserDepartment ud WHERE ud.department.departmentId IN :departmentIds AND ud.department.isDeleted = false AND UPPER(ud.user.role.roleName) = 'MANAGER' AND ud.user.status = :status AND ud.user.isDeleted = false")
+    @Query("SELECT DISTINCT ud.user FROM UserDepartment ud JOIN ud.user u JOIN u.userProfile up JOIN up.role r WHERE ud.department.departmentId IN :departmentIds AND ud.department.isDeleted = false AND UPPER(r.roleName) = 'MANAGER' AND u.status = :status AND u.isDeleted = false")
     List<User> findManagersByDepartmentIdsAndStatus(@Param("departmentIds") Collection<UUID> departmentIds, @Param("status") UserStatus status);
 
     default List<User> findActiveManagersByDepartmentIds(Collection<UUID> departmentIds) {

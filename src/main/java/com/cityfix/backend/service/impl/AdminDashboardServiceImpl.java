@@ -804,9 +804,6 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         for (TicketStep step : steps) {
             if (step != null && !step.isDeleted() && step.getAssignee() != null) {
                 User assignee = step.getAssignee();
-                if (assignee.getDepartment() != null && departmentId.equals(assignee.getDepartment().getDepartmentId())) {
-                    return true;
-                }
                 if (assignee.getUserDepartments() != null && Hibernate.isInitialized(assignee.getUserDepartments())) {
                     for (UserDepartment ud : assignee.getUserDepartments()) {
                         if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()

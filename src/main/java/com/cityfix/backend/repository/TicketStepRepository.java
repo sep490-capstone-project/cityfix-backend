@@ -16,24 +16,24 @@ import java.util.UUID;
 public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
     @Override
-    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee", "assignee.userProfile"})
     java.util.Optional<TicketStep> findById(UUID id);
 
-    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee", "assignee.userProfile"})
     List<TicketStep> findByTicketTicketId(UUID ticketId);
 
-    @EntityGraph(attributePaths = {"ticket", "step", "assignee", "assignee.department", "assignee.userDepartments", "assignee.userDepartments.department"})
+    @EntityGraph(attributePaths = {"ticket", "step", "assignee", "assignee.userProfile", "assignee.userDepartments", "assignee.userDepartments.department"})
     List<TicketStep> findByTicketTicketIdIn(java.util.Collection<UUID> ticketIds);
 
-    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee", "assignee.userProfile"})
     List<TicketStep> findByTicket_TicketId(UUID ticketId);
 
     java.util.Optional<TicketStep> findByTicketTicketIdAndStepStepId(UUID ticketId, UUID stepId);
 
-    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee", "assignee.userProfile"})
     List<TicketStep> findByTicket_TicketIdOrderByCreatedAtAscIdAsc(UUID ticketId);
 
-    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee"})
+    @EntityGraph(attributePaths = {"dependsOn", "step", "assignee", "assignee.userProfile"})
     List<TicketStep> findByTicketTicketIdOrderByCreatedAtAscIdAsc(UUID ticketId);
 
     List<TicketStep> findByTicketTicketIdAndStatusInOrderByCreatedAtAscIdAsc(UUID ticketId, List<AssignmentStatus> statuses);
@@ -46,9 +46,28 @@ public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
     Page<TicketStep> findByAssigneeUserIdAndStatusIn(UUID assigneeId, List<AssignmentStatus> statuses, Pageable pageable);
 
-    Page<TicketStep> findByAssigneeDepartmentDepartmentIdAndStatusIn(UUID departmentId, List<AssignmentStatus> statuses, Pageable pageable);
+    @Query("""
+        SELECT ts FROM TicketStep ts
+        WHERE ts.status IN :statuses
+          AND EXISTS (
+              SELECT 1 FROM UserDepartment ud
+              WHERE ud.user = ts.assignee
+                AND ud.department.departmentId = :departmentId
+                AND ud.department.isDeleted = false
+          )
+        """)
+    Page<TicketStep> findByAssigneeDepartmentDepartmentIdAndStatusIn(@Param("departmentId") UUID departmentId, @Param("statuses") List<AssignmentStatus> statuses, Pageable pageable);
 
-    @Query("SELECT DISTINCT ts.ticket FROM TicketStep ts WHERE ts.assignee.department.departmentId = :departmentId AND ts.status IN :statuses")
+    @Query("""
+        SELECT DISTINCT ts.ticket FROM TicketStep ts
+        WHERE ts.status IN :statuses
+          AND EXISTS (
+              SELECT 1 FROM UserDepartment ud
+              WHERE ud.user = ts.assignee
+                AND ud.department.departmentId = :departmentId
+                AND ud.department.isDeleted = false
+          )
+        """)
     Page<Ticket> findDistinctTicketsByDepartmentAndStatusIn(@Param("departmentId") UUID departmentId, @Param("statuses") List<AssignmentStatus> statuses, Pageable pageable);
 
     @Query("SELECT DISTINCT ts.ticket FROM TicketStep ts WHERE ts.assignee.userId = :staffId AND ts.status IN :statuses")
@@ -59,7 +78,9 @@ public interface TicketStepRepository extends JpaRepository<TicketStep, UUID> {
 
     @Query("SELECT ts FROM TicketStep ts " +
            "LEFT JOIN FETCH ts.assignee a " +
-           "LEFT JOIN FETCH a.department d " +
+           "LEFT JOIN FETCH a.userProfile up " +
+           "LEFT JOIN FETCH a.userDepartments ud " +
+           "LEFT JOIN FETCH ud.department d " +
            "WHERE ts.id = :stepId")
     java.util.Optional<TicketStep> findByIdWithAssigneeAndDepartment(@Param("stepId") UUID stepId);
 }

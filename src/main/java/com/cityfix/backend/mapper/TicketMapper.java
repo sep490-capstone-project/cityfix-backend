@@ -5,18 +5,25 @@ import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.model.entity.TicketStep;
+import com.cityfix.backend.model.entity.User;
+import com.cityfix.backend.model.entity.UserDepartment;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
 import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
+import org.mapstruct.ReportingPolicy;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-@Mapper(componentModel = "spring", uses = {TicketStepMapper.class, SubCategoryMapper.class})
+@Mapper(
+        componentModel = "spring",
+        uses = {TicketStepMapper.class, SubCategoryMapper.class},
+        unmappedTargetPolicy = ReportingPolicy.IGNORE
+)
 public interface TicketMapper {
 
     DuplicateTicketResponse toDuplicateTicketResponse(DuplicateTicketProjection projection);
@@ -106,12 +113,27 @@ public interface TicketMapper {
         }
     }
 
+    default Department resolvePrimaryDepartment(User user) {
+        if (user == null || user.getUserDepartments() == null) {
+            return null;
+        }
+        try {
+            for (UserDepartment ud : user.getUserDepartments()) {
+                if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()) {
+                    return ud.getDepartment();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
     @AfterMapping
     default void mapDepartmentFromSteps(Ticket ticket, @MappingTarget TicketResponse response) {
         if (ticket == null || response == null) return;
         if (ticket.getSteps() != null && !ticket.getSteps().isEmpty()) {
             List<TicketStep> validSteps = ticket.getSteps().stream()
-                    .filter(s -> !s.isDeleted() && s.getAssignee() != null && s.getAssignee().getDepartment() != null)
+                    .filter(s -> !s.isDeleted() && s.getAssignee() != null && resolvePrimaryDepartment(s.getAssignee()) != null)
                     .toList();
 
             if (!validSteps.isEmpty()) {
@@ -121,9 +143,11 @@ public interface TicketMapper {
                         .findFirst();
                 if (inProgress.isPresent()) {
                     TicketStep s = inProgress.get();
-                    Department dept = s.getAssignee().getDepartment();
-                    response.setDepartmentId(dept.getDepartmentId());
-                    response.setDepartmentName(dept.getName());
+                    Department dept = resolvePrimaryDepartment(s.getAssignee());
+                    if (dept != null) {
+                        response.setDepartmentId(dept.getDepartmentId());
+                        response.setDepartmentName(dept.getName());
+                    }
                     response.setAssigneeId(s.getAssignee().getUserId());
                     response.setAssigneeName(s.getAssignee().getFullName());
                     return;
@@ -135,9 +159,11 @@ public interface TicketMapper {
                         .findFirst();
                 if (assigned.isPresent()) {
                     TicketStep s = assigned.get();
-                    Department dept = s.getAssignee().getDepartment();
-                    response.setDepartmentId(dept.getDepartmentId());
-                    response.setDepartmentName(dept.getName());
+                    Department dept = resolvePrimaryDepartment(s.getAssignee());
+                    if (dept != null) {
+                        response.setDepartmentId(dept.getDepartmentId());
+                        response.setDepartmentName(dept.getName());
+                    }
                     response.setAssigneeId(s.getAssignee().getUserId());
                     response.setAssigneeName(s.getAssignee().getFullName());
                     return;
@@ -150,18 +176,22 @@ public interface TicketMapper {
                                 .thenComparing(TicketStep::getId, Comparator.nullsLast(Comparator.naturalOrder())));
                 if (notCancelled.isPresent()) {
                     TicketStep s = notCancelled.get();
-                    Department dept = s.getAssignee().getDepartment();
-                    response.setDepartmentId(dept.getDepartmentId());
-                    response.setDepartmentName(dept.getName());
+                    Department dept = resolvePrimaryDepartment(s.getAssignee());
+                    if (dept != null) {
+                        response.setDepartmentId(dept.getDepartmentId());
+                        response.setDepartmentName(dept.getName());
+                    }
                     response.setAssigneeId(s.getAssignee().getUserId());
                     response.setAssigneeName(s.getAssignee().getFullName());
                     return;
                 }
 
                 TicketStep s = validSteps.get(0);
-                Department dept = s.getAssignee().getDepartment();
-                response.setDepartmentId(dept.getDepartmentId());
-                response.setDepartmentName(dept.getName());
+                Department dept = resolvePrimaryDepartment(s.getAssignee());
+                if (dept != null) {
+                    response.setDepartmentId(dept.getDepartmentId());
+                    response.setDepartmentName(dept.getName());
+                }
                 response.setAssigneeId(s.getAssignee().getUserId());
                 response.setAssigneeName(s.getAssignee().getFullName());
             }
@@ -170,6 +200,9 @@ public interface TicketMapper {
 
     @Mapping(target = "ticketId", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "ticketLocation", ignore = true)
+    @Mapping(target = "ticketAssessment", ignore = true)
     @Mapping(target = "user", source = "user")
     @Mapping(target = "location", source = "location")
     @Mapping(target = "status", source = "status")

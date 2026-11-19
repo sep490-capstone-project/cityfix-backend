@@ -214,8 +214,16 @@ public class RatingFrustrationAnalysisServiceImpl implements RatingFrustrationAn
             for (TicketStep step : ticket.getSteps()) {
                 if (step != null && !step.isDeleted() && step.getAssignee() != null) {
                     User assignee = step.getAssignee();
-                    if (assignee.getDepartment() != null && assignee.getDepartment().getDepartmentId() != null) {
-                        departmentIds.add(assignee.getDepartment().getDepartmentId());
+                    if (assignee.getUserDepartments() != null) {
+                        try {
+                            for (UserDepartment ud : assignee.getUserDepartments()) {
+                                if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()
+                                        && ud.getDepartment().getDepartmentId() != null) {
+                                    departmentIds.add(ud.getDepartment().getDepartmentId());
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        }
                     }
                     if (assignee.getUserId() != null) {
                         List<Department> userDepts = userDepartmentRepository.findDepartmentsByUserId(assignee.getUserId());

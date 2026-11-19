@@ -83,6 +83,37 @@ class TicketRepositoryTest {
         assertThat(ticketAddress.toLowerCase()).doesNotContain(otherWardNormalized);
     }
 
+    @Test
+    @DisplayName("refactoredQueries_joinTicketLocationAndTicketAssessmentAndUserDepartment")
+    void refactoredQueries_joinTicketLocationAndTicketAssessmentAndUserDepartment() throws Exception {
+        Method duplicateMethod = TicketRepository.class.getMethod("findDuplicateTickets", Double.class, Double.class, UUID.class);
+        String duplicateSql = duplicateMethod.getAnnotation(Query.class).value();
+        assertThat(duplicateSql).contains("JOIN ticket_location tl ON tl.ticket_id = t.ticket_id");
+        assertThat(duplicateSql).contains("tl.location");
+        assertThat(duplicateSql).contains("tl.address");
+
+        Method recurringCountMethod = TicketRepository.class.getMethod(
+                "countRecurringCompletedTickets", Double.class, Double.class, Collection.class, UUID.class);
+        assertThat(recurringCountMethod.getAnnotation(Query.class).value())
+                .contains("JOIN ticket_location tl ON tl.ticket_id = t.ticket_id");
+
+        Method sosWardMethod = TicketRepository.class.getMethod(
+                "findLifeThreateningTicketsByWard", String.class, String.class, String.class, Collection.class, Pageable.class);
+        String sosWardJpql = sosWardMethod.getAnnotation(Query.class).value();
+        assertThat(sosWardJpql)
+                .contains("LEFT JOIN t.ticketLocation tl")
+                .contains("LEFT JOIN t.ticketAssessment ta")
+                .contains("ta.isLifeThreatening = true")
+                .contains("tl.location");
+
+        Method resolvedDeptMethod = TicketRepository.class.getMethod(
+                "findResolvedTicketsWithAllStepsResolvedByDepartmentIds", Collection.class, Pageable.class);
+        String resolvedDeptJpql = resolvedDeptMethod.getAnnotation(Query.class).value();
+        assertThat(resolvedDeptJpql)
+                .contains("UserDepartment ud")
+                .doesNotContain("ts.assignee.department");
+    }
+
     private void assertBalancedParentheses(String jpql) {
         assertThat(jpql).isNotBlank();
         int depth = 0;

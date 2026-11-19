@@ -60,7 +60,6 @@ public class AdminUserServiceImpl implements AdminUserService {
         });
 
         List<Department> departments = resolveDepartments(request.getDepartmentId(), request.getDepartmentIds());
-        Department primaryDepartment = departments.isEmpty() ? null : departments.get(0);
 
         if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new AppException(ErrorCode.VALIDATION_ERROR, "Password is required for creating a new user");
@@ -75,7 +74,6 @@ public class AdminUserServiceImpl implements AdminUserService {
                 .ward(request.getWard())
                 .address(request.getAddress())
                 .role(role)
-                .department(primaryDepartment)
                 .status(request.getStatus() != null ? request.getStatus() : UserStatus.ACTIVE)
                 .build();
 
@@ -140,13 +138,10 @@ public class AdminUserServiceImpl implements AdminUserService {
         if (!isStaffOrManager(newRole)) {
             // Nếu đổi role sang RESIDENT, gỡ bỏ toàn bộ liên kết phòng ban
             userDepartmentRepository.deleteByUserUserId(user.getUserId());
-            user.setDepartment(null);
         } else {
             boolean hasDeptInput = request.getDepartmentIds() != null || request.getDepartmentId() != null;
             if (hasDeptInput) {
                 List<Department> departments = resolveDepartments(request.getDepartmentId(), request.getDepartmentIds());
-                Department primaryDepartment = departments.isEmpty() ? null : departments.get(0);
-                user.setDepartment(primaryDepartment);
                 syncUserDepartments(user, departments);
             }
         }
@@ -242,9 +237,21 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     private AdminUserResponse mapToResponse(User user) {
         List<Department> userDepts = userDepartmentRepository.findDepartmentsByUserId(user.getUserId());
-        if (userDepts.isEmpty() && user.getDepartment() != null) {
-            userDepts = List.of(user.getDepartment());
+        if ((userDepts == null || userDepts.isEmpty()) && user.getUserDepartments() != null) {
+            try {
+                userDepts = user.getUserDepartments().stream()
+                        .filter(ud -> ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted())
+                        .map(UserDepartment::getDepartment)
+                        .toList();
+            } catch (Exception ignored) {
+                userDepts = Collections.emptyList();
+            }
         }
+        if (userDepts == null) {
+            userDepts = Collections.emptyList();
+        }
+
+        UUID primaryDepartmentId = userDepts.isEmpty() ? null : userDepts.get(0).getDepartmentId();
 
         List<AdminUserResponse.DepartmentSummaryResponse> deptSummaries = userDepts.stream()
                 .map(d -> AdminUserResponse.DepartmentSummaryResponse.builder()
@@ -263,7 +270,7 @@ public class AdminUserServiceImpl implements AdminUserService {
                 .address(user.getAddress())
                 .roleName(user.getRole() != null ? user.getRole().getRoleName() : null)
                 .roleId(user.getRole() != null ? user.getRole().getRoleId() : null)
-                .departmentId(user.getDepartment() != null ? user.getDepartment().getDepartmentId() : null)
+                .departmentId(primaryDepartmentId)
                 .departments(deptSummaries)
                 .status(user.getStatus())
                 .createdAt(user.getCreatedAt())
