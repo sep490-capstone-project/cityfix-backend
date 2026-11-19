@@ -48,3 +48,5 @@ functions_catalog.json
 **/DatabaseSeeder.java
 firebase-service-account.json
 **/firebase-service-account.json
+src/main/resources/firebase-service-account.json
+src/main/resources/*firebase*.json

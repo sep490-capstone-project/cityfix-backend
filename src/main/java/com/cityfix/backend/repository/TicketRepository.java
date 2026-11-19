@@ -25,14 +25,15 @@ import java.util.UUID;
 public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecificationExecutor<Ticket> {
 
     @Override
-    @EntityGraph(attributePaths = {"user"})
+    @EntityGraph(attributePaths = {"user", "user.userProfile", "ticketLocation", "ticketAssessment"})
     Page<Ticket> findAll(Specification<Ticket> spec, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "user"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "user", "user.userProfile", "ticketLocation", "ticketAssessment"})
     @Query("SELECT DISTINCT t FROM Ticket t WHERE t.ticketId IN :ticketIds")
     List<Ticket> findAllWithSubCategoriesByTicketIdIn(@Param("ticketIds") java.util.Collection<UUID> ticketIds);
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @Override
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     Optional<Ticket> findById(UUID id);
 
     boolean existsByDescriptionAndStatus(String description, TicketStatus status);
@@ -43,12 +44,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     @Query("SELECT COUNT(t) FROM Ticket t WHERE NOT EXISTS (SELECT 1 FROM TicketStep ts WHERE ts.ticket = t AND ts.isDeleted = false AND ts.assignee IS NOT NULL)")
     long countUnassignedTickets();
 
+    @Query("SELECT COUNT(t) FROM Ticket t JOIN t.ticketAssessment ta WHERE ta.needsManualReview = true")
     long countByNeedsManualReviewTrue();
 
-    @Query("SELECT COUNT(t) FROM Ticket t WHERE t.isLifeThreatening = true AND t.status NOT IN :terminalStatuses")
+    @Query("SELECT COUNT(t) FROM Ticket t JOIN t.ticketAssessment ta WHERE ta.isLifeThreatening = true AND t.status NOT IN :terminalStatuses")
     long countActiveLifeThreateningTickets(@Param("terminalStatuses") java.util.Collection<TicketStatus> terminalStatuses);
 
-    @Query("SELECT COUNT(t) FROM Ticket t WHERE t.deadline IS NOT NULL AND t.deadline < :now AND t.status NOT IN :closedStatuses")
+    @Query("SELECT COUNT(t) FROM Ticket t JOIN t.ticketAssessment ta WHERE ta.deadline IS NOT NULL AND ta.deadline < :now AND t.status NOT IN :closedStatuses")
     long countOverdueTickets(
             @Param("now") java.time.LocalDateTime now,
             @Param("closedStatuses") java.util.Collection<TicketStatus> closedStatuses
@@ -57,15 +59,16 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     @Query(value = """
         SELECT t.ticket_id AS ticketId,
                t.description AS description,
-               t.address AS address,
+               tl.address AS address,
                t.status AS status,
                c.name AS categoryName,
-               ST_Y(t.location) AS latitude,
-               ST_X(t.location) AS longitude,
-               ST_Distance(t.location::geography, ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography) AS distanceMeters,
+               ST_Y(tl.location) AS latitude,
+               ST_X(tl.location) AS longitude,
+               ST_Distance(tl.location::geography, ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography) AS distanceMeters,
                (SELECT ri.image_url FROM report_image ri WHERE ri.ticket_id = t.ticket_id ORDER BY ri.created_at ASC LIMIT 1) AS imageUrl,
                t.created_at AS createdAt
         FROM ticket t
+        JOIN ticket_location tl ON tl.ticket_id = t.ticket_id
         JOIN sub_category sc ON sc.sub_category_id = :subCategoryId
         JOIN category c ON c.category_id = sc.category_id
         WHERE t.status IN ('INITIATED', 'ASSIGNED', 'IN_PROGRESS')
@@ -75,7 +78,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND tsc.sub_category_id = :subCategoryId
           )
           AND ST_DWithin(
-                t.location::geography,
+                tl.location::geography,
                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
                 50.0
               )
@@ -92,12 +95,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
         FROM (
             SELECT COUNT(DISTINCT t.ticket_id) AS cnt
             FROM ticket t
+            JOIN ticket_location tl ON tl.ticket_id = t.ticket_id
             JOIN ticket_subcategory tsc ON tsc.ticket_id = t.ticket_id
             WHERE t.status = 'COMPLETED'
               AND t.created_at >= NOW() - INTERVAL '30 days'
               AND tsc.sub_category_id IN (:subCategoryIds)
               AND ST_DWithin(
-                    t.location::geography,
+                    tl.location::geography,
                     ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
                     10.0
                   )
@@ -116,11 +120,12 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     @Query(value = """
         SELECT DISTINCT t.ticket_id
         FROM ticket t
+        JOIN ticket_location tl ON tl.ticket_id = t.ticket_id
         JOIN ticket_subcategory tsc ON tsc.ticket_id = t.ticket_id
         WHERE t.status = 'COMPLETED'
           AND t.created_at >= NOW() - INTERVAL '30 days'
           AND ST_DWithin(
-                t.location::geography,
+                tl.location::geography,
                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
                 10.0
               )
@@ -128,12 +133,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
           AND tsc.sub_category_id IN (
               SELECT tsc2.sub_category_id
               FROM ticket t2
+              JOIN ticket_location tl2 ON tl2.ticket_id = t2.ticket_id
               JOIN ticket_subcategory tsc2 ON tsc2.ticket_id = t2.ticket_id
               WHERE t2.status = 'COMPLETED'
                 AND t2.created_at >= NOW() - INTERVAL '30 days'
                 AND tsc2.sub_category_id IN (:subCategoryIds)
                 AND ST_DWithin(
-                      t2.location::geography,
+                      tl2.location::geography,
                       ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography,
                       10.0
                     )
@@ -149,12 +155,13 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             @Param("currentTicketId") UUID currentTicketId
     );
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     Page<Ticket> findByStatus(TicketStatus status, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = """
         SELECT t FROM Ticket t
+        LEFT JOIN t.ticketLocation tl
         WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.INITIATED
           AND EXISTS (
               SELECT 1 FROM RoutingRule rr, TicketSubCategory tsc
@@ -165,8 +172,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND (
                     rr.province IS NULL OR TRIM(rr.province) = ''
                     OR (
-                        t.address IS NOT NULL
-                        AND LOWER(t.address) LIKE CONCAT(
+                        tl.address IS NOT NULL
+                        AND LOWER(tl.address) LIKE CONCAT(
                             '%',
                             TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
                             '%'
@@ -176,8 +183,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND (
                     rr.ward IS NULL OR TRIM(rr.ward) = ''
                     OR (
-                        t.address IS NOT NULL
-                        AND LOWER(t.address) LIKE CONCAT(
+                        tl.address IS NOT NULL
+                        AND LOWER(tl.address) LIKE CONCAT(
                             '%',
                             TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
                             '%'
@@ -188,6 +195,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
         """,
         countQuery = """
         SELECT COUNT(t) FROM Ticket t
+        LEFT JOIN t.ticketLocation tl
         WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.INITIATED
           AND EXISTS (
               SELECT 1 FROM RoutingRule rr, TicketSubCategory tsc
@@ -198,8 +206,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND (
                     rr.province IS NULL OR TRIM(rr.province) = ''
                     OR (
-                        t.address IS NOT NULL
-                        AND LOWER(t.address) LIKE CONCAT(
+                        tl.address IS NOT NULL
+                        AND LOWER(tl.address) LIKE CONCAT(
                             '%',
                             TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
                             '%'
@@ -209,8 +217,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND (
                     rr.ward IS NULL OR TRIM(rr.ward) = ''
                     OR (
-                        t.address IS NOT NULL
-                        AND LOWER(t.address) LIKE CONCAT(
+                        tl.address IS NOT NULL
+                        AND LOWER(tl.address) LIKE CONCAT(
                             '%',
                             TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
                             '%'
@@ -224,7 +232,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             Pageable pageable
     );
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = """
         SELECT t FROM Ticket t
         WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.RESOLVED
@@ -267,7 +275,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
         """)
     Page<Ticket> findResolvedTicketsWithAllStepsResolved(Pageable pageable);
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = """
         SELECT t FROM Ticket t
         WHERE t.status = com.cityfix.backend.model.enums.TicketStatus.RESOLVED
@@ -277,17 +285,11 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND ts.isDeleted = false
                 AND ts.status = com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED
                 AND ts.assignee IS NOT NULL
-                AND (
-                    ts.assignee.department.departmentId IN :departmentIds
-                    OR (
-                        ts.assignee.department IS NULL
-                        AND EXISTS (
-                            SELECT 1 FROM UserDepartment ud
-                            WHERE ud.user = ts.assignee
-                              AND ud.department.departmentId IN :departmentIds
-                              AND ud.department.isDeleted = false
-                        )
-                    )
+                AND EXISTS (
+                    SELECT 1 FROM UserDepartment ud
+                    WHERE ud.user = ts.assignee
+                      AND ud.department.departmentId IN :departmentIds
+                      AND ud.department.isDeleted = false
                 )
           )
           AND NOT EXISTS (
@@ -310,17 +312,11 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 AND ts.isDeleted = false
                 AND ts.status = com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED
                 AND ts.assignee IS NOT NULL
-                AND (
-                    ts.assignee.department.departmentId IN :departmentIds
-                    OR (
-                        ts.assignee.department IS NULL
-                        AND EXISTS (
-                            SELECT 1 FROM UserDepartment ud
-                            WHERE ud.user = ts.assignee
-                              AND ud.department.departmentId IN :departmentIds
-                              AND ud.department.isDeleted = false
-                        )
-                    )
+                AND EXISTS (
+                    SELECT 1 FROM UserDepartment ud
+                    WHERE ud.user = ts.assignee
+                      AND ud.department.departmentId IN :departmentIds
+                      AND ud.department.isDeleted = false
                 )
           )
           AND NOT EXISTS (
@@ -340,16 +336,16 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query("SELECT t FROM Ticket t WHERE t.ticketId = :ticketId")
     Optional<Ticket> findByIdWithPessimisticLock(@Param("ticketId") UUID ticketId);
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = "SELECT t FROM Ticket t WHERE t.user.userId = :userId",
            countQuery = "SELECT COUNT(t) FROM Ticket t WHERE t.user.userId = :userId")
     Page<Ticket> findByUserId(@Param("userId") UUID userId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = """
     SELECT t FROM Ticket t
     JOIN TicketVote tv ON tv.ticket = t
@@ -362,26 +358,22 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     """)
     Page<Ticket> findUpvotedTicketsByUserId(@Param("userId") UUID userId, Pageable pageable);
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = """
         SELECT t FROM Ticket t
+        LEFT JOIN t.ticketLocation tl
+        LEFT JOIN t.ticketAssessment ta
         WHERE (
             EXISTS (
                 SELECT 1 FROM TicketStep ts
                 WHERE ts.ticket = t
                   AND ts.isDeleted = false
                   AND ts.assignee IS NOT NULL
-                  AND (
-                      ts.assignee.department.departmentId = :departmentId
-                      OR (
-                          ts.assignee.department IS NULL
-                          AND EXISTS (
-                              SELECT 1 FROM UserDepartment ud
-                              WHERE ud.user = ts.assignee
-                                AND ud.department.departmentId = :departmentId
-                                AND ud.department.isDeleted = false
-                          )
-                      )
+                  AND EXISTS (
+                      SELECT 1 FROM UserDepartment ud
+                      WHERE ud.user = ts.assignee
+                        AND ud.department.departmentId = :departmentId
+                        AND ud.department.isDeleted = false
                   )
             )
             OR (
@@ -400,8 +392,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND (
                           rr.province IS NULL OR TRIM(rr.province) = ''
                           OR (
-                              t.address IS NOT NULL
-                              AND LOWER(t.address) LIKE CONCAT(
+                              tl.address IS NOT NULL
+                              AND LOWER(tl.address) LIKE CONCAT(
                                   '%',
                                   TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
                                   '%'
@@ -411,8 +403,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND (
                           rr.ward IS NULL OR TRIM(rr.ward) = ''
                           OR (
-                              t.address IS NOT NULL
-                              AND LOWER(t.address) LIKE CONCAT(
+                              tl.address IS NOT NULL
+                              AND LOWER(tl.address) LIKE CONCAT(
                                   '%',
                                   TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
                                   '%'
@@ -422,28 +414,24 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 )
             )
         )
-        AND (:priority IS NULL OR t.priority = :priority)
+        AND (:priority IS NULL OR ta.priority = :priority)
         AND (:status IS NULL OR t.status = :status)
         """,
         countQuery = """
         SELECT COUNT(t) FROM Ticket t
+        LEFT JOIN t.ticketLocation tl
+        LEFT JOIN t.ticketAssessment ta
         WHERE (
             EXISTS (
                 SELECT 1 FROM TicketStep ts
                 WHERE ts.ticket = t
                   AND ts.isDeleted = false
                   AND ts.assignee IS NOT NULL
-                  AND (
-                      ts.assignee.department.departmentId = :departmentId
-                      OR (
-                          ts.assignee.department IS NULL
-                          AND EXISTS (
-                              SELECT 1 FROM UserDepartment ud
-                              WHERE ud.user = ts.assignee
-                                AND ud.department.departmentId = :departmentId
-                                AND ud.department.isDeleted = false
-                          )
-                      )
+                  AND EXISTS (
+                      SELECT 1 FROM UserDepartment ud
+                      WHERE ud.user = ts.assignee
+                        AND ud.department.departmentId = :departmentId
+                        AND ud.department.isDeleted = false
                   )
             )
             OR (
@@ -462,8 +450,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND (
                           rr.province IS NULL OR TRIM(rr.province) = ''
                           OR (
-                              t.address IS NOT NULL
-                              AND LOWER(t.address) LIKE CONCAT(
+                              tl.address IS NOT NULL
+                              AND LOWER(tl.address) LIKE CONCAT(
                                   '%',
                                   TRIM(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.province)), 'thành phố ', ''), 'tỉnh ', ''), 'tp.', ''), 'tp ', '')),
                                   '%'
@@ -473,8 +461,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                       AND (
                           rr.ward IS NULL OR TRIM(rr.ward) = ''
                           OR (
-                              t.address IS NOT NULL
-                              AND LOWER(t.address) LIKE CONCAT(
+                              tl.address IS NOT NULL
+                              AND LOWER(tl.address) LIKE CONCAT(
                                   '%',
                                   TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(LOWER(TRIM(rr.ward)), 'phường ', ''), 'thị trấn ', ''), 'xã ', ''), 'p.', ''), 'tt.', '')),
                                   '%'
@@ -484,7 +472,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                 )
             )
         )
-        AND (:priority IS NULL OR t.priority = :priority)
+        AND (:priority IS NULL OR ta.priority = :priority)
         AND (:status IS NULL OR t.status = :status)
         """)
     Page<Ticket> findTicketsByDepartmentAndCriteria(
@@ -495,7 +483,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             Pageable pageable
     );
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = """
         SELECT t FROM Ticket t
         WHERE EXISTS (
@@ -503,17 +491,11 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             WHERE ts.ticket = t
               AND ts.isDeleted = false
               AND ts.assignee IS NOT NULL
-              AND (
-                  ts.assignee.department.departmentId IN :departmentIds
-                  OR (
-                      ts.assignee.department IS NULL
-                      AND EXISTS (
-                          SELECT 1 FROM UserDepartment ud
-                          WHERE ud.user = ts.assignee
-                            AND ud.department.departmentId IN :departmentIds
-                            AND ud.department.isDeleted = false
-                      )
-                  )
+              AND EXISTS (
+                  SELECT 1 FROM UserDepartment ud
+                  WHERE ud.user = ts.assignee
+                    AND ud.department.departmentId IN :departmentIds
+                    AND ud.department.isDeleted = false
               )
         )
         """,
@@ -524,17 +506,11 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             WHERE ts.ticket = t
               AND ts.isDeleted = false
               AND ts.assignee IS NOT NULL
-              AND (
-                  ts.assignee.department.departmentId IN :departmentIds
-                  OR (
-                      ts.assignee.department IS NULL
-                      AND EXISTS (
-                          SELECT 1 FROM UserDepartment ud
-                          WHERE ud.user = ts.assignee
-                            AND ud.department.departmentId IN :departmentIds
-                            AND ud.department.isDeleted = false
-                      )
-                  )
+              AND EXISTS (
+                  SELECT 1 FROM UserDepartment ud
+                  WHERE ud.user = ts.assignee
+                    AND ud.department.departmentId IN :departmentIds
+                    AND ud.department.isDeleted = false
               )
         )
         """)
@@ -543,22 +519,24 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             Pageable pageable
     );
 
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category"})
+    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = """
         SELECT t FROM Ticket t
-        WHERE t.isLifeThreatening = true
+        LEFT JOIN t.ticketLocation tl
+        LEFT JOIN t.ticketAssessment ta
+        WHERE ta.isLifeThreatening = true
           AND t.status IN :statuses
           AND (
               (
-                  t.address IS NOT NULL
+                  tl.address IS NOT NULL
                   AND (
-                      LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern, ',%'))
-                      OR LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern))
+                      LOWER(tl.address) LIKE LOWER(CONCAT('%', :wardPattern, ',%'))
+                      OR LOWER(tl.address) LIKE LOWER(CONCAT('%', :wardPattern))
                   )
-                  AND (:province IS NULL OR :province = '' OR LOWER(t.address) LIKE LOWER(CONCAT('%', :province, '%')))
+                  AND (:province IS NULL OR :province = '' OR LOWER(tl.address) LIKE LOWER(CONCAT('%', :province, '%')))
               )
               OR (
-                  t.location IS NOT NULL
+                  tl.location IS NOT NULL
                   AND EXISTS (
                       SELECT 1 FROM AdministrativeBoundary ab
                       WHERE ab.ward IS NOT NULL
@@ -570,7 +548,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                             OR LOWER(ab.ward) = LOWER(CONCAT('Thị trấn ', :wardPattern))
                         )
                         AND (:province IS NULL OR :province = '' OR LOWER(ab.province) LIKE LOWER(CONCAT('%', :province, '%')))
-                        AND function('ST_Contains', ab.geom, t.location) = true
+                        AND function('ST_Contains', ab.geom, tl.location) = true
                   )
               )
           )
@@ -578,19 +556,21 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
         """,
         countQuery = """
         SELECT COUNT(t) FROM Ticket t
-        WHERE t.isLifeThreatening = true
+        LEFT JOIN t.ticketLocation tl
+        LEFT JOIN t.ticketAssessment ta
+        WHERE ta.isLifeThreatening = true
           AND t.status IN :statuses
           AND (
               (
-                  t.address IS NOT NULL
+                  tl.address IS NOT NULL
                   AND (
-                      LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern, ',%'))
-                      OR LOWER(t.address) LIKE LOWER(CONCAT('%', :wardPattern))
+                      LOWER(tl.address) LIKE LOWER(CONCAT('%', :wardPattern, ',%'))
+                      OR LOWER(tl.address) LIKE LOWER(CONCAT('%', :wardPattern))
                   )
-                  AND (:province IS NULL OR :province = '' OR LOWER(t.address) LIKE LOWER(CONCAT('%', :province, '%')))
+                  AND (:province IS NULL OR :province = '' OR LOWER(tl.address) LIKE LOWER(CONCAT('%', :province, '%')))
               )
               OR (
-                  t.location IS NOT NULL
+                  tl.location IS NOT NULL
                   AND EXISTS (
                       SELECT 1 FROM AdministrativeBoundary ab
                       WHERE ab.ward IS NOT NULL
@@ -602,7 +582,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
                             OR LOWER(ab.ward) = LOWER(CONCAT('Thị trấn ', :wardPattern))
                         )
                         AND (:province IS NULL OR :province = '' OR LOWER(ab.province) LIKE LOWER(CONCAT('%', :province, '%')))
-                        AND function('ST_Contains', ab.geom, t.location) = true
+                        AND function('ST_Contains', ab.geom, tl.location) = true
                   )
               )
           )

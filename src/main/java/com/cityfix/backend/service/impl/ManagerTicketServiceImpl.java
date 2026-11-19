@@ -146,19 +146,27 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             return Collections.emptyList();
         }
         List<Department> mgrDepts = new ArrayList<>();
-        if (currentUser.getUserId() != null) {
+        Set<UUID> seenDeptIds = new LinkedHashSet<>();
+        if (currentUser.getUserId() != null && userDepartmentRepository != null) {
             List<Department> fromUserDept = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
             if (fromUserDept != null) {
-                fromUserDept.stream()
-                        .filter(d -> d != null && !d.isDeleted())
-                        .forEach(mgrDepts::add);
+                for (Department d : fromUserDept) {
+                    if (d != null && !d.isDeleted() && d.getDepartmentId() != null && seenDeptIds.add(d.getDepartmentId())) {
+                        mgrDepts.add(d);
+                    }
+                }
             }
         }
-        Department directDept = currentUser.getDepartment();
-        if (directDept != null && !directDept.isDeleted() && directDept.getDepartmentId() != null) {
-            UUID directDeptId = directDept.getDepartmentId();
-            if (mgrDepts.stream().noneMatch(d -> d != null && directDeptId.equals(d.getDepartmentId()))) {
-                mgrDepts.add(directDept);
+        if (currentUser.getUserDepartments() != null) {
+            try {
+                for (UserDepartment ud : currentUser.getUserDepartments()) {
+                    if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted() && ud.getDepartment().getDepartmentId() != null) {
+                        if (seenDeptIds.add(ud.getDepartment().getDepartmentId())) {
+                            mgrDepts.add(ud.getDepartment());
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
             }
         }
         return mgrDepts;
@@ -301,10 +309,11 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             }
         } else {
             // ADMIN
+            List<Department> adminDepts = getManagedDepartments(currentUser);
             if (departmentId != null) {
                 targetDeptId = departmentId;
-            } else if (currentUser.getDepartment() != null && !currentUser.getDepartment().isDeleted()) {
-                targetDeptId = currentUser.getDepartment().getDepartmentId();
+            } else if (!adminDepts.isEmpty()) {
+                targetDeptId = adminDepts.get(0).getDepartmentId();
             } else {
                 throw new AppException(ErrorCode.INVALID_REQUEST);
             }
@@ -316,7 +325,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         Page<TicketResponse> responses = tickets.map(ticketMapper::toTicketResponse);
 
         Department targetDept = departmentRepository.findById(targetDeptId).orElse(null);
-        String targetDeptName = targetDept != null ? targetDept.getName() : (currentUser.getDepartment() != null ? currentUser.getDepartment().getName() : null);
+        String targetDeptName = targetDept != null ? targetDept.getName() : null;
 
         responses.forEach(res -> {
             if (res.getDepartmentId() == null) {
@@ -418,18 +427,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        List<Department> departments = userDepartmentRepository.findDepartmentsByUserId(currentUser.getUserId());
-        if (departments != null) {
-            departments = departments.stream()
-                    .filter(d -> d != null && !d.isDeleted())
-                    .toList();
-        } else {
-            departments = Collections.emptyList();
-        }
-        if (departments.isEmpty() && currentUser.getDepartment() != null && !currentUser.getDepartment().isDeleted()) {
-            departments = List.of(currentUser.getDepartment());
-        }
-
+        List<Department> departments = getManagedDepartments(currentUser);
         if (departments.isEmpty()) {
             return Collections.emptyList();
         }
@@ -624,22 +622,35 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         // Batch query kiểm tra phòng ban qua bảng user_department để tránh N+1 query
         Set<UUID> staffsToCheck = assignees.stream()
-                .filter(staff -> staff.getDepartment() == null || staff.getDepartment().isDeleted())
+                .filter(staff -> !hasActiveDepartmentInMemory(staff))
                 .map(User::getUserId)
+                .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
 
-        Set<UUID> userIdsWithNNDept = staffsToCheck.isEmpty()
+        Set<UUID> userIdsWithNNDept = (staffsToCheck.isEmpty() || userDepartmentRepository == null)
                 ? Collections.emptySet()
                 : userDepartmentRepository.findUserIdsWithDepartment(staffsToCheck);
 
         for (User staff : assignees) {
-            boolean hasDept = (staff.getDepartment() != null && !staff.getDepartment().isDeleted())
+            boolean hasDept = hasActiveDepartmentInMemory(staff)
                     || userIdsWithNNDept.contains(staff.getUserId());
             if (!hasDept) {
                 throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT, "Nhân viên '" + staff.getFullName() + "' không thuộc phòng ban nào");
             }
         }
         return assignees.stream().collect(Collectors.toMap(User::getUserId, Function.identity()));
+    }
+
+    private boolean hasActiveDepartmentInMemory(User user) {
+        if (user == null || user.getUserDepartments() == null) {
+            return false;
+        }
+        try {
+            return user.getUserDepartments().stream()
+                    .anyMatch(ud -> ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void updateTicketSubCategories(Ticket ticket, List<SubCategory> subCategories) {

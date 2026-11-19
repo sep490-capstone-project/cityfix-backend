@@ -4,6 +4,7 @@ import com.cityfix.backend.model.enums.DepartmentLevel;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,11 +35,8 @@ public class Department extends BaseEntity {
     @Column(name = "phone_number", length = 20)
     private String phoneNumber;
 
-    @OneToMany(mappedBy = "department")
-    private List<User> officers;
-
     @OneToMany(mappedBy = "department", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
-    private List<UserDepartment> userDepartments = new java.util.ArrayList<>();
+    private List<UserDepartment> userDepartments = new ArrayList<>();
 
 }
