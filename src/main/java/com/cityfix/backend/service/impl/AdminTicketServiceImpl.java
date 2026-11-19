@@ -200,11 +200,6 @@ public class AdminTicketServiceImpl implements AdminTicketService {
                     response.setAssigneeId(assignee.getUserId());
                     response.setAssigneeName(assignee.getFullName());
                 }
-                if (assignee.getDepartment() != null) {
-                    response.setDepartmentId(assignee.getDepartment().getDepartmentId());
-                    response.setDepartmentName(assignee.getDepartment().getName());
-                    return;
-                }
                 if (assignee.getUserDepartments() != null && Hibernate.isInitialized(assignee.getUserDepartments())) {
                     for (UserDepartment ud : assignee.getUserDepartments()) {
                         if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()) {

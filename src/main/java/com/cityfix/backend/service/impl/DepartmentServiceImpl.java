@@ -103,10 +103,6 @@ public class DepartmentServiceImpl implements DepartmentService {
         Department department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
-        if (department.getOfficers() != null && !department.getOfficers().isEmpty()) {
-            department.getOfficers().forEach(user -> user.setDepartment(null));
-        }
-
         department.setDeleted(true);
         department.setDeletedAt(LocalDateTime.now());
         departmentRepository.save(department);
@@ -141,11 +137,6 @@ public class DepartmentServiceImpl implements DepartmentService {
                             .build();
                     userDepartmentRepository.save(mapping);
                 }
-
-                if (user.getDepartment() == null) {
-                    user.setDepartment(department);
-                    userRepository.save(user);
-                }
             }
         }
 
@@ -155,24 +146,13 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional
     public void removeUserFromDepartment(UUID departmentId, UUID userId) {
-        Department department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)
+        departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
-        User user = userRepository.findById(userId)
+        userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
 
         userDepartmentRepository.deleteByUserUserIdAndDepartmentDepartmentId(userId, departmentId);
-
-        if (user.getDepartment() != null && user.getDepartment().getDepartmentId().equals(departmentId)) {
-            List<Department> remaining = userDepartmentRepository.findDepartmentsByUserId(userId);
-            Department nextDept = remaining.stream()
-                    .filter(d -> !d.getDepartmentId().equals(departmentId))
-                    .findFirst()
-                    .orElse(null);
-            user.setDepartment(nextDept);
-            userRepository.save(user);
-        }
-
     }
 
     @Override

@@ -290,4 +290,55 @@ class TicketMapperTest {
         assertThat(response).isNotNull();
         assertThat(response.getImageUrls()).isEmpty();
     }
+
+    @Test
+    @DisplayName("satelliteEntities_ticketAndUser_bidirectionalSyncOnBuilderAndSetters")
+    void satelliteEntities_ticketAndUser_bidirectionalSyncOnBuilderAndSetters() {
+        Role role = new Role(UUID.randomUUID(), "STAFF");
+        User user = User.builder()
+                .userId(UUID.randomUUID())
+                .email("staff@cityfix.vn")
+                .fullName("Le Van B")
+                .phoneNumber("0901112222")
+                .role(role)
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .address("01 Lê Duẩn")
+                .build();
+
+        assertThat(user.getUserProfile()).isNotNull();
+        assertThat(user.getUserProfile().getUser()).isSameAs(user);
+        assertThat(user.getUserProfile().getFullName()).isEqualTo("Le Van B");
+        assertThat(user.getUserProfile().getPhoneNumber()).isEqualTo("0901112222");
+        assertThat(user.getUserProfile().getRole()).isSameAs(role);
+
+        assertThat(user.getUserAddress()).isNotNull();
+        assertThat(user.getUserAddress().getUser()).isSameAs(user);
+        assertThat(user.getUserAddress().getProvince()).isEqualTo("TP. Hồ Chí Minh");
+        assertThat(user.getUserAddress().getWard()).isEqualTo("Phường Bến Nghé");
+        assertThat(user.getUserAddress().getAddress()).isEqualTo("01 Lê Duẩn");
+
+        Ticket builtTicket = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .user(user)
+                .description("Test satellite")
+                .address("123 Nguyễn Huệ")
+                .locationMethod(com.cityfix.backend.model.enums.LocationMethod.AUTO_GPS)
+                .priority(com.cityfix.backend.model.enums.Priority.HIGH)
+                .priorityReasoning("Nguy hiểm")
+                .isLifeThreatening(true)
+                .needsManualReview(true)
+                .reviewNote("Cần duyệt gấp")
+                .build();
+
+        assertThat(builtTicket.getTicketLocation()).isNotNull();
+        assertThat(builtTicket.getTicketLocation().getTicket()).isSameAs(builtTicket);
+        assertThat(builtTicket.getTicketLocation().getAddress()).isEqualTo("123 Nguyễn Huệ");
+
+        assertThat(builtTicket.getTicketAssessment()).isNotNull();
+        assertThat(builtTicket.getTicketAssessment().getTicket()).isSameAs(builtTicket);
+        assertThat(builtTicket.getTicketAssessment().getPriority()).isEqualTo(com.cityfix.backend.model.enums.Priority.HIGH);
+        assertThat(builtTicket.getTicketAssessment().getIsLifeThreatening()).isTrue();
+        assertThat(builtTicket.getTicketAssessment().getNeedsManualReview()).isTrue();
+    }
 }

@@ -254,7 +254,6 @@ class DepartmentServiceTest {
         assertThat(result.get(0).getUserId()).isEqualTo(staffId);
         assertThat(result.get(0).getRoleName()).isEqualTo("STAFF");
         verify(userDepartmentRepository).save(any(UserDepartment.class));
-        verify(userRepository).save(staff);
     }
 
     @Test
@@ -301,13 +300,10 @@ class DepartmentServiceTest {
 
         when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
         when(userRepository.findById(staffId)).thenReturn(Optional.of(staff));
-        when(userDepartmentRepository.findDepartmentsByUserId(staffId)).thenReturn(List.of());
 
         departmentService.removeUserFromDepartment(departmentId, staffId);
 
         verify(userDepartmentRepository).deleteByUserUserIdAndDepartmentDepartmentId(staffId, departmentId);
-        verify(userRepository).save(staff);
-        assertThat(staff.getDepartment()).isNull();
     }
 
     @Test

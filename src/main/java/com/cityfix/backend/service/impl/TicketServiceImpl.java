@@ -136,6 +136,34 @@ public class TicketServiceImpl implements TicketService {
         return "MANAGER".equalsIgnoreCase(role) || "STAFF".equalsIgnoreCase(role) || "ADMIN".equalsIgnoreCase(role);
     }
 
+    private Set<UUID> resolveUserDepartmentIds(User user) {
+        if (user == null) {
+            return Collections.emptySet();
+        }
+        Set<UUID> deptIds = new LinkedHashSet<>();
+        if (user.getUserDepartments() != null) {
+            try {
+                for (UserDepartment ud : user.getUserDepartments()) {
+                    if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted() && ud.getDepartment().getDepartmentId() != null) {
+                        deptIds.add(ud.getDepartment().getDepartmentId());
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (deptIds.isEmpty() && user.getUserId() != null && userDepartmentRepository != null) {
+            List<Department> fromRepo = userDepartmentRepository.findDepartmentsByUserId(user.getUserId());
+            if (fromRepo != null) {
+                for (Department d : fromRepo) {
+                    if (d != null && !d.isDeleted() && d.getDepartmentId() != null) {
+                        deptIds.add(d.getDepartmentId());
+                    }
+                }
+            }
+        }
+        return deptIds;
+    }
+
     private void validateStaffDepartmentAccess(Ticket ticket, User currentUser) {
         if (isAdmin(currentUser)) return;
 
@@ -143,18 +171,19 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        if (currentUser.getDepartment() == null) {
+        Set<UUID> userDeptIds = resolveUserDepartmentIds(currentUser);
+        if (userDeptIds.isEmpty()) {
             throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
         }
-
-        UUID userDeptId = currentUser.getDepartment().getDepartmentId();
 
         boolean hasSteps = ticket.getSteps() != null && !ticket.getSteps().isEmpty();
         if (hasSteps) {
             boolean belongsToDept = ticket.getSteps().stream()
-                    .anyMatch(step -> step.getAssignee() != null 
-                            && step.getAssignee().getDepartment() != null 
-                            && userDeptId.equals(step.getAssignee().getDepartment().getDepartmentId()));
+                    .anyMatch(step -> {
+                        if (step.getAssignee() == null) return false;
+                        Set<UUID> assigneeDeptIds = resolveUserDepartmentIds(step.getAssignee());
+                        return assigneeDeptIds.stream().anyMatch(userDeptIds::contains);
+                    });
 
             if (!belongsToDept) {
                 throw new AppException(ErrorCode.FORBIDDEN);
@@ -868,7 +897,7 @@ public class TicketServiceImpl implements TicketService {
             AssignmentStatus status, Pageable pageable) {
         User currentUser = getCurrentUser();
 
-        if (currentUser.getDepartment() == null) {
+        if (resolveUserDepartmentIds(currentUser).isEmpty()) {
             throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
         }
 
@@ -933,17 +962,20 @@ public class TicketServiceImpl implements TicketService {
         User assignee = userRepository.findById(request.getAssigneeId())
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
 
-        if (assignee.getDepartment() == null) {
+        Set<UUID> assigneeDeptIds = resolveUserDepartmentIds(assignee);
+        if (assigneeDeptIds.isEmpty()) {
             throw new AppException(ErrorCode.USER_NOT_IN_DEPARTMENT);
         }
 
-        if (stepToAssign.getAssignee() != null && stepToAssign.getAssignee().getDepartment() != null) {
-            if (!assignee.getDepartment().getDepartmentId().equals(stepToAssign.getAssignee().getDepartment().getDepartmentId())) {
+        if (stepToAssign.getAssignee() != null) {
+            Set<UUID> currentAssigneeDeptIds = resolveUserDepartmentIds(stepToAssign.getAssignee());
+            if (!currentAssigneeDeptIds.isEmpty() && assigneeDeptIds.stream().noneMatch(currentAssigneeDeptIds::contains)) {
                 throw new AppException(ErrorCode.INVALID_REQUEST);
             }
         }
         if (!isAdmin(currentUser)) {
-            if (currentUser.getDepartment() == null || !assignee.getDepartment().getDepartmentId().equals(currentUser.getDepartment().getDepartmentId())) {
+            Set<UUID> currentUserDeptIds = resolveUserDepartmentIds(currentUser);
+            if (currentUserDeptIds.isEmpty() || assigneeDeptIds.stream().noneMatch(currentUserDeptIds::contains)) {
                 throw new AppException(ErrorCode.INVALID_REQUEST);
             }
         }

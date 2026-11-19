@@ -620,10 +620,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             String prov = extractLocationPart(t.getAddress(), "PROVINCE");
             String wrd = extractLocationPart(t.getAddress(), "WARD");
             if (prov == null || prov.isBlank()) {
-                prov = "Chưa xác định";
+                prov = "ChÆ°a xÃ¡c Ä‘á»‹nh";
             }
             if (wrd == null || wrd.isBlank()) {
-                wrd = "Chưa xác định";
+                wrd = "ChÆ°a xÃ¡c Ä‘á»‹nh";
             }
             String key = prov.toLowerCase() + "||" + wrd.toLowerCase();
             geoLabels.putIfAbsent(key, new String[]{prov, wrd});
@@ -804,9 +804,6 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
         for (TicketStep step : steps) {
             if (step != null && !step.isDeleted() && step.getAssignee() != null) {
                 User assignee = step.getAssignee();
-                if (assignee.getDepartment() != null && departmentId.equals(assignee.getDepartment().getDepartmentId())) {
-                    return true;
-                }
                 if (assignee.getUserDepartments() != null && Hibernate.isInitialized(assignee.getUserDepartments())) {
                     for (UserDepartment ud : assignee.getUserDepartments()) {
                         if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()

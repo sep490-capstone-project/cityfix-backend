@@ -119,6 +119,44 @@ public class NotificationServiceImpl implements NotificationService {
         return dept.getDepartmentId();
     }
 
+    private Set<UUID> resolveUserDepartmentIds(User user, List<String> departmentNamesOut) {
+        if (user == null) {
+            return Collections.emptySet();
+        }
+        Set<UUID> departmentIds = new LinkedHashSet<>();
+        if (user.getUserId() != null && userDepartmentRepository != null) {
+            List<Department> depts = userDepartmentRepository.findDepartmentsByUserId(user.getUserId());
+            if (depts != null) {
+                for (Department dept : depts) {
+                    if (dept != null && !dept.isDeleted() && dept.getDepartmentId() != null) {
+                        departmentIds.add(dept.getDepartmentId());
+                        if (departmentNamesOut != null && dept.getName() != null && !departmentNamesOut.contains(dept.getName())) {
+                            departmentNamesOut.add(dept.getName());
+                        }
+                    }
+                }
+            }
+        }
+        if (user.getUserDepartments() != null) {
+            try {
+                for (com.cityfix.backend.model.entity.UserDepartment ud : user.getUserDepartments()) {
+                    if (ud != null && ud.getDepartment() != null && !ud.getDepartment().isDeleted()) {
+                        UUID deptId = extractDepartmentId(ud.getDepartment());
+                        if (deptId != null) {
+                            departmentIds.add(deptId);
+                            if (departmentNamesOut != null && ud.getDepartment().getName() != null
+                                    && !departmentNamesOut.contains(ud.getDepartment().getName())) {
+                                departmentNamesOut.add(ud.getDepartment().getName());
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return departmentIds;
+    }
+
     private List<User> resolveDepartmentManagers(User staff) {
         if (staff == null) {
             return Collections.emptyList();
@@ -127,7 +165,7 @@ public class NotificationServiceImpl implements NotificationService {
         Set<UUID> departmentIds = new LinkedHashSet<>();
         Map<UUID, User> managers = new LinkedHashMap<>();
 
-        if (staff.getUserId() != null) {
+        if (staff.getUserId() != null && userDepartmentRepository != null) {
             List<Department> staffDepts = userDepartmentRepository.findDepartmentsByUserId(staff.getUserId());
             if (staffDepts != null) {
                 for (Department dept : staffDepts) {
@@ -154,11 +192,13 @@ public class NotificationServiceImpl implements NotificationService {
         }
 
         if (!departmentIds.isEmpty()) {
-            List<User> udManagers = userDepartmentRepository.findActiveManagersByDepartmentIds(departmentIds);
-            if (udManagers != null) {
-                for (User mgr : udManagers) {
-                    if (mgr != null && mgr.getUserId() != null) {
-                        managers.put(mgr.getUserId(), mgr);
+            if (userDepartmentRepository != null) {
+                List<User> udManagers = userDepartmentRepository.findActiveManagersByDepartmentIds(departmentIds);
+                if (udManagers != null) {
+                    for (User mgr : udManagers) {
+                        if (mgr != null && mgr.getUserId() != null) {
+                            managers.put(mgr.getUserId(), mgr);
+                        }
                     }
                 }
             }
@@ -395,10 +435,7 @@ public class NotificationServiceImpl implements NotificationService {
                 Set<UUID> departmentIds = new LinkedHashSet<>();
                 for (TicketStep s : steps) {
                     if (s != null && !s.isDeleted() && s.getAssignee() != null) {
-                        UUID deptId = extractDepartmentId(s.getAssignee().getDepartment());
-                        if (deptId != null) {
-                            departmentIds.add(deptId);
-                        }
+                        departmentIds.addAll(resolveUserDepartmentIds(s.getAssignee(), null));
                     }
                 }
                 if (!departmentIds.isEmpty()) {
@@ -713,7 +750,7 @@ public class NotificationServiceImpl implements NotificationService {
         Set<UUID> departmentIds = new LinkedHashSet<>();
         List<String> departmentNames = new ArrayList<>();
 
-        if (staff.getUserId() != null) {
+        if (staff.getUserId() != null && userDepartmentRepository != null) {
             List<Department> staffDepts = userDepartmentRepository.findDepartmentsByUserId(staff.getUserId());
             if (staffDepts != null) {
                 for (Department dept : staffDepts) {
@@ -793,8 +830,8 @@ public class NotificationServiceImpl implements NotificationService {
 
             boolean isAssignedToStaffDepartment = false;
             if (targetStep.getAssignee() != null) {
-                UUID stepAssigneeDeptId = extractDepartmentId(targetStep.getAssignee().getDepartment());
-                if (stepAssigneeDeptId != null && departmentIds.contains(stepAssigneeDeptId)) {
+                Set<UUID> stepAssigneeDeptIds = resolveUserDepartmentIds(targetStep.getAssignee(), null);
+                if (stepAssigneeDeptIds.stream().anyMatch(departmentIds::contains)) {
                     isAssignedToStaffDepartment = true;
                 }
             }
@@ -813,8 +850,8 @@ public class NotificationServiceImpl implements NotificationService {
                 for (TicketStep s : ticketSteps) {
                     if (s != null && !s.isDeleted() && s.getAssignee() != null) {
                         boolean isMyStep = staff.getUserId() != null && staff.getUserId().equals(s.getAssignee().getUserId());
-                        UUID deptId = extractDepartmentId(s.getAssignee().getDepartment());
-                        boolean isMyDeptStep = deptId != null && departmentIds.contains(deptId);
+                        Set<UUID> assigneeDeptIds = resolveUserDepartmentIds(s.getAssignee(), null);
+                        boolean isMyDeptStep = assigneeDeptIds.stream().anyMatch(departmentIds::contains);
                         if (isMyStep || isMyDeptStep) {
                             staffRelevantSteps.add(s);
                         }

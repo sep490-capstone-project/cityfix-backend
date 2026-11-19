@@ -16,43 +16,112 @@ import java.util.UUID;
 @Repository
 public interface UserRepository extends JpaRepository<User, UUID> {
 
-    @EntityGraph(attributePaths = {"role"})
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
     User findUserByEmailAndIsDeletedFalse(String email);
 
-    @EntityGraph(attributePaths = {"role"})
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
     Optional<User> findByEmail(String email);
 
-    @EntityGraph(attributePaths = {"role"})
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress", "userDepartments", "userDepartments.department"})
     Optional<User> findByEmailAndIsDeletedFalse(String email);
 
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress", "userDepartments", "userDepartments.department"})
     Optional<User> findByUserIdAndIsDeletedFalse(UUID id);
-    List<User> findAllByIsDeletedFalse();
-    Optional<User> findByPhoneNumber(String phoneNumber);
-    Optional<User> findByPhoneNumberAndIsDeletedFalse(String phoneNumber);
-    Optional<User> findFirstByDepartmentDepartmentIdAndIsDeletedFalse(UUID departmentId);
 
-    @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = :status AND u.isDeleted = false ORDER BY u.createdAt ASC, u.userId ASC")
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    List<User> findAllByIsDeletedFalse();
+
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    @Query("SELECT u FROM User u JOIN u.userProfile up WHERE up.phoneNumber = :phoneNumber")
+    Optional<User> findByPhoneNumber(@Param("phoneNumber") String phoneNumber);
+
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    @Query("SELECT u FROM User u JOIN u.userProfile up WHERE up.phoneNumber = :phoneNumber AND u.isDeleted = false")
+    Optional<User> findByPhoneNumberAndIsDeletedFalse(@Param("phoneNumber") String phoneNumber);
+
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    @Query("""
+        SELECT u FROM User u
+        WHERE u.isDeleted = false
+          AND EXISTS (
+              SELECT 1 FROM UserDepartment ud
+              WHERE ud.user = u
+                AND ud.department.departmentId = :departmentId
+                AND ud.department.isDeleted = false
+          )
+        ORDER BY u.createdAt ASC, u.userId ASC
+        LIMIT 1
+        """)
+    Optional<User> findFirstByDepartmentDepartmentIdAndIsDeletedFalse(@Param("departmentId") UUID departmentId);
+
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    @Query("""
+        SELECT u FROM User u
+        JOIN u.userProfile up
+        JOIN up.role r
+        WHERE UPPER(r.roleName) = 'STAFF'
+          AND u.status = :status
+          AND u.isDeleted = false
+          AND EXISTS (
+              SELECT 1 FROM UserDepartment ud
+              WHERE ud.user = u
+                AND ud.department.departmentId = :departmentId
+                AND ud.department.isDeleted = false
+          )
+        ORDER BY u.createdAt ASC, u.userId ASC
+        LIMIT 1
+        """)
     Optional<User> findRepresentativeStaffByDepartmentIdAndStatus(@Param("departmentId") UUID departmentId, @Param("status") UserStatus status);
 
     default Optional<User> findRepresentativeStaffByDepartmentId(UUID departmentId) {
         return findRepresentativeStaffByDepartmentIdAndStatus(departmentId, UserStatus.ACTIVE);
     }
 
-    @Query("SELECT u FROM User u WHERE u.department.departmentId = :departmentId AND UPPER(u.role.roleName) = 'STAFF' AND u.status = :status AND u.isDeleted = false ORDER BY u.createdAt ASC, u.userId ASC")
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    @Query("""
+        SELECT u FROM User u
+        JOIN u.userProfile up
+        JOIN up.role r
+        WHERE UPPER(r.roleName) = 'STAFF'
+          AND u.status = :status
+          AND u.isDeleted = false
+          AND EXISTS (
+              SELECT 1 FROM UserDepartment ud
+              WHERE ud.user = u
+                AND ud.department.departmentId = :departmentId
+                AND ud.department.isDeleted = false
+          )
+        ORDER BY u.createdAt ASC, u.userId ASC
+        """)
     List<User> findStaffByDepartmentIdAndStatus(@Param("departmentId") UUID departmentId, @Param("status") UserStatus status);
 
     default List<User> findActiveStaffByDepartmentId(UUID departmentId) {
         return findStaffByDepartmentIdAndStatus(departmentId, UserStatus.ACTIVE);
     }
 
-    @Query("SELECT DISTINCT u FROM User u WHERE u.department.departmentId IN :departmentIds AND UPPER(u.role.roleName) = 'MANAGER' AND u.status = :status AND u.isDeleted = false")
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    @Query("""
+        SELECT DISTINCT u FROM User u
+        JOIN u.userProfile up
+        JOIN up.role r
+        WHERE UPPER(r.roleName) = 'MANAGER'
+          AND u.status = :status
+          AND u.isDeleted = false
+          AND EXISTS (
+              SELECT 1 FROM UserDepartment ud
+              WHERE ud.user = u
+                AND ud.department.departmentId IN :departmentIds
+                AND ud.department.isDeleted = false
+          )
+        """)
     List<User> findManagersByDepartmentIdsAndStatus(@Param("departmentIds") Collection<UUID> departmentIds, @Param("status") UserStatus status);
 
     default List<User> findActiveManagersByDepartmentIds(Collection<UUID> departmentIds) {
         return findManagersByDepartmentIdsAndStatus(departmentIds, UserStatus.ACTIVE);
     }
 
-    @Query("SELECT DISTINCT u FROM User u WHERE UPPER(u.role.roleName) = 'MANAGER' AND u.status = :status AND u.isDeleted = false")
+    @EntityGraph(attributePaths = {"userProfile", "userProfile.role", "userAddress"})
+    @Query("SELECT DISTINCT u FROM User u JOIN u.userProfile up JOIN up.role r WHERE UPPER(r.roleName) = 'MANAGER' AND u.status = :status AND u.isDeleted = false")
     List<User> findManagersByStatus(@Param("status") UserStatus status);
 
     default List<User> findActiveManagers() {
@@ -61,12 +130,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     @Query("""
         SELECT DISTINCT u FROM User u
-        JOIN FETCH u.role r
+        JOIN FETCH u.userProfile up
+        JOIN FETCH up.role r
+        JOIN FETCH u.userAddress ua
         WHERE UPPER(r.roleName) = 'RESIDENT'
           AND u.status = :status
           AND u.isDeleted = false
-          AND u.ward IS NOT NULL
-          AND TRIM(u.ward) <> ''
+          AND ua.ward IS NOT NULL
+          AND TRIM(ua.ward) <> ''
         """)
     List<User> findResidentsWithWardByStatus(@Param("status") UserStatus status);
 
@@ -77,6 +148,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("SELECT u.status, COUNT(u) FROM User u WHERE u.isDeleted = false GROUP BY u.status")
     List<Object[]> countUsersGroupByStatus();
 
-    @Query("SELECT UPPER(u.role.roleName), COUNT(u) FROM User u WHERE u.isDeleted = false GROUP BY UPPER(u.role.roleName)")
+    @Query("SELECT UPPER(r.roleName), COUNT(u) FROM User u JOIN u.userProfile up JOIN up.role r WHERE u.isDeleted = false GROUP BY UPPER(r.roleName)")
     List<Object[]> countUsersGroupByRole();
 }
