@@ -15,7 +15,10 @@ ALTER TABLE "ticket"
     DROP COLUMN IF EXISTS "review_note",
     DROP COLUMN IF EXISTS "deadline";
 
--- 2. Drop legacy foreign keys, unique index, and redundant columns from user_account
+-- 2. Ensure unique index on user_profile.phone_number and drop legacy foreign keys, unique index, and redundant columns from user_account
+DROP INDEX IF EXISTS idx_user_profile_phone_number;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_profile_phone_number ON "user_profile"(phone_number);
+
 ALTER TABLE "user_account" DROP CONSTRAINT IF EXISTS fk_user_role;
 ALTER TABLE "user_account" DROP CONSTRAINT IF EXISTS fk_user_department;
 

@@ -26,7 +26,7 @@ public class UserProfile {
     @Column(name = "full_name", nullable = false, length = 100)
     private String fullName;
 
-    @Column(name = "phone_number", nullable = false, length = 20)
+    @Column(name = "phone_number", nullable = false, unique = true, length = 20)
     private String phoneNumber;
 
     @ManyToOne(fetch = FetchType.LAZY)

@@ -620,10 +620,10 @@ public class AdminDashboardServiceImpl implements AdminDashboardService {
             String prov = extractLocationPart(t.getAddress(), "PROVINCE");
             String wrd = extractLocationPart(t.getAddress(), "WARD");
             if (prov == null || prov.isBlank()) {
-                prov = "ChÆ°a xÃ¡c Ä‘á»‹nh";
+                prov = "Chưa xác định";
             }
             if (wrd == null || wrd.isBlank()) {
-                wrd = "ChÆ°a xÃ¡c Ä‘á»‹nh";
+                wrd = "Chưa xác định";
             }
             String key = prov.toLowerCase() + "||" + wrd.toLowerCase();
             geoLabels.putIfAbsent(key, new String[]{prov, wrd});

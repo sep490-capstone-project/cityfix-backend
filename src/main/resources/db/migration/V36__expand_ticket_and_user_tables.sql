@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS "user_profile" (
     CONSTRAINT fk_user_profile_role FOREIGN KEY (role_id) REFERENCES "role"(role_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_profile_phone_number ON "user_profile"(phone_number);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_profile_phone_number ON "user_profile"(phone_number);
 CREATE INDEX IF NOT EXISTS idx_user_profile_role_id ON "user_profile"(role_id);
 
 -- 4. Create user_address table (Location Data 1-1 with user_account)

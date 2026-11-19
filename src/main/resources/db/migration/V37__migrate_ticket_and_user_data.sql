@@ -37,7 +37,19 @@ FROM "user_account" u
 WHERE u.department_id IS NOT NULL
 ON CONFLICT (user_id, department_id) DO NOTHING;
 
--- 4. Migrate profile data from user_account to user_profile
+-- 4. Deduplicate any soft-deleted duplicate phone numbers so active accounts keep their phone_number and unique constraint is satisfied
+UPDATE "user_account" u
+SET phone_number = LEFT(u.phone_number, 11) || '_' || substr(u.user_id::text, 1, 8)
+WHERE u.user_id IN (
+    SELECT user_id FROM (
+        SELECT user_id,
+               ROW_NUMBER() OVER (PARTITION BY phone_number ORDER BY is_deleted ASC, created_at DESC) AS rnum
+        FROM "user_account"
+    ) t
+    WHERE t.rnum > 1
+);
+
+-- 5. Migrate profile data from user_account to user_profile
 INSERT INTO "user_profile" (user_id, full_name, phone_number, role_id)
 SELECT user_id, full_name, phone_number, role_id
 FROM "user_account"
@@ -46,7 +58,7 @@ ON CONFLICT (user_id) DO UPDATE SET
     phone_number = EXCLUDED.phone_number,
     role_id = EXCLUDED.role_id;
 
--- 5. Migrate address data from user_account to user_address
+-- 6. Migrate address data from user_account to user_address
 INSERT INTO "user_address" (user_id, province, ward, address)
 SELECT user_id, COALESCE(province, ''), COALESCE(ward, ''), COALESCE(address, '')
 FROM "user_account"
