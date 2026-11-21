@@ -480,6 +480,28 @@ class TicketControllerTest {
     }
 
     @Test
+    @DisplayName("getTopUpvotedTicketsInSameWard_returns200WithTop3List")
+    void getTopUpvotedTicketsInSameWard_returns200WithTop3List() {
+        mockTicketResponse.setStatus(TicketStatus.IN_PROGRESS);
+        mockTicketResponse.setUpvoteCount(15L);
+
+        when(ticketService.getTopUpvotedTicketsInSameWard()).thenReturn(List.of(mockTicketResponse));
+
+        ResponseEntity<BaseResponse<List<TicketResponse>>> response =
+                ticketController.getTopUpvotedTicketsInSameWard();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage())
+                .isEqualTo("Lấy danh sách top 3 vé được bình chọn nhiều nhất trong khu vực thành công.");
+        assertThat(response.getBody().getData()).hasSize(1);
+        assertThat(response.getBody().getData().get(0).getUpvoteCount()).isEqualTo(15L);
+
+        verify(ticketService, times(1)).getTopUpvotedTicketsInSameWard();
+    }
+
+    @Test
     @DisplayName("analyzeMedia_validRequest_returnsAiAnalyzeResponse")
     void analyzeMedia_validRequest_returnsAiAnalyzeResponse() {
         com.cityfix.backend.model.dto.request.AiAnalyzeRequest request = new com.cityfix.backend.model.dto.request.AiAnalyzeRequest();

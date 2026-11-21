@@ -2,6 +2,7 @@ package com.cityfix.backend.repository;
 
 import com.cityfix.backend.model.entity.Ticket;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
+import com.cityfix.backend.repository.projection.TopUpvotedTicketProjection;
 import com.cityfix.backend.model.enums.Priority;
 
 import com.cityfix.backend.model.enums.TicketStatus;
@@ -588,6 +589,49 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
           )
         """)
     Page<Ticket> findLifeThreateningTicketsByWard(
+            @Param("rawWard") String rawWard,
+            @Param("wardPattern") String wardPattern,
+            @Param("province") String province,
+            @Param("statuses") java.util.Collection<TicketStatus> statuses,
+            Pageable pageable
+    );
+
+    @Query("""
+        SELECT t.ticketId AS ticketId, COUNT(tv.voteId) AS upvoteCount
+        FROM Ticket t
+        LEFT JOIN t.ticketLocation tl
+        LEFT JOIN TicketVote tv ON tv.ticket = t
+        WHERE t.status IN :statuses
+          AND (
+              (
+                  tl.address IS NOT NULL
+                  AND (
+                      LOWER(tl.address) LIKE LOWER(CONCAT('%', :wardPattern, ',%'))
+                      OR LOWER(tl.address) LIKE LOWER(CONCAT('%', :wardPattern))
+                  )
+                  AND (:province IS NULL OR :province = '' OR LOWER(tl.address) LIKE LOWER(CONCAT('%', :province, '%')))
+              )
+              OR (
+                  tl.location IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM AdministrativeBoundary ab
+                      WHERE ab.ward IS NOT NULL
+                        AND (
+                            LOWER(ab.ward) = LOWER(:rawWard)
+                            OR LOWER(ab.ward) = LOWER(:wardPattern)
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Phường ', :wardPattern))
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Xã ', :wardPattern))
+                            OR LOWER(ab.ward) = LOWER(CONCAT('Thị trấn ', :wardPattern))
+                        )
+                        AND (:province IS NULL OR :province = '' OR LOWER(ab.province) LIKE LOWER(CONCAT('%', :province, '%')))
+                        AND function('ST_Contains', ab.geom, tl.location) = true
+                  )
+              )
+          )
+        GROUP BY t.ticketId, t.createdAt
+        ORDER BY COUNT(tv.voteId) DESC, t.createdAt DESC, t.ticketId DESC
+        """)
+    List<TopUpvotedTicketProjection> findTopUpvotedTicketIdsByWard(
             @Param("rawWard") String rawWard,
             @Param("wardPattern") String wardPattern,
             @Param("province") String province,

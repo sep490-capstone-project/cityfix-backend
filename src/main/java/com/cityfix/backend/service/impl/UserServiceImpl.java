@@ -4,6 +4,7 @@ import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.UserMapper;
 import com.cityfix.backend.model.dto.request.LoginRequest;
+import com.cityfix.backend.model.dto.request.RefreshTokenRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
 import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
@@ -180,6 +181,9 @@ public class UserServiceImpl implements UserService {
             user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
             userRepository.save(user);
 
+            // 5. Thu hồi toàn bộ Refresh Token cũ của user
+            tokenService.revokeAllRefreshTokens(user.getUserId());
+
         } catch (FirebaseAuthException e) {
             log.error("Firebase token verification failed during password reset: {}", e.getMessage());
             throw new AppException(ErrorCode.UNAUTHENTICATED);
@@ -227,8 +231,53 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public LoginResponse refreshToken(RefreshTokenRequest request) {
+        if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
+            throw new AppException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        String oldRefreshToken = request.getRefreshToken().trim();
+        // Refresh Token Rotation nguyên tử: tiêu thụ token cũ ngay trước khi truy vấn DB để chặn race condition
+        if (!tokenService.consumeRefreshToken(oldRefreshToken)) {
+            throw new AppException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        User user;
+        try {
+            user = tokenService.extractUser(oldRefreshToken);
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        if (user == null || user.isDeleted()) {
+            throw new AppException(ErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        if (user.getStatus() == com.cityfix.backend.model.enums.UserStatus.BLOCKED) {
+            throw new AppException(ErrorCode.ACCOUNT_BANNED);
+        }
+
+        String newAccessToken = tokenService.generateAccessToken(user);
+        String newRefreshToken = tokenService.generateRefreshToken(user);
+        return LoginResponse.builder()
+                .accessToken(newAccessToken)
+                .refreshToken(newRefreshToken)
+                .build();
+    }
+
+    @Override
     public void logout(String accessToken) {
-        tokenService.blacklistToken(accessToken);
+        logout(accessToken, null);
+    }
+
+    @Override
+    public void logout(String accessToken, String refreshToken) {
+        if (accessToken != null && !accessToken.isBlank()) {
+            tokenService.blacklistToken(accessToken);
+        }
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            tokenService.revokeRefreshToken(refreshToken);
+        }
     }
 
     @Override
