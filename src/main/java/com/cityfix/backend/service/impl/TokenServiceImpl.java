@@ -12,6 +12,7 @@ import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -44,6 +45,23 @@ public class TokenServiceImpl implements TokenService {
     private static final String BLACKLIST_PREFIX = "jwt:blacklist:";
     private static final String REFRESH_PREFIX = "jwt:refresh:";
     private static final String USER_REFRESH_PREFIX = "jwt:user-refresh:";
+
+    private static final DefaultRedisScript<Long> STORE_REFRESH_SCRIPT = new DefaultRedisScript<>("""
+            redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[3])
+            redis.call('SADD', KEYS[2], ARGV[2])
+            redis.call('PEXPIRE', KEYS[2], ARGV[3])
+            return 1
+            """, Long.class);
+
+    private static final DefaultRedisScript<Long> CONSUME_REFRESH_SCRIPT = new DefaultRedisScript<>("""
+            local userId = redis.call('GET', KEYS[1])
+            if not userId then
+              return 0
+            end
+            redis.call('DEL', KEYS[1])
+            redis.call('SREM', ARGV[1] .. userId, ARGV[2])
+            return 1
+            """, Long.class);
 
     // ─── Key ─────────────────────────────────────────────────────────────────
 
@@ -81,11 +99,13 @@ public class TokenServiceImpl implements TokenService {
 
         if (user.getUserId() != null) {
             String userIdStr = user.getUserId().toString();
-            redisTemplate.opsForValue()
-                    .set(REFRESH_PREFIX + jti, userIdStr, refreshTokenExpirationMs, TimeUnit.MILLISECONDS);
-            String userSetKey = USER_REFRESH_PREFIX + userIdStr;
-            redisTemplate.opsForSet().add(userSetKey, jti);
-            redisTemplate.expire(userSetKey, refreshTokenExpirationMs, TimeUnit.MILLISECONDS);
+            redisTemplate.execute(
+                    STORE_REFRESH_SCRIPT,
+                    List.of(REFRESH_PREFIX + jti, USER_REFRESH_PREFIX + userIdStr),
+                    userIdStr,
+                    jti,
+                    String.valueOf(refreshTokenExpirationMs)
+            );
         }
 
         return token;
@@ -174,17 +194,44 @@ public class TokenServiceImpl implements TokenService {
         if (refreshToken == null || refreshToken.isBlank()) {
             return false;
         }
+        Claims claims;
         try {
-            Claims claims = extractAllClaims(refreshToken);
-            String type = claims.get("type", String.class);
-            String jti = claims.getId();
-            if (!TOKEN_TYPE_REFRESH.equals(type) || jti == null || jti.isBlank()) {
-                return false;
-            }
-            return Boolean.TRUE.equals(redisTemplate.hasKey(REFRESH_PREFIX + jti));
+            claims = extractAllClaims(refreshToken);
         } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
+        String type = claims.get("type", String.class);
+        String jti = claims.getId();
+        if (!TOKEN_TYPE_REFRESH.equals(type) || jti == null || jti.isBlank()) {
+            return false;
+        }
+        return Boolean.TRUE.equals(redisTemplate.hasKey(REFRESH_PREFIX + jti));
+    }
+
+    @Override
+    public boolean consumeRefreshToken(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return false;
+        }
+        Claims claims;
+        try {
+            claims = extractAllClaims(refreshToken);
+        } catch (JwtException | IllegalArgumentException e) {
+            return false;
+        }
+        String type = claims.get("type", String.class);
+        String jti = claims.getId();
+        if (!TOKEN_TYPE_REFRESH.equals(type) || jti == null || jti.isBlank()) {
+            return false;
+        }
+
+        Long result = redisTemplate.execute(
+                CONSUME_REFRESH_SCRIPT,
+                List.of(REFRESH_PREFIX + jti),
+                USER_REFRESH_PREFIX,
+                jti
+        );
+        return Long.valueOf(1L).equals(result);
     }
 
     @Override

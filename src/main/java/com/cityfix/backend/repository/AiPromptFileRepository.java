@@ -11,8 +11,8 @@ import java.util.UUID;
 @Repository
 public interface AiPromptFileRepository extends JpaRepository<AiPromptFile, UUID> {
 
-    Optional<AiPromptFile> findTopByOrderByCreatedAtDesc();
+    Optional<AiPromptFile> findTopByOrderByCreatedAtDescIdDesc();
 
-    List<AiPromptFile> findAllByOrderByCreatedAtDesc();
+    List<AiPromptFile> findAllByOrderByCreatedAtDescIdDesc();
 }
 

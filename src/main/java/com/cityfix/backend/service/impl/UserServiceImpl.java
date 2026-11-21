@@ -237,7 +237,8 @@ public class UserServiceImpl implements UserService {
         }
 
         String oldRefreshToken = request.getRefreshToken().trim();
-        if (!tokenService.isRefreshTokenActive(oldRefreshToken)) {
+        // Refresh Token Rotation nguyên tử: tiêu thụ token cũ ngay trước khi truy vấn DB để chặn race condition
+        if (!tokenService.consumeRefreshToken(oldRefreshToken)) {
             throw new AppException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
@@ -249,17 +250,12 @@ public class UserServiceImpl implements UserService {
         }
 
         if (user == null || user.isDeleted()) {
-            tokenService.revokeRefreshToken(oldRefreshToken);
             throw new AppException(ErrorCode.INVALID_REFRESH_TOKEN);
         }
 
         if (user.getStatus() == com.cityfix.backend.model.enums.UserStatus.BLOCKED) {
-            tokenService.revokeRefreshToken(oldRefreshToken);
             throw new AppException(ErrorCode.ACCOUNT_BANNED);
         }
-
-        // Refresh Token Rotation: thu hồi token cũ trước khi phát hành cặp token mới
-        tokenService.revokeRefreshToken(oldRefreshToken);
 
         String newAccessToken = tokenService.generateAccessToken(user);
         String newRefreshToken = tokenService.generateRefreshToken(user);

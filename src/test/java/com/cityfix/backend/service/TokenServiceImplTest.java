@@ -13,18 +13,21 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -79,15 +82,16 @@ class TokenServiceImplTest {
     }
 
     @Test
-    @DisplayName("generateRefreshToken_setsRefreshType7DayTtlAndStoresInRedis")
-    void generateRefreshToken_setsRefreshType7DayTtlAndStoresInRedis() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+    @DisplayName("generateRefreshToken_setsRefreshType7DayTtlAndStoresAtomicallyViaLuaScript")
+    @SuppressWarnings("unchecked")
+    void generateRefreshToken_setsRefreshType7DayTtlAndStoresAtomicallyViaLuaScript() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
 
         String refreshToken = tokenService.generateRefreshToken(testUser);
 
         Claims claims = tokenService.extractAllClaims(refreshToken);
         String jti = claims.getId();
+        String userIdStr = testUser.getUserId().toString();
 
         assertThat(claims.getSubject()).isEqualTo("resident@cityfix.com");
         assertThat(claims.get("type", String.class)).isEqualTo(TokenServiceImpl.TOKEN_TYPE_REFRESH);
@@ -96,21 +100,73 @@ class TokenServiceImplTest {
         long ttlMs = claims.getExpiration().getTime() - claims.getIssuedAt().getTime();
         assertThat(ttlMs).isBetween(604_795_000L, 604_805_000L);
 
-        verify(valueOperations).set(
-                "jwt:refresh:" + jti,
-                testUser.getUserId().toString(),
-                604_800_000L,
-                TimeUnit.MILLISECONDS
+        verify(redisTemplate).execute(
+                any(RedisScript.class),
+                eq(List.of("jwt:refresh:" + jti, "jwt:user-refresh:" + userIdStr)),
+                eq(userIdStr),
+                eq(jti),
+                eq("604800000")
         );
-        verify(setOperations).add("jwt:user-refresh:" + testUser.getUserId(), jti);
-        verify(redisTemplate).expire("jwt:user-refresh:" + testUser.getUserId(), 604_800_000L, TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    @DisplayName("consumeRefreshToken_activeToken_executesAtomicLuaScriptAndReturnsTrue")
+    @SuppressWarnings("unchecked")
+    void consumeRefreshToken_activeToken_executesAtomicLuaScriptAndReturnsTrue() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        String refreshToken = tokenService.generateRefreshToken(testUser);
+        String jti = tokenService.extractJti(refreshToken);
+
+        when(redisTemplate.execute(any(RedisScript.class), eq(List.of("jwt:refresh:" + jti)), eq("jwt:user-refresh:"), eq(jti)))
+                .thenReturn(1L);
+
+        assertThat(tokenService.consumeRefreshToken(refreshToken)).isTrue();
+    }
+
+    @Test
+    @DisplayName("consumeRefreshToken_alreadyConsumedByConcurrentRequest_returnsFalse")
+    @SuppressWarnings("unchecked")
+    void consumeRefreshToken_alreadyConsumedByConcurrentRequest_returnsFalse() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        String refreshToken = tokenService.generateRefreshToken(testUser);
+        String jti = tokenService.extractJti(refreshToken);
+
+        when(redisTemplate.execute(any(RedisScript.class), eq(List.of("jwt:refresh:" + jti)), eq("jwt:user-refresh:"), eq(jti)))
+                .thenReturn(0L);
+
+        assertThat(tokenService.consumeRefreshToken(refreshToken)).isFalse();
+    }
+
+    @Test
+    @DisplayName("consumeRefreshToken_accessTokenPassed_returnsFalseWithoutCallingRedis")
+    @SuppressWarnings("unchecked")
+    void consumeRefreshToken_accessTokenPassed_returnsFalseWithoutCallingRedis() {
+        String accessToken = tokenService.generateAccessToken(testUser);
+
+        assertThat(tokenService.consumeRefreshToken(accessToken)).isFalse();
+        verify(redisTemplate, never()).execute(any(RedisScript.class), anyList(), any(), any());
+    }
+
+    @Test
+    @DisplayName("consumeRefreshToken_redisOutage_propagatesDataAccessExceptionInsteadOfReturningFalse")
+    @SuppressWarnings("unchecked")
+    void consumeRefreshToken_redisOutage_propagatesDataAccessExceptionInsteadOfReturningFalse() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        String refreshToken = tokenService.generateRefreshToken(testUser);
+        String jti = tokenService.extractJti(refreshToken);
+
+        when(redisTemplate.execute(any(RedisScript.class), eq(List.of("jwt:refresh:" + jti)), eq("jwt:user-refresh:"), eq(jti)))
+                .thenThrow(new RedisConnectionFailureException("Redis connection refused"));
+
+        assertThatThrownBy(() -> tokenService.consumeRefreshToken(refreshToken))
+                .isInstanceOf(RedisConnectionFailureException.class);
     }
 
     @Test
     @DisplayName("isRefreshTokenActive_validRefreshTokenInRedis_returnsTrue")
+    @SuppressWarnings("unchecked")
     void isRefreshTokenActive_validRefreshTokenInRedis_returnsTrue() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
 
         String refreshToken = tokenService.generateRefreshToken(testUser);
         String jti = tokenService.extractJti(refreshToken);
@@ -130,7 +186,9 @@ class TokenServiceImplTest {
 
     @Test
     @DisplayName("revokeRefreshToken_deletesKeyAndRemovesFromUserSet")
+    @SuppressWarnings("unchecked")
     void revokeRefreshToken_deletesKeyAndRemovesFromUserSet() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
 

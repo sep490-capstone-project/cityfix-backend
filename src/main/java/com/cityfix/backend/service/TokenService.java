@@ -20,6 +20,7 @@ public interface TokenService {
     boolean isTokenBlacklisted(String token);
     void blacklistToken(String token);
     boolean isRefreshTokenActive(String refreshToken);
+    boolean consumeRefreshToken(String refreshToken);
     void revokeRefreshToken(String refreshToken);
     void revokeAllRefreshTokens(UUID userId);
     <T> T extractClaim(String token, Function<Claims, T> resolver);

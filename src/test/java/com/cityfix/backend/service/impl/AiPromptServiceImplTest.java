@@ -20,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -216,7 +218,7 @@ class AiPromptServiceImplTest {
                 .build();
 
         when(valueOperations.get("ai:prompt:latest")).thenReturn(null);
-        when(aiPromptFileRepository.findTopByOrderByCreatedAtDesc()).thenReturn(Optional.of(latest));
+        when(aiPromptFileRepository.findTopByOrderByCreatedAtDescIdDesc()).thenReturn(Optional.of(latest));
 
         AiPromptResponse response = aiPromptService.getLatestPrompt();
 
@@ -231,7 +233,7 @@ class AiPromptServiceImplTest {
     @DisplayName("getLatestPrompt_emptyTable_throwsAiPromptNotFound")
     void getLatestPrompt_emptyTable_throwsAiPromptNotFound() {
         when(valueOperations.get("ai:prompt:latest")).thenReturn(null);
-        when(aiPromptFileRepository.findTopByOrderByCreatedAtDesc()).thenReturn(Optional.empty());
+        when(aiPromptFileRepository.findTopByOrderByCreatedAtDescIdDesc()).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> aiPromptService.getLatestPrompt())
                 .isInstanceOf(AppException.class)
@@ -258,7 +260,7 @@ class AiPromptServiceImplTest {
                 .createdAt(t1)
                 .build();
 
-        when(aiPromptFileRepository.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(newer, older));
+        when(aiPromptFileRepository.findAllByOrderByCreatedAtDescIdDesc()).thenReturn(List.of(newer, older));
 
         List<AiPromptSummaryResponse> history = aiPromptService.getPromptHistory();
 
@@ -271,6 +273,87 @@ class AiPromptServiceImplTest {
         assertThat(AiPromptSummaryResponse.class.getDeclaredFields())
                 .extracting("name")
                 .containsExactlyInAnyOrder("id", "fileUrl", "createdAt");
+    }
+
+    @Test
+    @DisplayName("uploadPromptFile_invalidUtf8BinaryBytesRenamedToTxt_throwsInvalidFile")
+    void uploadPromptFile_invalidUtf8BinaryBytesRenamedToTxt_throwsInvalidFile() {
+        byte[] invalidUtf8 = new byte[]{(byte) 0xFF, (byte) 0xFE, 0x00, 0x01, (byte) 0x80};
+        MockMultipartFile binaryAsTxt = new MockMultipartFile("file", "fake.txt", "text/plain", invalidUtf8);
+
+        assertThatThrownBy(() -> aiPromptService.uploadPromptFile(binaryAsTxt))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.AI_PROMPT_INVALID_FILE);
+    }
+
+    @Test
+    @DisplayName("uploadPromptFile_activeTransactionCommit_evictsCacheOnlyAfterCommit")
+    void uploadPromptFile_activeTransactionCommit_evictsCacheOnlyAfterCommit() throws Exception {
+        MockMultipartFile txtFile = new MockMultipartFile(
+                "file", "prompt.txt", "text/plain", "Prompt giao dịch hợp lệ".getBytes(StandardCharsets.UTF_8));
+
+        String uploadedPublicId = "cityfix/ai-prompts/cityfix-ai-prompt-tx1.pdf";
+        when(uploader.upload(any(byte[].class), anyMap())).thenReturn(Map.of(
+                "secure_url", "https://res.cloudinary.com/demo/raw/upload/v1/" + uploadedPublicId,
+                "public_id", uploadedPublicId
+        ));
+        when(aiPromptFileRepository.save(any(AiPromptFile.class))).thenAnswer(inv -> {
+            AiPromptFile entity = inv.getArgument(0);
+            entity.setId(UUID.randomUUID());
+            entity.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+            return entity;
+        });
+
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            aiPromptService.uploadPromptFile(txtFile);
+
+            // Chưa commit -> tuyệt đối chưa xóa cache để tránh stale cache race condition
+            verify(redisTemplate, never()).delete("ai:prompt:latest");
+
+            List<TransactionSynchronization> syncs = TransactionSynchronizationManager.getSynchronizations();
+            assertThat(syncs).hasSize(1);
+            syncs.forEach(TransactionSynchronization::afterCommit);
+            syncs.forEach(s -> s.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+
+            verify(redisTemplate, times(1)).delete("ai:prompt:latest");
+            verify(uploader, never()).destroy(anyString(), anyMap());
+        } finally {
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    @DisplayName("uploadPromptFile_activeTransactionRollbackOnCommit_cleansUpCloudinaryRawFile")
+    void uploadPromptFile_activeTransactionRollbackOnCommit_cleansUpCloudinaryRawFile() throws Exception {
+        MockMultipartFile txtFile = new MockMultipartFile(
+                "file", "prompt.txt", "text/plain", "Prompt rollback test".getBytes(StandardCharsets.UTF_8));
+
+        String uploadedPublicId = "cityfix/ai-prompts/cityfix-ai-prompt-tx2.pdf";
+        when(uploader.upload(any(byte[].class), anyMap())).thenReturn(Map.of(
+                "secure_url", "https://res.cloudinary.com/demo/raw/upload/v1/" + uploadedPublicId,
+                "public_id", uploadedPublicId
+        ));
+        when(aiPromptFileRepository.save(any(AiPromptFile.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            aiPromptService.uploadPromptFile(txtFile);
+
+            List<TransactionSynchronization> syncs = TransactionSynchronizationManager.getSynchronizations();
+            assertThat(syncs).hasSize(1);
+            syncs.forEach(s -> s.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+
+            verify(uploader, times(1)).destroy(uploadedPublicId, Map.of("resource_type", "raw"));
+            verify(redisTemplate, never()).delete("ai:prompt:latest");
+        } finally {
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 }
 

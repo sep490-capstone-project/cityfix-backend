@@ -359,14 +359,14 @@ class UserServiceImplTest {
     }
 
     @Test
-    @DisplayName("refreshToken_validActiveToken_rotatesAndReturnsNewTokenPair")
-    void refreshToken_validActiveToken_rotatesAndReturnsNewTokenPair() {
+    @DisplayName("refreshToken_validActiveToken_consumesAtomicallyAndReturnsNewTokenPair")
+    void refreshToken_validActiveToken_consumesAtomicallyAndReturnsNewTokenPair() {
         com.cityfix.backend.model.dto.request.RefreshTokenRequest request =
                 com.cityfix.backend.model.dto.request.RefreshTokenRequest.builder()
                         .refreshToken("old-refresh-token")
                         .build();
 
-        when(tokenService.isRefreshTokenActive("old-refresh-token")).thenReturn(true);
+        when(tokenService.consumeRefreshToken("old-refresh-token")).thenReturn(true);
         when(tokenService.extractUser("old-refresh-token")).thenReturn(mockUser);
         when(tokenService.generateAccessToken(mockUser)).thenReturn("new-access-token");
         when(tokenService.generateRefreshToken(mockUser)).thenReturn("new-refresh-token");
@@ -376,39 +376,41 @@ class UserServiceImplTest {
         assertThat(response).isNotNull();
         assertThat(response.getAccessToken()).isEqualTo("new-access-token");
         assertThat(response.getRefreshToken()).isEqualTo("new-refresh-token");
-        verify(tokenService).revokeRefreshToken("old-refresh-token");
+        verify(tokenService, times(1)).consumeRefreshToken("old-refresh-token");
+        verify(tokenService, never()).revokeRefreshToken(any());
         verify(tokenService).generateAccessToken(mockUser);
         verify(tokenService).generateRefreshToken(mockUser);
     }
 
     @Test
-    @DisplayName("refreshToken_inactiveOrRevokedToken_throwsInvalidRefreshToken")
-    void refreshToken_inactiveOrRevokedToken_throwsInvalidRefreshToken() {
+    @DisplayName("refreshToken_inactiveOrAlreadyConsumedToken_throwsInvalidRefreshToken")
+    void refreshToken_inactiveOrAlreadyConsumedToken_throwsInvalidRefreshToken() {
         com.cityfix.backend.model.dto.request.RefreshTokenRequest request =
                 com.cityfix.backend.model.dto.request.RefreshTokenRequest.builder()
                         .refreshToken("revoked-refresh-token")
                         .build();
 
-        when(tokenService.isRefreshTokenActive("revoked-refresh-token")).thenReturn(false);
+        when(tokenService.consumeRefreshToken("revoked-refresh-token")).thenReturn(false);
 
         assertThatThrownBy(() -> userService.refreshToken(request))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REFRESH_TOKEN);
 
+        verify(tokenService, never()).extractUser(any());
         verify(tokenService, never()).generateAccessToken(any());
     }
 
     @Test
-    @DisplayName("refreshToken_blockedUser_revokesTokenAndThrowsAccountBanned")
-    void refreshToken_blockedUser_revokesTokenAndThrowsAccountBanned() {
+    @DisplayName("refreshToken_blockedUser_throwsAccountBannedAfterAtomicConsume")
+    void refreshToken_blockedUser_throwsAccountBannedAfterAtomicConsume() {
         mockUser.setStatus(UserStatus.BLOCKED);
         com.cityfix.backend.model.dto.request.RefreshTokenRequest request =
                 com.cityfix.backend.model.dto.request.RefreshTokenRequest.builder()
                         .refreshToken("valid-refresh-token")
                         .build();
 
-        when(tokenService.isRefreshTokenActive("valid-refresh-token")).thenReturn(true);
+        when(tokenService.consumeRefreshToken("valid-refresh-token")).thenReturn(true);
         when(tokenService.extractUser("valid-refresh-token")).thenReturn(mockUser);
 
         assertThatThrownBy(() -> userService.refreshToken(request))
@@ -416,7 +418,8 @@ class UserServiceImplTest {
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.ACCOUNT_BANNED);
 
-        verify(tokenService).revokeRefreshToken("valid-refresh-token");
+        verify(tokenService, times(1)).consumeRefreshToken("valid-refresh-token");
+        verify(tokenService, never()).revokeRefreshToken(any());
         verify(tokenService, never()).generateAccessToken(any());
     }
 

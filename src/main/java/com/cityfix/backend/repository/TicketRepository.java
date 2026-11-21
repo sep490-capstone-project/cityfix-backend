@@ -629,7 +629,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
               )
           )
         GROUP BY t.ticketId, t.createdAt
-        ORDER BY COUNT(tv.voteId) DESC, t.createdAt DESC
+        ORDER BY COUNT(tv.voteId) DESC, t.createdAt DESC, t.ticketId DESC
         """)
     List<TopUpvotedTicketProjection> findTopUpvotedTicketIdsByWard(
             @Param("rawWard") String rawWard,

@@ -138,7 +138,7 @@ class TicketRepositoryTest {
                 .contains("WHERE t.status IN :statuses")
                 .contains("function('ST_Contains', ab.geom, tl.location) = true")
                 .contains("GROUP BY t.ticketId, t.createdAt")
-                .contains("ORDER BY COUNT(tv.voteId) DESC, t.createdAt DESC")
+                .contains("ORDER BY COUNT(tv.voteId) DESC, t.createdAt DESC, t.ticketId DESC")
                 .doesNotContain("HAVING");
     }
 

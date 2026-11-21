@@ -22,16 +22,23 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
@@ -86,16 +93,41 @@ public class AiPromptServiceImpl implements AiPromptService {
             throw new AppException(ErrorCode.AI_PROMPT_UPLOAD_FAILED);
         }
 
+        final String publicIdToClean = uploadedPublicId;
+        final AtomicBoolean cleanedUp = new AtomicBoolean(false);
+        final boolean txActive = TransactionSynchronizationManager.isActualTransactionActive();
+
+        if (txActive) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictLatestPromptCache();
+                }
+
+                @Override
+                public void afterCompletion(int status) {
+                    if (status != TransactionSynchronization.STATUS_COMMITTED
+                            && cleanedUp.compareAndSet(false, true)) {
+                        cleanupCloudinaryRawFile(publicIdToClean);
+                    }
+                }
+            });
+        }
+
         try {
             AiPromptFile entity = AiPromptFile.builder()
                     .fileUrl(secureUrl)
                     .content(content)
                     .build();
             AiPromptFile saved = aiPromptFileRepository.save(entity);
-            evictLatestPromptCache();
+            if (!txActive) {
+                evictLatestPromptCache();
+            }
             return toResponse(saved);
         } catch (Exception dbEx) {
-            cleanupCloudinaryRawFile(uploadedPublicId);
+            if (!txActive && cleanedUp.compareAndSet(false, true)) {
+                cleanupCloudinaryRawFile(publicIdToClean);
+            }
             throw dbEx;
         }
     }
@@ -108,7 +140,7 @@ public class AiPromptServiceImpl implements AiPromptService {
             return cached;
         }
 
-        AiPromptFile latest = aiPromptFileRepository.findTopByOrderByCreatedAtDesc()
+        AiPromptFile latest = aiPromptFileRepository.findTopByOrderByCreatedAtDescIdDesc()
                 .orElseThrow(() -> new AppException(ErrorCode.AI_PROMPT_NOT_FOUND));
 
         AiPromptResponse response = toResponse(latest);
@@ -119,7 +151,7 @@ public class AiPromptServiceImpl implements AiPromptService {
     @Override
     @Transactional(readOnly = true)
     public List<AiPromptSummaryResponse> getPromptHistory() {
-        return aiPromptFileRepository.findAllByOrderByCreatedAtDesc().stream()
+        return aiPromptFileRepository.findAllByOrderByCreatedAtDescIdDesc().stream()
                 .map(this::toSummaryResponse)
                 .toList();
     }
@@ -188,7 +220,13 @@ public class AiPromptServiceImpl implements AiPromptService {
 
         String content;
         try {
-            content = new String(file.getBytes(), StandardCharsets.UTF_8);
+            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT);
+            content = decoder.decode(ByteBuffer.wrap(file.getBytes())).toString();
+        } catch (CharacterCodingException e) {
+            log.warn("Tệp AI Prompt chứa byte không hợp lệ chuẩn UTF-8: {}", e.getMessage());
+            throw new AppException(ErrorCode.AI_PROMPT_INVALID_FILE, "Tệp AI Prompt phải sử dụng bảng mã UTF-8 hợp lệ.");
         } catch (IOException e) {
             log.error("Lỗi khi đọc nội dung tệp AI Prompt: {}", e.getMessage(), e);
             throw new AppException(ErrorCode.AI_PROMPT_INVALID_FILE);

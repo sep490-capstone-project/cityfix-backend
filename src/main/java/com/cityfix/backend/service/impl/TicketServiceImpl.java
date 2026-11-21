@@ -788,17 +788,26 @@ public class TicketServiceImpl implements TicketService {
         }
 
         String rawWard = currentUser.getWard().trim();
+        String numericPrefix;
+        if (rawWard.matches("(?iu)^xã\\s+.*")) {
+            numericPrefix = "Xã ";
+        } else if (rawWard.matches("(?iu)^(thị\\s+trấn|tt\\.)\\s*.*")) {
+            numericPrefix = "Thị trấn ";
+        } else {
+            numericPrefix = "Phường ";
+        }
+
         String coreWard = rawWard
-                .replaceFirst("^(?i)(Phường|Xã|Thị trấn|P\\.)\\s*", "")
+                .replaceFirst("^(?iu)(Phường|Xã|Thị\\s+trấn|TT\\.|P\\.)\\s*", "")
                 .trim();
 
         if (coreWard.isEmpty()) {
             return Optional.empty();
         }
 
-        // Nếu phần tên lõi chỉ là số (VD: "1", "2", "10"), giữ tiền tố "Phường " để tránh bắt nhầm số nhà
+        // Nếu phần tên lõi chỉ là số (VD: "1", "2", "10"), giữ đúng tiền tố hành chính gốc (Phường/Xã/Thị trấn) để tránh bắt nhầm số nhà
         String wardPattern = coreWard.matches("^\\d+$")
-                ? "Phường " + coreWard
+                ? numericPrefix + coreWard
                 : coreWard;
 
         String province = "";

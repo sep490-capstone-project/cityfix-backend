@@ -2248,5 +2248,32 @@ class TicketServiceTest {
         assertThat(result).isEmpty();
         verify(ticketRepository, never()).findAllWithSubCategoriesByTicketIdIn(any());
     }
+
+    @Test
+    @DisplayName("getTopUpvotedTicketsInSameWard_numericXaAndThiTran_preservesOriginalAdministrativePrefix")
+    void getTopUpvotedTicketsInSameWard_numericXaAndThiTran_preservesOriginalAdministrativePrefix() {
+        List<TicketStatus> expectedStatuses = List.of(TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS);
+        org.springframework.data.domain.Pageable top3Pageable = org.springframework.data.domain.PageRequest.of(0, 3);
+
+        mockUser.setProvince("Tỉnh Lâm Đồng");
+
+        mockUser.setWard("Xã 1");
+        when(ticketRepository.findTopUpvotedTicketIdsByWard("Xã 1", "Xã 1", "Lâm Đồng", expectedStatuses, top3Pageable))
+                .thenReturn(java.util.Collections.emptyList());
+        assertThat(ticketService.getTopUpvotedTicketsInSameWard()).isEmpty();
+        verify(ticketRepository).findTopUpvotedTicketIdsByWard("Xã 1", "Xã 1", "Lâm Đồng", expectedStatuses, top3Pageable);
+
+        mockUser.setWard("Thị trấn 2");
+        when(ticketRepository.findTopUpvotedTicketIdsByWard("Thị trấn 2", "Thị trấn 2", "Lâm Đồng", expectedStatuses, top3Pageable))
+                .thenReturn(java.util.Collections.emptyList());
+        assertThat(ticketService.getTopUpvotedTicketsInSameWard()).isEmpty();
+        verify(ticketRepository).findTopUpvotedTicketIdsByWard("Thị trấn 2", "Thị trấn 2", "Lâm Đồng", expectedStatuses, top3Pageable);
+
+        mockUser.setWard("TT. 2");
+        when(ticketRepository.findTopUpvotedTicketIdsByWard("TT. 2", "Thị trấn 2", "Lâm Đồng", expectedStatuses, top3Pageable))
+                .thenReturn(java.util.Collections.emptyList());
+        assertThat(ticketService.getTopUpvotedTicketsInSameWard()).isEmpty();
+        verify(ticketRepository).findTopUpvotedTicketIdsByWard("TT. 2", "Thị trấn 2", "Lâm Đồng", expectedStatuses, top3Pageable);
+    }
 }
 
