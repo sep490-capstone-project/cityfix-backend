@@ -77,6 +77,14 @@ public class TicketController {
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách sự cố khẩn cấp cùng khu vực thành công.", response));
     }
 
+    @GetMapping("/top-upvoted")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Lấy Top 3 vé có lượt Upvote cao nhất cùng Phường", description = "Trả về tối đa 3 vé có trạng thái ASSIGNED hoặc IN_PROGRESS trong cùng Phường với người dùng hiện tại, sắp xếp giảm dần theo số lượt upvote và thời gian tạo.")
+    public ResponseEntity<BaseResponse<List<TicketResponse>>> getTopUpvotedTicketsInSameWard() {
+        List<TicketResponse> response = ticketService.getTopUpvotedTicketsInSameWard();
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách top 3 vé được bình chọn nhiều nhất trong khu vực thành công.", response));
+    }
+
     @GetMapping("/{ticketId}/steps")
     @PreAuthorize("hasAnyRole('STAFF', 'MANAGER')")
     @Operation(summary = "Lấy danh sách các bước xử lý của vé", description = "Chỉ cho phép vai trò STAFF và MANAGER. Chặn ADMIN và các vai trò khác.")

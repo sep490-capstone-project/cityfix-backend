@@ -354,6 +354,81 @@ class UserServiceImplTest {
             assertThat(mockUser.getPasswordHash()).isEqualTo("encodedNewSecret123");
             verify(passwordEncoder).encode("newSecret123");
             verify(userRepository).save(mockUser);
+            verify(tokenService).revokeAllRefreshTokens(mockUser.getUserId());
         }
+    }
+
+    @Test
+    @DisplayName("refreshToken_validActiveToken_consumesAtomicallyAndReturnsNewTokenPair")
+    void refreshToken_validActiveToken_consumesAtomicallyAndReturnsNewTokenPair() {
+        com.cityfix.backend.model.dto.request.RefreshTokenRequest request =
+                com.cityfix.backend.model.dto.request.RefreshTokenRequest.builder()
+                        .refreshToken("old-refresh-token")
+                        .build();
+
+        when(tokenService.consumeRefreshToken("old-refresh-token")).thenReturn(true);
+        when(tokenService.extractUser("old-refresh-token")).thenReturn(mockUser);
+        when(tokenService.generateAccessToken(mockUser)).thenReturn("new-access-token");
+        when(tokenService.generateRefreshToken(mockUser)).thenReturn("new-refresh-token");
+
+        LoginResponse response = userService.refreshToken(request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getAccessToken()).isEqualTo("new-access-token");
+        assertThat(response.getRefreshToken()).isEqualTo("new-refresh-token");
+        verify(tokenService, times(1)).consumeRefreshToken("old-refresh-token");
+        verify(tokenService, never()).revokeRefreshToken(any());
+        verify(tokenService).generateAccessToken(mockUser);
+        verify(tokenService).generateRefreshToken(mockUser);
+    }
+
+    @Test
+    @DisplayName("refreshToken_inactiveOrAlreadyConsumedToken_throwsInvalidRefreshToken")
+    void refreshToken_inactiveOrAlreadyConsumedToken_throwsInvalidRefreshToken() {
+        com.cityfix.backend.model.dto.request.RefreshTokenRequest request =
+                com.cityfix.backend.model.dto.request.RefreshTokenRequest.builder()
+                        .refreshToken("revoked-refresh-token")
+                        .build();
+
+        when(tokenService.consumeRefreshToken("revoked-refresh-token")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.refreshToken(request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REFRESH_TOKEN);
+
+        verify(tokenService, never()).extractUser(any());
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
+    @DisplayName("refreshToken_blockedUser_throwsAccountBannedAfterAtomicConsume")
+    void refreshToken_blockedUser_throwsAccountBannedAfterAtomicConsume() {
+        mockUser.setStatus(UserStatus.BLOCKED);
+        com.cityfix.backend.model.dto.request.RefreshTokenRequest request =
+                com.cityfix.backend.model.dto.request.RefreshTokenRequest.builder()
+                        .refreshToken("valid-refresh-token")
+                        .build();
+
+        when(tokenService.consumeRefreshToken("valid-refresh-token")).thenReturn(true);
+        when(tokenService.extractUser("valid-refresh-token")).thenReturn(mockUser);
+
+        assertThatThrownBy(() -> userService.refreshToken(request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_BANNED);
+
+        verify(tokenService, times(1)).consumeRefreshToken("valid-refresh-token");
+        verify(tokenService, never()).revokeRefreshToken(any());
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
+    @DisplayName("logout_withAccessAndRefreshToken_blacklistsAccessAndRevokesRefresh")
+    void logout_withAccessAndRefreshToken_blacklistsAccessAndRevokesRefresh() {
+        userService.logout("access-token-123", "refresh-token-456");
+
+        verify(tokenService).blacklistToken("access-token-123");
+        verify(tokenService).revokeRefreshToken("refresh-token-456");
     }
 }

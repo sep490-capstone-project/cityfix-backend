@@ -2,6 +2,8 @@ package com.cityfix.backend.controller;
 
 import com.cityfix.backend.mapper.UserMapper;
 import com.cityfix.backend.model.dto.request.LoginRequest;
+import com.cityfix.backend.model.dto.request.LogoutRequest;
+import com.cityfix.backend.model.dto.request.RefreshTokenRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
 import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
@@ -95,11 +97,25 @@ public class AuthController {
                 .body(BaseResponse.success("Đăng nhập thành công", data));
     }
 
+    @PostMapping("/refresh")
+    public ResponseEntity<BaseResponse<LoginResponse>> refreshToken(
+            @Valid @RequestBody RefreshTokenRequest request) {
+        LoginResponse data = userService.refreshToken(request);
+        return ResponseEntity
+                .ok(BaseResponse.success("Làm mới token thành công", data));
+    }
+
     @PostMapping("/logout")
-    public ResponseEntity<BaseResponse<Void>> logout(HttpServletRequest request) {
+    public ResponseEntity<BaseResponse<Void>> logout(
+            HttpServletRequest request,
+            @RequestBody(required = false) LogoutRequest logoutRequest) {
         String authHeader = request.getHeader("Authorization");
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            userService.logout(authHeader.substring(7));
+        String accessToken = (authHeader != null && authHeader.startsWith("Bearer "))
+                ? authHeader.substring(7)
+                : null;
+        String refreshToken = logoutRequest != null ? logoutRequest.getRefreshToken() : null;
+        if (accessToken != null || (refreshToken != null && !refreshToken.isBlank())) {
+            userService.logout(accessToken, refreshToken);
         }
         return ResponseEntity
                 .ok(BaseResponse.success("Đăng xuất thành công", null));

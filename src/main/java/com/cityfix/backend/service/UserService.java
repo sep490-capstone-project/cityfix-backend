@@ -1,6 +1,7 @@
 package com.cityfix.backend.service;
 
 import com.cityfix.backend.model.dto.request.LoginRequest;
+import com.cityfix.backend.model.dto.request.RefreshTokenRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
 import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
@@ -11,7 +12,9 @@ import com.cityfix.backend.model.dto.response.UserRegisterResponse;
 public interface UserService {
     UserRegisterResponse registerUser(UserRegisterRequest request);
     LoginResponse login(LoginRequest request);
+    LoginResponse refreshToken(RefreshTokenRequest request);
     void logout(String accessToken);
+    void logout(String accessToken, String refreshToken);
     // [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
     // void verifyEmail(VerifyOtpRequest request);
     // void resendOtp(ResendOtpRequest request);

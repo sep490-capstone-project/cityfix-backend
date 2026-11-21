@@ -33,4 +33,5 @@ public class TicketResponse {
     private String departmentName;
     private UUID assigneeId;
     private String assigneeName;
+    private Long upvoteCount;
 }
