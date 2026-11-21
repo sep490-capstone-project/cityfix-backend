@@ -19,6 +19,7 @@ import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.TicketStatus;
 import com.cityfix.backend.repository.*;
 import com.cityfix.backend.repository.projection.DuplicateTicketProjection;
+import com.cityfix.backend.repository.projection.TopUpvotedTicketProjection;
 import com.cityfix.backend.event.RecurringTicketEvent;
 import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.LocationService;
@@ -779,13 +780,11 @@ public class TicketServiceImpl implements TicketService {
         return tickets.map(ticketMapper::toTicketResponse);
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public Page<TicketResponse> getLifeThreateningTicketsInSameWard(Pageable pageable) {
-        User currentUser = getCurrentUser();
+    private record WardLocationFilter(String rawWard, String wardPattern, String province) {}
 
-        if (currentUser.getWard() == null || currentUser.getWard().isBlank()) {
-            return Page.empty(pageable);
+    private Optional<WardLocationFilter> resolveCurrentUserWardFilter(User currentUser) {
+        if (currentUser == null || currentUser.getWard() == null || currentUser.getWard().isBlank()) {
+            return Optional.empty();
         }
 
         String rawWard = currentUser.getWard().trim();
@@ -794,7 +793,7 @@ public class TicketServiceImpl implements TicketService {
                 .trim();
 
         if (coreWard.isEmpty()) {
-            return Page.empty(pageable);
+            return Optional.empty();
         }
 
         // Nếu phần tên lõi chỉ là số (VD: "1", "2", "10"), giữ tiền tố "Phường " để tránh bắt nhầm số nhà
@@ -812,6 +811,20 @@ public class TicketServiceImpl implements TicketService {
             }
         }
 
+        return Optional.of(new WardLocationFilter(rawWard, wardPattern, province));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TicketResponse> getLifeThreateningTicketsInSameWard(Pageable pageable) {
+        User currentUser = getCurrentUser();
+
+        Optional<WardLocationFilter> filterOpt = resolveCurrentUserWardFilter(currentUser);
+        if (filterOpt.isEmpty()) {
+            return Page.empty(pageable);
+        }
+
+        WardLocationFilter filter = filterOpt.get();
         List<TicketStatus> targetStatuses = List.of(
                 TicketStatus.ASSIGNED,
                 TicketStatus.IN_PROGRESS,
@@ -819,9 +832,77 @@ public class TicketServiceImpl implements TicketService {
         );
 
         Page<Ticket> tickets = ticketRepository.findLifeThreateningTicketsByWard(
-                rawWard, wardPattern, province, targetStatuses, pageable
+                filter.rawWard(), filter.wardPattern(), filter.province(), targetStatuses, pageable
         );
         return tickets.map(ticketMapper::toTicketResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TicketResponse> getTopUpvotedTicketsInSameWard() {
+        User currentUser = getCurrentUser();
+
+        Optional<WardLocationFilter> filterOpt = resolveCurrentUserWardFilter(currentUser);
+        if (filterOpt.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        WardLocationFilter filter = filterOpt.get();
+        List<TicketStatus> targetStatuses = List.of(
+                TicketStatus.ASSIGNED,
+                TicketStatus.IN_PROGRESS
+        );
+
+        List<TopUpvotedTicketProjection> topProjections = ticketRepository.findTopUpvotedTicketIdsByWard(
+                filter.rawWard(),
+                filter.wardPattern(),
+                filter.province(),
+                targetStatuses,
+                PageRequest.of(0, 3)
+        );
+
+        if (topProjections == null || topProjections.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<UUID> topTicketIds = new ArrayList<>(topProjections.size());
+        Map<UUID, Long> upvoteCountMap = new HashMap<>(topProjections.size());
+        for (TopUpvotedTicketProjection proj : topProjections) {
+            if (proj != null && proj.getTicketId() != null) {
+                topTicketIds.add(proj.getTicketId());
+                upvoteCountMap.put(proj.getTicketId(), proj.getUpvoteCount() != null ? proj.getUpvoteCount() : 0L);
+            }
+        }
+
+        if (topTicketIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Ticket> hydratedTickets = ticketRepository.findAllWithSubCategoriesByTicketIdIn(topTicketIds);
+        if (hydratedTickets == null || hydratedTickets.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<UUID, Ticket> ticketById = new HashMap<>(hydratedTickets.size());
+        for (Ticket ticket : hydratedTickets) {
+            if (ticket != null && ticket.getTicketId() != null) {
+                ticketById.put(ticket.getTicketId(), ticket);
+            }
+        }
+
+        List<TicketResponse> orderedResponses = new ArrayList<>(topTicketIds.size());
+        for (UUID ticketId : topTicketIds) {
+            Ticket ticket = ticketById.get(ticketId);
+            if (ticket != null) {
+                TicketResponse response = ticketMapper.toTicketResponse(ticket);
+                if (response != null) {
+                    response.setUpvoteCount(upvoteCountMap.getOrDefault(ticketId, 0L));
+                    orderedResponses.add(response);
+                }
+            }
+        }
+
+        return orderedResponses;
     }
 
     @Override

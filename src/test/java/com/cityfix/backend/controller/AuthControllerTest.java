@@ -4,6 +4,8 @@ import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.model.dto.request.LoginRequest;
+import com.cityfix.backend.model.dto.request.LogoutRequest;
+import com.cityfix.backend.model.dto.request.RefreshTokenRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
 import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
@@ -122,21 +124,63 @@ class AuthControllerTest {
     }
 
     @Test
-    @DisplayName("logout_validToken_returns200Success: Đăng xuất và blacklist token thành công")
+    @DisplayName("refreshToken_validRequest_returns200WithRotatedTokens")
+    void refreshToken_validRequest_returns200WithRotatedTokens() {
+        RefreshTokenRequest request = RefreshTokenRequest.builder()
+                .refreshToken("old-refresh-token")
+                .build();
+
+        LoginResponse rotated = LoginResponse.builder()
+                .accessToken("new-access-token")
+                .refreshToken("new-refresh-token")
+                .build();
+
+        when(userService.refreshToken(request)).thenReturn(rotated);
+
+        ResponseEntity<BaseResponse<LoginResponse>> response = authController.refreshToken(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Làm mới token thành công");
+        assertThat(response.getBody().getData()).isEqualTo(rotated);
+
+        verify(userService, times(1)).refreshToken(request);
+    }
+
+    @Test
+    @DisplayName("logout_validToken_returns200Success: Đăng xuất và blacklist token thành công (không gửi body)")
     void logout_validToken_returns200Success() {
         MockHttpServletRequest servletRequest = new MockHttpServletRequest();
         servletRequest.addHeader("Authorization", "Bearer valid-bearer-token");
 
-        doNothing().when(userService).logout("valid-bearer-token");
+        doNothing().when(userService).logout("valid-bearer-token", null);
 
-        ResponseEntity<BaseResponse<Void>> response = authController.logout(servletRequest);
+        ResponseEntity<BaseResponse<Void>> response = authController.logout(servletRequest, null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getMessage()).isEqualTo("Đăng xuất thành công");
 
-        verify(userService, times(1)).logout("valid-bearer-token");
+        verify(userService, times(1)).logout("valid-bearer-token", null);
+    }
+
+    @Test
+    @DisplayName("logout_withRefreshTokenInBody_revokesBothTokens")
+    void logout_withRefreshTokenInBody_revokesBothTokens() {
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.addHeader("Authorization", "Bearer valid-bearer-token");
+        LogoutRequest logoutRequest = LogoutRequest.builder().refreshToken("valid-refresh-token").build();
+
+        doNothing().when(userService).logout("valid-bearer-token", "valid-refresh-token");
+
+        ResponseEntity<BaseResponse<Void>> response = authController.logout(servletRequest, logoutRequest);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        verify(userService, times(1)).logout("valid-bearer-token", "valid-refresh-token");
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.cityfix.backend.model.entity.User;
 import io.jsonwebtoken.Claims;
 
 import java.util.Date;
+import java.util.UUID;
 import java.util.function.Function;
 
 public interface TokenService {
@@ -14,8 +15,12 @@ public interface TokenService {
     boolean isTokenExpired(String token);
     Date extractExpiration(String token);
     String extractRole(String token);
+    String extractTokenType(String token);
     String extractJti(String token);
     boolean isTokenBlacklisted(String token);
     void blacklistToken(String token);
+    boolean isRefreshTokenActive(String refreshToken);
+    void revokeRefreshToken(String refreshToken);
+    void revokeAllRefreshTokens(UUID userId);
     <T> T extractClaim(String token, Function<Claims, T> resolver);
 }

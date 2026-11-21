@@ -253,9 +253,39 @@ public enum ErrorCode {
             "Token xác thực không hợp lệ"
     ),
 
+    TOKEN_EXPIRED(
+            HttpStatus.UNAUTHORIZED,
+            "Phiên đăng nhập đã hết hạn, vui lòng làm mới token"
+    ),
+
+    INVALID_REFRESH_TOKEN(
+            HttpStatus.UNAUTHORIZED,
+            "Refresh token không hợp lệ, đã hết hạn hoặc đã bị thu hồi"
+    ),
+
     USER_NOT_FOUND(
             HttpStatus.NOT_FOUND,
             "Không tìm thấy người dùng"
+    ),
+
+    AI_PROMPT_NOT_FOUND(
+            HttpStatus.NOT_FOUND,
+            "Chưa có tệp AI Prompt nào trong hệ thống"
+    ),
+
+    AI_PROMPT_INVALID_FILE(
+            HttpStatus.BAD_REQUEST,
+            "Tệp AI Prompt không hợp lệ. Chỉ chấp nhận tệp .txt (tối đa 2MB) có nội dung."
+    ),
+
+    AI_PROMPT_PDF_CONVERSION_FAILED(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "Không thể chuyển đổi nội dung AI Prompt sang tệp PDF."
+    ),
+
+    AI_PROMPT_UPLOAD_FAILED(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "Tải tệp AI Prompt PDF lên Cloudinary thất bại."
     );
 
     private final HttpStatus status;

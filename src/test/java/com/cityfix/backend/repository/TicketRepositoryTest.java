@@ -114,6 +114,34 @@ class TicketRepositoryTest {
                 .doesNotContain("ts.assignee.department");
     }
 
+    @Test
+    @DisplayName("findTopUpvotedTicketIdsByWard_hasBalancedJpqlNoEntityGraphAndUsesLeftJoinWithHybridPostGis")
+    void findTopUpvotedTicketIdsByWard_hasBalancedJpqlNoEntityGraphAndUsesLeftJoinWithHybridPostGis() throws Exception {
+        Method method = TicketRepository.class.getMethod(
+                "findTopUpvotedTicketIdsByWard",
+                String.class,
+                String.class,
+                String.class,
+                Collection.class,
+                Pageable.class
+        );
+        Query queryAnnotation = method.getAnnotation(Query.class);
+        assertThat(queryAnnotation).isNotNull();
+        // Đảm bảo không gắn @EntityGraph để tránh HHH90003004 (in-memory pagination) và MultipleBagFetchException
+        assertThat(method.getAnnotation(org.springframework.data.jpa.repository.EntityGraph.class)).isNull();
+
+        String jpql = queryAnnotation.value();
+        assertBalancedParentheses(jpql);
+        assertThat(jpql)
+                .contains("LEFT JOIN t.ticketLocation tl")
+                .contains("LEFT JOIN TicketVote tv ON tv.ticket = t")
+                .contains("WHERE t.status IN :statuses")
+                .contains("function('ST_Contains', ab.geom, tl.location) = true")
+                .contains("GROUP BY t.ticketId, t.createdAt")
+                .contains("ORDER BY COUNT(tv.voteId) DESC, t.createdAt DESC")
+                .doesNotContain("HAVING");
+    }
+
     private void assertBalancedParentheses(String jpql) {
         assertThat(jpql).isNotBlank();
         int depth = 0;

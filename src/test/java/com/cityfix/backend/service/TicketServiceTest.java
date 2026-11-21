@@ -2126,5 +2126,127 @@ class TicketServiceTest {
         verify(userDepartmentRepository).findActiveStaffByDepartmentId(deptId);
         verify(ticketStepRepository, atLeastOnce()).save(argThat(ts -> ts != null && secondaryStaff.equals(ts.getAssignee())));
     }
+
+    @Test
+    @DisplayName("getTopUpvotedTicketsInSameWard_success_preservesRankingOrderAndSetsUpvoteCounts")
+    void getTopUpvotedTicketsInSameWard_success_preservesRankingOrderAndSetsUpvoteCounts() {
+        mockUser.setWard("Phường 1");
+        mockUser.setProvince("TP.HCM");
+
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        UUID id3 = UUID.randomUUID();
+
+        com.cityfix.backend.repository.projection.TopUpvotedTicketProjection p1 =
+                mock(com.cityfix.backend.repository.projection.TopUpvotedTicketProjection.class);
+        when(p1.getTicketId()).thenReturn(id1);
+        when(p1.getUpvoteCount()).thenReturn(25L);
+
+        com.cityfix.backend.repository.projection.TopUpvotedTicketProjection p2 =
+                mock(com.cityfix.backend.repository.projection.TopUpvotedTicketProjection.class);
+        when(p2.getTicketId()).thenReturn(id2);
+        when(p2.getUpvoteCount()).thenReturn(10L);
+
+        com.cityfix.backend.repository.projection.TopUpvotedTicketProjection p3 =
+                mock(com.cityfix.backend.repository.projection.TopUpvotedTicketProjection.class);
+        when(p3.getTicketId()).thenReturn(id3);
+        when(p3.getUpvoteCount()).thenReturn(0L);
+
+        List<TicketStatus> expectedStatuses = List.of(TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS);
+        org.springframework.data.domain.Pageable top3Pageable = org.springframework.data.domain.PageRequest.of(0, 3);
+
+        when(ticketRepository.findTopUpvotedTicketIdsByWard(
+                eq("Phường 1"),
+                eq("Phường 1"),
+                eq("Hồ Chí Minh"),
+                eq(expectedStatuses),
+                eq(top3Pageable)
+        )).thenReturn(List.of(p1, p2, p3));
+
+        Ticket t1 = Ticket.builder().ticketId(id1).status(TicketStatus.IN_PROGRESS).build();
+        Ticket t2 = Ticket.builder().ticketId(id2).status(TicketStatus.ASSIGNED).build();
+        Ticket t3 = Ticket.builder().ticketId(id3).status(TicketStatus.ASSIGNED).build();
+
+        // Giả lập query IN (...) trả về không đúng thứ tự (t3, t1, t2)
+        when(ticketRepository.findAllWithSubCategoriesByTicketIdIn(List.of(id1, id2, id3)))
+                .thenReturn(List.of(t3, t1, t2));
+
+        when(ticketMapper.toTicketResponse(t1)).thenReturn(TicketResponse.builder().id(id1).status(TicketStatus.IN_PROGRESS).build());
+        when(ticketMapper.toTicketResponse(t2)).thenReturn(TicketResponse.builder().id(id2).status(TicketStatus.ASSIGNED).build());
+        when(ticketMapper.toTicketResponse(t3)).thenReturn(TicketResponse.builder().id(id3).status(TicketStatus.ASSIGNED).build());
+
+        List<TicketResponse> result = ticketService.getTopUpvotedTicketsInSameWard();
+
+        assertThat(result).hasSize(3);
+        assertThat(result).extracting(TicketResponse::getId).containsExactly(id1, id2, id3);
+        assertThat(result).extracting(TicketResponse::getUpvoteCount).containsExactly(25L, 10L, 0L);
+
+        verify(ticketRepository).findTopUpvotedTicketIdsByWard(
+                "Phường 1", "Phường 1", "Hồ Chí Minh", expectedStatuses, top3Pageable
+        );
+        verify(ticketRepository).findAllWithSubCategoriesByTicketIdIn(List.of(id1, id2, id3));
+    }
+
+    @Test
+    @DisplayName("getTopUpvotedTicketsInSameWard_nullOrBlankWard_returnsEmptyListWithoutQuerying")
+    void getTopUpvotedTicketsInSameWard_nullOrBlankWard_returnsEmptyListWithoutQuerying() {
+        mockUser.setWard("   ");
+
+        List<TicketResponse> result = ticketService.getTopUpvotedTicketsInSameWard();
+
+        assertThat(result).isEmpty();
+        verify(ticketRepository, never()).findTopUpvotedTicketIdsByWard(any(), any(), any(), any(), any());
+        verify(ticketRepository, never()).findAllWithSubCategoriesByTicketIdIn(any());
+    }
+
+    @Test
+    @DisplayName("getTopUpvotedTicketsInSameWard_fewerThan3TicketsInWard_returnsAvailableTickets")
+    void getTopUpvotedTicketsInSameWard_fewerThan3TicketsInWard_returnsAvailableTickets() {
+        mockUser.setWard("P. Bến Nghé");
+        mockUser.setProvince("Thành phố Hồ Chí Minh");
+
+        UUID id1 = UUID.randomUUID();
+        com.cityfix.backend.repository.projection.TopUpvotedTicketProjection p1 =
+                mock(com.cityfix.backend.repository.projection.TopUpvotedTicketProjection.class);
+        when(p1.getTicketId()).thenReturn(id1);
+        when(p1.getUpvoteCount()).thenReturn(0L);
+
+        List<TicketStatus> expectedStatuses = List.of(TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS);
+        org.springframework.data.domain.Pageable top3Pageable = org.springframework.data.domain.PageRequest.of(0, 3);
+
+        when(ticketRepository.findTopUpvotedTicketIdsByWard(
+                "P. Bến Nghé", "Bến Nghé", "Hồ Chí Minh", expectedStatuses, top3Pageable
+        )).thenReturn(List.of(p1));
+
+        Ticket t1 = Ticket.builder().ticketId(id1).status(TicketStatus.ASSIGNED).build();
+        when(ticketRepository.findAllWithSubCategoriesByTicketIdIn(List.of(id1))).thenReturn(List.of(t1));
+        when(ticketMapper.toTicketResponse(t1)).thenReturn(TicketResponse.builder().id(id1).status(TicketStatus.ASSIGNED).build());
+
+        List<TicketResponse> result = ticketService.getTopUpvotedTicketsInSameWard();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getId()).isEqualTo(id1);
+        assertThat(result.get(0).getUpvoteCount()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("getTopUpvotedTicketsInSameWard_noMatchingTickets_returnsEmptyWithoutHydrationQuery")
+    void getTopUpvotedTicketsInSameWard_noMatchingTickets_returnsEmptyWithoutHydrationQuery() {
+        mockUser.setWard("Phường Đa Kao");
+        mockUser.setProvince(null);
+
+        when(ticketRepository.findTopUpvotedTicketIdsByWard(
+                eq("Phường Đa Kao"),
+                eq("Đa Kao"),
+                eq(""),
+                eq(List.of(TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS)),
+                eq(org.springframework.data.domain.PageRequest.of(0, 3))
+        )).thenReturn(java.util.Collections.emptyList());
+
+        List<TicketResponse> result = ticketService.getTopUpvotedTicketsInSameWard();
+
+        assertThat(result).isEmpty();
+        verify(ticketRepository, never()).findAllWithSubCategoriesByTicketIdIn(any());
+    }
 }
 
