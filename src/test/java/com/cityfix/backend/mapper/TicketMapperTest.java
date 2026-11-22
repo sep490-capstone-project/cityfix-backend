@@ -240,6 +240,19 @@ class TicketMapperTest {
     }
 
     @Test
+    @DisplayName("toTicketResponse_mapsIsLifeThreatening")
+    void toTicketResponse_mapsIsLifeThreatening() {
+        ticket.setIsLifeThreatening(true);
+        assertThat(ticketMapper.toTicketResponse(ticket).getIsLifeThreatening()).isTrue();
+
+        ticket.setIsLifeThreatening(false);
+        assertThat(ticketMapper.toTicketResponse(ticket).getIsLifeThreatening()).isFalse();
+
+        ticket.setIsLifeThreatening(null);
+        assertThat(ticketMapper.toTicketResponse(ticket).getIsLifeThreatening()).isNull();
+    }
+
+    @Test
     @DisplayName("toTicketResponse_mapsAndSortsStepsByCreatedAt")
     void toTicketResponse_mapsAndSortsStepsByCreatedAt() {
         java.time.LocalDateTime t1 = java.time.LocalDateTime.now().minusHours(2);

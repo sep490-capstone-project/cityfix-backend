@@ -44,6 +44,7 @@ public interface TicketMapper {
     @Mapping(target = "steps", source = "steps")
     @Mapping(target = "departmentId", ignore = true)
     @Mapping(target = "departmentName", ignore = true)
+    @Mapping(target = "isLifeThreatening", source = "isLifeThreatening")
     TicketResponse toTicketResponse(Ticket ticket);
 
     @AfterMapping
