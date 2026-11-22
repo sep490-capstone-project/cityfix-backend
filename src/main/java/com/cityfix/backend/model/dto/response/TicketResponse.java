@@ -22,6 +22,7 @@ public class TicketResponse {
     private Double longitude;
     private String reviewNote;
     private Boolean isAnonymous;
+    private Boolean isLifeThreatening;
     private UUID createdBy;
     private String creatorFullName;
     private String creatorPhoneNumber;
