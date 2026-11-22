@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.*;
@@ -34,18 +35,23 @@ import java.util.concurrent.CompletableFuture;
 @RequiredArgsConstructor
 public class AiServiceImpl implements AiService {
 
+    public static final double SUBCATEGORY_MATCH_THRESHOLD = 70.0;
+    public static final String OTHER_CATEGORY_NAME = "Khác";
+    public static final String OTHER_SUBCATEGORY_NAME = "Khác";
+    private static final BigDecimal DEFAULT_LOW_CONFIDENCE_SCORE = BigDecimal.valueOf(65.0);
+
     @Value("${gemini.api.key:GEMINI_API_KEY}")
     private String apiKey;
 
     @Value("${gemini.model:gemini-3.5-flash}")
     private String geminiModel;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final CategoryRepository categoryRepository;
     private final SubCategoryRepository subCategoryRepository;
 
-    private record MediaData(String mimeType, String base64) {}
+    record MediaData(String mimeType, String base64) {}
 
     @Override
     public AiAnalyzeResponse analyzeMedia(String mediaUrl) {
@@ -92,32 +98,29 @@ public class AiServiceImpl implements AiService {
             }
             log.info("Đã tải thành công {}/{} tệp media để gửi tới Gemini", downloadedMediaList.size(), urls.size());
 
-            // 2. Lấy danh sách Categories và SubCategories từ Database
-            List<Category> categories = categoryRepository.findAllByIsDeletedFalse();
-            List<SubCategory> subCategories = subCategoryRepository.findByIsActiveTrueAndIsDeletedFalse();
+            // 2. Lấy danh sách Categories và SubCategories từ Database & đảm bảo luôn có SubCategory 'Khác'
+            List<Category> categories = new ArrayList<>(categoryRepository.findAllByIsDeletedFalse());
+            List<SubCategory> subCategories = new ArrayList<>(subCategoryRepository.findByIsActiveTrueAndIsDeletedFalse());
+            SubCategory otherSubCategory = resolveOrCreateOtherSubCategory(categories, subCategories);
 
-            StringBuilder categoriesStr = new StringBuilder();
-            for (Category c : categories) {
-                categoriesStr.append("Nhóm sự cố: ").append(c.getName()).append("\n");
-                categoriesStr.append("Danh mục sự cố chi tiết (SubCategories):\n");
-                for (SubCategory sc : subCategories) {
-                    if (sc.getCategory().getCategoryId().equals(c.getCategoryId())) {
-                        categoriesStr.append(" - ").append(sc.getName())
-                                .append(" (ID: ").append(sc.getSubCategoryId())
-                                .append(", Priority mặc định: ").append(sc.getPriority().name()).append(")\n");
-                    }
-                }
-            }
+            String categoriesStr = buildCategoriesReferenceString(categories, subCategories);
+            String otherSubCatIdStr = (otherSubCategory != null && otherSubCategory.getSubCategoryId() != null)
+                    ? otherSubCategory.getSubCategoryId().toString()
+                    : OTHER_SUBCATEGORY_NAME;
 
-            // 3. Xây dựng Prompt phân tích đa ảnh, nhận diện SubCategory chính xác và chấm điểm chuẩn hóa 4 dải
+            // 3. Xây dựng Prompt phân tích đa ảnh, nhận diện SubCategory theo ngưỡng 70% đặc điểm và chấm điểm chuẩn hóa 4 dải
             String prompt = "Bạn là chuyên gia thẩm định hiện trường và đánh giá rủi ro cơ sở hạ tầng đô thị cho hệ thống CityFix.\n"
                     + "Nhiệm vụ của bạn là quan sát khách quan, toàn diện (các) hình ảnh/video được cung cấp (có thể gồm ảnh cận cảnh và toàn cảnh của cùng một hiện trường) để:\n"
                     + "1. KIỂM TRA TÍNH HỢP LỆ:\n"
-                    + "   - Xác định đây có phải sự cố cơ sở hạ tầng/môi trường đô thị hợp lệ không (ổ gà, sụt lún, vỡ ống nước, nắp cống hỏng/mất, ngập úng, cây ngã đổ, sự cố điện/đèn đường, rác thải ứ đọng...).\n"
+                    + "   - Xác định đây có phải sự cố cơ sở hạ tầng/môi trường đô thị hợp lệ không (ổ gà, sụt lún, vỡ ống nước, nắp cống hỏng/mất, ngập úng, cây ngã đổ, sự cố điện/đèn đường, rác thải ứ đọng, hư hỏng công trình công cộng...).\n"
                     + "   - Nếu KHÔNG hợp lệ (ảnh chân dung/selfie, ảnh chụp màn hình văn bản, phong cảnh bình thường không có sự cố, vật nuôi, đồ vật trong nhà...), trả về 'isValidIssue' = false, 'description' giải thích lý do từ chối bằng TIẾNG VIỆT, các trường còn lại để null.\n"
-                    + "2. NHẬN DIỆN DANH MỤC SỰ CỐ ('isValidIssue' = true):\n"
-                    + "   - Chọn các mã UUID của SubCategory phù hợp nhất từ danh mục bên dưới.\n"
-                    + "   - QUY TẮC ĐA SỰ CỐ: Chỉ chọn từ 2 SubCategory trở lên khi hiện trường thực sự có nhiều sự cố ĐỘC LẬP cần quy trình xử lý khác nhau (VD: cây ngã đổ làm đứt dây điện/gãy đèn đường). KHÔNG gán dư các hệ quả phụ nhỏ nhặt (VD: ổ gà nhỏ có đọng ít nước mưa thì CHỈ chọn danh mục ổ gà/hư hỏng mặt đường, KHÔNG chọn thêm 'Ngập úng' trừ khi mặt đường xung quanh bị ngập).\n"
+                    + "2. NHẬN DIỆN DANH MỤC SỰ CỐ & ĐỐI CHIẾU ĐỘ TƯƠNG ĐỒNG ĐẶC ĐIỂM ('isValidIssue' = true):\n"
+                    + "   - Đối chiếu kỹ các đặc điểm thị giác thực tế trong hình ảnh/video với 'Tên' và 'Đặc điểm nhận diện' của từng SubCategory cụ thể (không tính danh mục 'Khác') trong danh mục tham chiếu bên dưới.\n"
+                    + "   - Đánh giá 'confidenceScore' (thang 0.0 - 100.0) là TỶ LỆ PHẦN TRĂM (%) ĐỘ TƯƠNG ĐỒNG giữa các đặc điểm của sự cố trong ảnh so với SubCategory cụ thể có sẵn trong Database:\n"
+                    + "       + NẾU ĐỘ TƯƠNG ĐỒNG ĐẶC ĐIỂM >= 70% ('confidenceScore' >= 70.0): Chọn mã UUID của SubCategory cụ thể phù hợp nhất từ danh mục bên dưới.\n"
+                    + "       + NẾU ĐỘ TƯƠNG ĐỒNG ĐẶC ĐIỂM < 70% ('confidenceScore' < 70.0): Tức là đây VẪN LÀ sự cố hạ tầng/môi trường đô thị hợp lệ ('isValidIssue' = true), nhưng các đặc điểm trong ảnh giống dưới 70% so với tất cả các SubCategory cụ thể hiện có trong Database (hoặc là loại sự cố đô thị mới/khác chưa được mô tả trong danh sách cụ thể), bạn BẮT BUỘC phải chọn mã UUID của SubCategory 'Khác' (ID: " + otherSubCatIdStr + ") và trả về 'confidenceScore' đúng bằng phần trăm tương đồng thực tế so với các danh mục cụ thể (nhỏ hơn 70.0, ví dụ: 35.0, 50.0, 65.0).\n"
+                    + "   - TUYỆT ĐỐI KHÔNG gán ép ảnh vào một SubCategory cụ thể khi đặc điểm thực tế trong ảnh giống dưới 70%.\n"
+                    + "   - QUY TẮC ĐA SỰ CỐ: Chỉ chọn từ 2 SubCategory cụ thể trở lên khi hiện trường thực sự có nhiều sự cố ĐỘC LẬP mà mỗi sự cố đều khớp đặc điểm >= 70% và cần quy trình xử lý khác nhau (VD: cây ngã đổ làm đứt dây điện/gãy đèn đường). KHÔNG gán dư các hệ quả phụ nhỏ nhặt (VD: ổ gà nhỏ có đọng ít nước mưa thì CHỈ chọn danh mục ổ gà/hư hỏng mặt đường, KHÔNG chọn thêm 'Ngập úng' trừ khi mặt đường xung quanh bị ngập). Nếu đã chuyển sang SubCategory 'Khác' thì chỉ trả về duy nhất UUID của 'Khác'.\n"
                     + "3. NGUYÊN TẮC CHẤM ĐIỂM CHUẨN HÓA (THANG 1.0 - 10.0, CHỐNG THỔI PHỒNG ĐIỂM):\n"
                     + "   Hệ thống phân loại mức ưu tiên cuối cùng theo ngưỡng nghiêm ngặt: Dưới 6.0 = LOW (Thấp), từ 6.0 đến dưới 8.5 = MEDIUM (Trung bình), từ 8.5 trở lên = HIGH (Cao/Khẩn cấp).\n"
                     + "   Vì vậy bạn PHẢI chấm điểm bám sát bằng chứng thị giác thực tế theo 4 dải chuẩn sau, TUYỆT ĐỐI không chấm vọt lên 8-10 cho sự cố thông thường:\n"
@@ -145,12 +148,12 @@ public class AiServiceImpl implements AiService {
                     + "4. ĐỊNH DẠNG JSON ĐẦU RA:\n"
                     + "   Trả về DUY NHẤT một đối tượng JSON hợp lệ (không bọc trong markdown ```json) gồm các trường:\n"
                     + "   - 'isValidIssue': boolean (true/false).\n"
-                    + "   - 'subCategoryIds': Mảng các mã UUID chuẩn 36 ký tự từ danh mục tham chiếu (ít nhất 1 mã khi isValidIssue = true).\n"
+                    + "   - 'subCategoryIds': Mảng các mã UUID chuẩn 36 ký tự từ danh mục tham chiếu (ít nhất 1 mã khi isValidIssue = true; nếu độ tương đồng đặc điểm < 70% thì trả về UUID của SubCategory 'Khác': " + otherSubCatIdStr + ").\n"
                     + "   - 'severityScore': Số thực [1.0 - 10.0] (cho phép 1 chữ số thập phân, VD: 4.5, 6.5, 8.5).\n"
                     + "   - 'impact': Số thực [1.0 - 10.0].\n"
                     + "   - 'urgency': Số thực [1.0 - 10.0].\n"
                     + "   - 'context': Số thực [1.0 - 10.0].\n"
-                    + "   - 'confidenceScore': Số thực từ 0 đến 100 thể hiện độ tự tin nhận diện sự cố.\n"
+                    + "   - 'confidenceScore': Số thực từ 0.0 đến 100.0 thể hiện phần trăm (%) độ tương đồng giữa các đặc điểm trong ảnh và SubCategory cụ thể có sẵn trong Database (nếu < 70.0 thì 'subCategoryIds' bắt buộc chỉ chứa UUID của SubCategory 'Khác').\n"
                     + "   - 'description': Mô tả khách quan, chi tiết hiện trạng sự cố bằng TIẾNG VIỆT.\n"
                     + "   - 'priorityReasoning': Giải thích ngắn gọn bằng TIẾNG VIỆT căn cứ thị giác cụ thể cho từng điểm S, I, U, C và lý do xếp mức độ rủi ro.\n"
                     + "Danh mục SubCategory tham chiếu:\n" + categoriesStr;
@@ -240,28 +243,57 @@ public class AiServiceImpl implements AiService {
                 return aiResponse;
             }
 
-            // 6. Xác thực danh sách SubCategories từ Database
+            // 6. Xác thực danh sách SubCategories từ Database & áp dụng ngưỡng độ tương đồng 70%
             List<UUID> rawSubCatIds = aiResponse.getSubCategoryIds();
-            List<UUID> validSubCatIds = new ArrayList<>();
-            List<String> validSubCatNames = new ArrayList<>();
-            List<Priority> subCatPriorities = new ArrayList<>();
+            List<SubCategory> matchedSubCats = new ArrayList<>();
+            Set<UUID> seenSubCatIds = new LinkedHashSet<>();
 
             if (rawSubCatIds != null && !rawSubCatIds.isEmpty()) {
                 for (UUID subCatId : rawSubCatIds) {
-                    if (subCatId != null) {
+                    if (subCatId != null && seenSubCatIds.add(subCatId)) {
                         Optional<SubCategory> subCatOpt = subCategoryRepository.findById(subCatId);
                         if (subCatOpt.isPresent() && subCatOpt.get().isActive() && !subCatOpt.get().isDeleted()) {
-                            SubCategory sc = subCatOpt.get();
-                            validSubCatIds.add(sc.getSubCategoryId());
-                            validSubCatNames.add(sc.getName());
-                            subCatPriorities.add(sc.getPriority());
+                            matchedSubCats.add(subCatOpt.get());
                         }
                     }
                 }
             }
 
+            BigDecimal confidence = aiResponse.getConfidenceScore();
+            boolean isBelowThreshold = (confidence == null || confidence.doubleValue() < SUBCATEGORY_MATCH_THRESHOLD);
+
+            List<SubCategory> specificSubCats = matchedSubCats.stream()
+                    .filter(sc -> !isOtherSubCategory(sc, otherSubCategory))
+                    .toList();
+
+            List<UUID> validSubCatIds = new ArrayList<>();
+            List<String> validSubCatNames = new ArrayList<>();
+            List<Priority> subCatPriorities = new ArrayList<>();
+
+            if (isBelowThreshold || specificSubCats.isEmpty()) {
+                // Nếu độ tương đồng đặc điểm dưới 70%, hoặc AI đã chọn 'Khác', hoặc không khớp SubCategory cụ thể nào -> chuyển về SubCategory 'Khác'
+                if (otherSubCategory != null && otherSubCategory.getSubCategoryId() != null) {
+                    log.info("AI SubCategory fallback to '{}': confidenceScore={}, rawSubCatIds={}",
+                            otherSubCategory.getName(), confidence, rawSubCatIds);
+                    validSubCatIds.add(otherSubCategory.getSubCategoryId());
+                    validSubCatNames.add(otherSubCategory.getName());
+                    subCatPriorities.add(otherSubCategory.getPriority() != null ? otherSubCategory.getPriority() : Priority.LOW);
+
+                    // Đảm bảo confidenceScore < 70.0 khi rơi vào danh mục 'Khác' để đồng bộ với cờ isAiUncertain trong TicketServiceImpl
+                    if (confidence == null || confidence.doubleValue() >= SUBCATEGORY_MATCH_THRESHOLD) {
+                        aiResponse.setConfidenceScore(DEFAULT_LOW_CONFIDENCE_SCORE);
+                    }
+                }
+            } else {
+                for (SubCategory sc : specificSubCats) {
+                    validSubCatIds.add(sc.getSubCategoryId());
+                    validSubCatNames.add(sc.getName());
+                    subCatPriorities.add(sc.getPriority());
+                }
+            }
+
             // Phòng ngừa silent failure: Nếu AI nhận định là sự cố (isValidIssue = true)
-            // nhưng không tìm thấy SubCategory hợp lệ nào trong Database
+            // nhưng không tìm thấy SubCategory hợp lệ nào trong Database (kể cả fallback)
             if (validSubCatIds.isEmpty()) {
                 log.warn("AI identified valid issue but no matching SubCategory was found in Database. Raw IDs: {}", rawSubCatIds);
                 String originalDesc = aiResponse.getDescription() != null ? aiResponse.getDescription() : "Sự cố cơ sở hạ tầng đô thị.";
@@ -329,7 +361,134 @@ public class AiServiceImpl implements AiService {
         }
     }
 
-    private MediaData downloadSingleMedia(String mediaUrl) {
+    SubCategory resolveOrCreateOtherSubCategory(List<Category> categories, List<SubCategory> subCategories) {
+        for (SubCategory sc : subCategories) {
+            if (sc != null && isOtherSubCategoryName(sc.getName())) {
+                ensureCategoryInList(categories, sc.getCategory());
+                return sc;
+            }
+        }
+
+        Optional<SubCategory> existingOtherOpt = subCategoryRepository.findByNameAndIsDeletedFalse(OTHER_SUBCATEGORY_NAME);
+        if (existingOtherOpt.isPresent()) {
+            SubCategory existingOther = existingOtherOpt.get();
+            if (!existingOther.isActive()) {
+                existingOther.setActive(true);
+                SubCategory savedOther = subCategoryRepository.save(existingOther);
+                if (savedOther != null) {
+                    existingOther = savedOther;
+                }
+            }
+            subCategories.add(existingOther);
+            ensureCategoryInList(categories, existingOther.getCategory());
+            return existingOther;
+        }
+
+        Category otherCategory = categories.stream()
+                .filter(c -> c != null && isOtherCategoryName(c.getName()))
+                .findFirst()
+                .orElseGet(() -> categoryRepository.findByNameAndIsDeletedFalse(OTHER_CATEGORY_NAME)
+                        .orElseGet(() -> {
+                            Category newCat = Category.builder()
+                                    .name(OTHER_CATEGORY_NAME)
+                                    .description("Các nhóm sự cố hạ tầng, môi trường đô thị khác chưa nằm trong danh mục phân loại chuẩn")
+                                    .isActive(true)
+                                    .build();
+                            Category savedCat = categoryRepository.save(newCat);
+                            return savedCat != null ? savedCat : newCat;
+                        }));
+        ensureCategoryInList(categories, otherCategory);
+
+        SubCategory newOtherSub = SubCategory.builder()
+                .category(otherCategory)
+                .name(OTHER_SUBCATEGORY_NAME)
+                .description("Sự cố cơ sở hạ tầng hoặc môi trường đô thị hợp lệ nhưng có đặc điểm tương đồng dưới 70% so với các danh mục sự cố chi tiết hiện có")
+                .sla(48)
+                .priority(Priority.LOW)
+                .isActive(true)
+                .build();
+        SubCategory savedSub = subCategoryRepository.save(newOtherSub);
+        SubCategory resolvedSub = savedSub != null ? savedSub : newOtherSub;
+        subCategories.add(resolvedSub);
+        return resolvedSub;
+    }
+
+    String buildCategoriesReferenceString(List<Category> categories, List<SubCategory> subCategories) {
+        StringBuilder categoriesStr = new StringBuilder();
+        for (Category c : categories) {
+            if (c == null) continue;
+            List<SubCategory> childSubs = subCategories.stream()
+                    .filter(sc -> sc != null && sc.getCategory() != null
+                            && Objects.equals(sc.getCategory().getCategoryId(), c.getCategoryId()))
+                    .toList();
+            if (childSubs.isEmpty()) {
+                continue;
+            }
+            categoriesStr.append("Nhóm sự cố: ").append(c.getName());
+            if (c.getDescription() != null && !c.getDescription().isBlank()) {
+                categoriesStr.append(" (Mô tả nhóm: ").append(c.getDescription().trim()).append(")");
+            }
+            categoriesStr.append("\nDanh mục sự cố chi tiết (SubCategories):\n");
+            for (SubCategory sc : childSubs) {
+                Priority scPriority = sc.getPriority() != null ? sc.getPriority() : Priority.LOW;
+                categoriesStr.append(" - Tên: ").append(sc.getName())
+                        .append(" (ID: ").append(sc.getSubCategoryId())
+                        .append(", Priority mặc định: ").append(scPriority.name());
+                if (sc.getDescription() != null && !sc.getDescription().isBlank()) {
+                    categoriesStr.append(", Đặc điểm nhận diện: ").append(sc.getDescription().trim());
+                }
+                categoriesStr.append(")\n");
+            }
+        }
+        return categoriesStr.toString();
+    }
+
+    private void ensureCategoryInList(List<Category> categories, Category category) {
+        if (category == null) {
+            return;
+        }
+        boolean exists = categories.stream()
+                .anyMatch(c -> c != null && (Objects.equals(c.getCategoryId(), category.getCategoryId())
+                        || (c.getName() != null && c.getName().equalsIgnoreCase(category.getName()))));
+        if (!exists) {
+            categories.add(category);
+        }
+    }
+
+    private boolean isOtherSubCategory(SubCategory candidate, SubCategory otherSubCategory) {
+        if (candidate == null) {
+            return false;
+        }
+        if (otherSubCategory != null && otherSubCategory.getSubCategoryId() != null
+                && otherSubCategory.getSubCategoryId().equals(candidate.getSubCategoryId())) {
+            return true;
+        }
+        return isOtherSubCategoryName(candidate.getName());
+    }
+
+    private boolean isOtherSubCategoryName(String name) {
+        if (name == null) {
+            return false;
+        }
+        String trimmed = name.trim();
+        return OTHER_SUBCATEGORY_NAME.equalsIgnoreCase(trimmed)
+                || "Sự cố khác".equalsIgnoreCase(trimmed)
+                || "Khac".equalsIgnoreCase(trimmed)
+                || "Other".equalsIgnoreCase(trimmed);
+    }
+
+    private boolean isOtherCategoryName(String name) {
+        if (name == null) {
+            return false;
+        }
+        String trimmed = name.trim();
+        return OTHER_CATEGORY_NAME.equalsIgnoreCase(trimmed)
+                || "Sự cố khác".equalsIgnoreCase(trimmed)
+                || "Khac".equalsIgnoreCase(trimmed)
+                || "Other".equalsIgnoreCase(trimmed);
+    }
+
+    MediaData downloadSingleMedia(String mediaUrl) {
         try {
             URL url = new URL(mediaUrl);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
