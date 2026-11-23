@@ -22,5 +22,5 @@ public class UpdateTicketStepDependenciesRequest {
             description = "Danh sách ID (ticket_step.id) của các bước tiên quyết cần hoàn thành trước bước này",
             example = "[\"b451d8b9-4458-45e0-94d0-f1c5d4ef2891\", \"c123d456-7890-4abc-def1-234567890abc\"]"
     )
-    private List<UUID> dependsOnStepIds;
+    private List<@NotNull(message = "ID bước phụ thuộc không được null") UUID> dependsOnStepIds;
 }

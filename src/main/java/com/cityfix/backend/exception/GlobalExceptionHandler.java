@@ -35,6 +35,25 @@ public class GlobalExceptionHandler {
                 .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .collect(Collectors.joining(", "));
 
+        if (message.isBlank()) {
+            message = ex.getBindingResult().getAllErrors().stream()
+                    .map(err -> err.getDefaultMessage() != null ? err.getDefaultMessage() : ErrorCode.VALIDATION_ERROR.getMessage())
+                    .collect(Collectors.joining(", "));
+        }
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(BaseResponse.error(ErrorCode.VALIDATION_ERROR.name(), message));
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<BaseResponse<Void>> handleConstraintViolationException(
+            jakarta.validation.ConstraintViolationException ex) {
+
+        String message = ex.getConstraintViolations().stream()
+                .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                .collect(Collectors.joining(", "));
+
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(BaseResponse.error(ErrorCode.VALIDATION_ERROR.name(), message));

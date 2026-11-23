@@ -29,6 +29,7 @@ public class CreateStaffRequest {
     private String title;
 
     @NotBlank(message = "Nội dung yêu cầu không được để trống")
+    @Size(max = 2000, message = "Nội dung yêu cầu không được vượt quá 2000 ký tự")
     @Schema(description = "Nội dung chi tiết của yêu cầu", example = "Do địa hình ngập úng nghiêm trọng cần xin thêm thiết bị hỗ trợ.")
     private String content;
 }

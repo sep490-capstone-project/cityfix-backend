@@ -3,6 +3,7 @@ package com.cityfix.backend.model.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,5 +21,5 @@ public class UpdateTicketStepDeadlinesRequest {
     @NotEmpty(message = "Danh sách step deadlines không được để trống")
     @Valid
     @Schema(description = "Danh sách step cần cập nhật deadline")
-    private List<StepDeadlineItem> stepDeadlines;
+    private List<@NotNull(message = "Thông tin deadline bước không được null") @Valid StepDeadlineItem> stepDeadlines;
 }
