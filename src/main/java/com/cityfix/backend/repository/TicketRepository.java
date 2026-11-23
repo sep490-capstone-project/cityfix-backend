@@ -6,14 +6,12 @@ import com.cityfix.backend.repository.projection.TopUpvotedTicketProjection;
 import com.cityfix.backend.model.enums.Priority;
 
 import com.cityfix.backend.model.enums.TicketStatus;
-import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -336,10 +334,8 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
             Pageable pageable
     );
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
-    @Query("SELECT t FROM Ticket t WHERE t.ticketId = :ticketId")
-    Optional<Ticket> findByIdWithPessimisticLock(@Param("ticketId") UUID ticketId);
+    @Query(value = "SELECT ticket_id FROM ticket WHERE ticket_id = :ticketId FOR UPDATE", nativeQuery = true)
+    Optional<UUID> lockTicketRowById(@Param("ticketId") UUID ticketId);
 
     @EntityGraph(attributePaths = {"subCategories.subCategory", "subCategories.subCategory.category", "ticketLocation", "ticketAssessment"})
     @Query(value = "SELECT t FROM Ticket t WHERE t.user.userId = :userId",
