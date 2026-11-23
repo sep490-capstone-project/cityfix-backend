@@ -1,7 +1,8 @@
 package com.cityfix.backend.model.dto.request;
 
+import com.cityfix.backend.util.ValidationPatterns;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Pattern;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,8 +17,8 @@ public class ResetPasswordRequest {
     @NotBlank(message = "Firebase ID Token must not be blank")
     private String firebaseIdToken;
 
-    @NotBlank(message = "New password must not be blank")
-    @Size(min = 6, message = "Password must be at least 6 characters")
+    @NotBlank(message = "Mật khẩu mới không được để trống")
+    @Pattern(regexp = ValidationPatterns.PASSWORD_REGEX, message = ValidationPatterns.PASSWORD_MESSAGE)
     private String newPassword;
 }
 

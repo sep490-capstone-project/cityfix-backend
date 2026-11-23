@@ -108,7 +108,7 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<BaseResponse<Void>> logout(
             HttpServletRequest request,
-            @RequestBody(required = false) LogoutRequest logoutRequest) {
+            @Valid @RequestBody(required = false) LogoutRequest logoutRequest) {
         String authHeader = request.getHeader("Authorization");
         String accessToken = (authHeader != null && authHeader.startsWith("Bearer "))
                 ? authHeader.substring(7)
