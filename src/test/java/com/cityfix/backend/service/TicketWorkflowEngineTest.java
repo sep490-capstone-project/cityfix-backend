@@ -8,13 +8,16 @@ import com.cityfix.backend.repository.TicketHistoryRepository;
 import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.service.impl.TicketWorkflowEngineImpl;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -86,7 +89,8 @@ class TicketWorkflowEngineTest {
     @DisplayName("stepCompleted_transitionsDependentStepToInProgress")
     void stepCompleted_transitionsDependentStepToInProgress() {
         when(ticketStepRepository.findById(mockStep1.getId())).thenReturn(Optional.of(mockStep1));
-        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId()))
                 .thenReturn(List.of(mockStep1, mockStep2));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -118,7 +122,8 @@ class TicketWorkflowEngineTest {
                 .build();
 
         when(ticketStepRepository.findById(mockStep1.getId())).thenReturn(Optional.of(mockStep1));
-        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId()))
                 .thenReturn(List.of(mockStep1, mockStep2, mockStep3));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -153,7 +158,8 @@ class TicketWorkflowEngineTest {
         mockStep2.setStatus(AssignmentStatus.IN_PROGRESS);
 
         when(ticketStepRepository.findById(mockStep1.getId())).thenReturn(Optional.of(mockStep1));
-        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId()))
                 .thenReturn(List.of(mockStep1, mockStep2, mockStep3));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -184,7 +190,8 @@ class TicketWorkflowEngineTest {
         mockStep2.setStatus(AssignmentStatus.RESOLVED);
 
         when(ticketStepRepository.findById(mockStep2.getId())).thenReturn(Optional.of(mockStep2));
-        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId()))
                 .thenReturn(List.of(mockStep1, mockStep2, mockStep3));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -205,7 +212,8 @@ class TicketWorkflowEngineTest {
         mockStep2.setStatus(AssignmentStatus.COMPLETED);
 
         when(ticketStepRepository.findById(mockStep2.getId())).thenReturn(Optional.of(mockStep2));
-        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId()))
                 .thenReturn(List.of(mockStep1, mockStep2));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -228,7 +236,8 @@ class TicketWorkflowEngineTest {
         mockStep2.setStatus(AssignmentStatus.RESOLVED);
 
         when(ticketStepRepository.findById(mockStep2.getId())).thenReturn(Optional.of(mockStep2));
-        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId()))
                 .thenReturn(List.of(mockStep1, mockStep2));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -251,7 +260,8 @@ class TicketWorkflowEngineTest {
         mockStep1.setStatus(AssignmentStatus.COMPLETED);
 
         when(ticketStepRepository.findById(mockStep1.getId())).thenReturn(Optional.of(mockStep1));
-        when(ticketRepository.findByIdWithPessimisticLock(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId()))
                 .thenReturn(List.of(mockStep1));
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -264,5 +274,30 @@ class TicketWorkflowEngineTest {
         assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.COMPLETED);
         verify(ticketRepository, times(1)).save(mockTicket);
         verify(notificationService, times(1)).notifyStepCompleted(eq(mockStep1), any(), eq(true));
+    }
+
+    @Test
+    @DisplayName("handleStepCompletion_ticketAlreadyInPersistenceContext_flushesLocksAndRefreshesToPreventStaleL1Cache")
+    void handleStepCompletion_ticketAlreadyInPersistenceContext_flushesLocksAndRefreshesToPreventStaleL1Cache() {
+        EntityManager mockEntityManager = mock(EntityManager.class);
+        ReflectionTestUtils.setField(workflowEngine, "entityManager", mockEntityManager);
+
+        mockStep1.setStatus(AssignmentStatus.COMPLETED);
+        when(ticketStepRepository.findById(mockStep1.getId())).thenReturn(Optional.of(mockStep1));
+        when(ticketRepository.lockTicketRowById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket.getTicketId()));
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(mockEntityManager.contains(mockTicket)).thenReturn(true);
+        when(ticketStepRepository.findByTicket_TicketId(mockTicket.getTicketId())).thenReturn(List.of(mockStep1));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any())).thenReturn(new TicketHistory());
+
+        workflowEngine.handleStepCompletion(mockStep1.getId());
+
+        InOrder order = inOrder(mockEntityManager, ticketRepository);
+        order.verify(mockEntityManager).flush();
+        order.verify(ticketRepository).lockTicketRowById(mockTicket.getTicketId());
+        order.verify(ticketRepository).findById(mockTicket.getTicketId());
+        order.verify(mockEntityManager).refresh(mockTicket);
     }
 }

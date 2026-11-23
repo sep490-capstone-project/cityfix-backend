@@ -142,6 +142,19 @@ class TicketRepositoryTest {
                 .doesNotContain("HAVING");
     }
 
+    @Test
+    @DisplayName("lockTicketRowById_usesNativeForUpdateWithoutEntityGraphOrJpaLock")
+    void lockTicketRowById_usesNativeForUpdateWithoutEntityGraphOrJpaLock() throws Exception {
+        Method method = TicketRepository.class.getMethod("lockTicketRowById", UUID.class);
+        Query queryAnnotation = method.getAnnotation(Query.class);
+        assertThat(queryAnnotation).isNotNull();
+        assertThat(queryAnnotation.nativeQuery()).isTrue();
+        assertThat(queryAnnotation.value())
+                .isEqualTo("SELECT ticket_id FROM ticket WHERE ticket_id = :ticketId FOR UPDATE");
+        assertThat(method.getAnnotation(org.springframework.data.jpa.repository.EntityGraph.class)).isNull();
+        assertThat(method.getAnnotation(org.springframework.data.jpa.repository.Lock.class)).isNull();
+    }
+
     private void assertBalancedParentheses(String jpql) {
         assertThat(jpql).isNotBlank();
         int depth = 0;

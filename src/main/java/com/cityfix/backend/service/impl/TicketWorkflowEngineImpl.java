@@ -12,6 +12,8 @@ import com.cityfix.backend.repository.TicketRepository;
 import com.cityfix.backend.repository.TicketStepRepository;
 import com.cityfix.backend.service.EmailService;
 import com.cityfix.backend.service.TicketWorkflowEngine;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -36,6 +38,9 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
     private final TicketHistoryMapper ticketHistoryMapper;
     private final com.cityfix.backend.service.NotificationService notificationService;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     @Override
     @Transactional
     public void handleStepCompletion(UUID stepId) {
@@ -44,9 +49,22 @@ public class TicketWorkflowEngineImpl implements TicketWorkflowEngine {
 
         UUID ticketId = completedStep.getTicket().getTicketId();
 
-        // Lock parent ticket with Pessimistic Write Lock to prevent concurrent workflow race conditions
-        Ticket ticket = ticketRepository.findByIdWithPessimisticLock(ticketId)
+        // Flush pending step changes before acquiring row lock and refreshing parent ticket
+        if (entityManager != null) {
+            entityManager.flush();
+        }
+
+        // Lock parent ticket row via Native SQL FOR UPDATE (avoids Hibernate 7 FollowOnLockingAction bug on @OneToOne mappedBy)
+        ticketRepository.lockTicketRowById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        // Guard against stale L1 Cache if Ticket was already loaded in this Persistence Context before FOR UPDATE
+        if (entityManager != null && entityManager.contains(ticket)) {
+            entityManager.refresh(ticket);
+        }
 
         completedStep.setTicket(ticket);
         LocalDateTime now = LocalDateTime.now();
