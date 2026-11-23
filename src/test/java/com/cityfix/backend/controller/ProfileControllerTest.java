@@ -121,7 +121,7 @@ class ProfileControllerTest {
         Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(mockUpdateRequest);
 
         assertThat(violations).isNotEmpty();
-        assertThat(violations).anyMatch(v -> v.getMessage().contains("Phone number cannot be blank"));
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Số điện thoại không được để trống"));
     }
 
     @Test
@@ -132,7 +132,7 @@ class ProfileControllerTest {
         Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(mockUpdateRequest);
 
         assertThat(violations).isNotEmpty();
-        assertThat(violations).anyMatch(v -> v.getMessage().contains("Phone number is invalid"));
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Số điện thoại không hợp lệ"));
     }
 
     @Test

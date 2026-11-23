@@ -3,6 +3,7 @@ package com.cityfix.backend.model.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,5 +21,5 @@ public class ReorderTicketStepsRequest {
     @NotEmpty(message = "Danh sách thứ tự bước không được để trống")
     @Valid
     @Schema(description = "Danh sách ticket step và thứ tự thực hiện mới")
-    private List<StepOrderItem> stepOrders;
+    private List<@NotNull(message = "Thông tin thứ tự bước không được null") @Valid StepOrderItem> stepOrders;
 }
