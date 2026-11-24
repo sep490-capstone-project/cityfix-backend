@@ -155,4 +155,74 @@ class StepServiceTest {
         assertEquals(10, subCategory.getSla());
         verify(subCategoryRepository).save(subCategory);
     }
+
+    @Test
+    void deleteStep_StepNotFound() {
+        UUID unknownStepId = UUID.randomUUID();
+        when(stepRepository.findByStepIdAndIsDeletedFalse(unknownStepId)).thenReturn(Optional.empty());
+
+        AppException ex = assertThrows(AppException.class, () -> stepService.deleteStep(unknownStepId));
+        assertEquals(ErrorCode.STEP_NOT_FOUND, ex.getErrorCode());
+        verify(stepRepository, never()).save(any());
+    }
+
+    @Test
+    void getAllSteps_WhenExist_ReturnsList() {
+        when(stepRepository.findByIsDeletedFalse()).thenReturn(java.util.List.of(step));
+        when(stepMapper.toResponse(step)).thenReturn(response);
+
+        java.util.List<StepResponse> result = stepService.getAllSteps();
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("Khảo sát", result.get(0).getStepName());
+        verify(stepRepository).findByIsDeletedFalse();
+    }
+
+    @Test
+    void getAllSteps_WhenEmpty_ReturnsEmptyList() {
+        when(stepRepository.findByIsDeletedFalse()).thenReturn(java.util.Collections.emptyList());
+
+        java.util.List<StepResponse> result = stepService.getAllSteps();
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        verify(stepRepository).findByIsDeletedFalse();
+    }
+
+    @Test
+    void getStepsBySubCategoryId_WhenExist_ReturnsList() {
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId))
+                .thenReturn(java.util.List.of(step));
+        when(stepMapper.toResponse(step)).thenReturn(response);
+
+        java.util.List<StepResponse> result = stepService.getStepsBySubCategoryId(subCategoryId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(subCategoryId, result.get(0).getSubCategoryId());
+        verify(stepRepository).findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId);
+    }
+
+    @Test
+    void getStepsBySubCategoryId_WhenEmpty_ReturnsEmptyList() {
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId))
+                .thenReturn(java.util.Collections.emptyList());
+
+        java.util.List<StepResponse> result = stepService.getStepsBySubCategoryId(subCategoryId);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        verify(stepRepository).findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId);
+    }
+
+    @Test
+    void updateStep_SubCategoryNotFound_ThrowsSubcategoryNotFound() {
+        when(stepRepository.findByStepIdAndIsDeletedFalse(stepId)).thenReturn(Optional.of(step));
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())).thenReturn(Optional.empty());
+
+        AppException ex = assertThrows(AppException.class, () -> stepService.updateStep(stepId, request));
+        assertEquals(ErrorCode.SUBCATEGORY_NOT_FOUND, ex.getErrorCode());
+        verify(stepRepository, never()).save(any());
+    }
 }

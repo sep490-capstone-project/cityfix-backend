@@ -230,6 +230,25 @@ class AiPromptServiceImplTest {
     }
 
     @Test
+    @DisplayName("getLatestPrompt_cacheHitInRedis_returnsCachedResponseWithoutQueryingDatabase")
+    void getLatestPrompt_cacheHitInRedis_returnsCachedResponseWithoutQueryingDatabase() {
+        UUID cachedId = UUID.randomUUID();
+        String cachedJson = String.format(
+                "{\"id\":\"%s\",\"fileUrl\":\"https://res.cloudinary.com/demo/raw/upload/cached.pdf\",\"content\":\"Prompt từ Redis cache\",\"createdAt\":\"2026-11-24T00:00:00Z\"}",
+                cachedId
+        );
+        when(valueOperations.get("ai:prompt:latest")).thenReturn(cachedJson);
+
+        AiPromptResponse response = aiPromptService.getLatestPrompt();
+
+        assertThat(response).isNotNull();
+        assertThat(response.getId()).isEqualTo(cachedId);
+        assertThat(response.getFileUrl()).isEqualTo("https://res.cloudinary.com/demo/raw/upload/cached.pdf");
+        assertThat(response.getContent()).isEqualTo("Prompt từ Redis cache");
+        verify(aiPromptFileRepository, never()).findTopByOrderByCreatedAtDescIdDesc();
+    }
+
+    @Test
     @DisplayName("getLatestPrompt_emptyTable_throwsAiPromptNotFound")
     void getLatestPrompt_emptyTable_throwsAiPromptNotFound() {
         when(valueOperations.get("ai:prompt:latest")).thenReturn(null);
@@ -273,6 +292,17 @@ class AiPromptServiceImplTest {
         assertThat(AiPromptSummaryResponse.class.getDeclaredFields())
                 .extracting("name")
                 .containsExactlyInAnyOrder("id", "fileUrl", "createdAt");
+    }
+
+    @Test
+    @DisplayName("getPromptHistory_emptyDatabase_returnsEmptyList")
+    void getPromptHistory_emptyDatabase_returnsEmptyList() {
+        when(aiPromptFileRepository.findAllByOrderByCreatedAtDescIdDesc()).thenReturn(List.of());
+
+        List<AiPromptSummaryResponse> history = aiPromptService.getPromptHistory();
+
+        assertThat(history).isNotNull().isEmpty();
+        verify(aiPromptFileRepository).findAllByOrderByCreatedAtDescIdDesc();
     }
 
     @Test

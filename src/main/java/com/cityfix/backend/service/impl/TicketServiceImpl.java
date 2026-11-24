@@ -641,13 +641,13 @@ public class TicketServiceImpl implements TicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        Set<AssignmentStatus>restrictedStatuses = EnumSet.of(
-                AssignmentStatus.RESOLVED,
-                AssignmentStatus.COMPLETED,
-                AssignmentStatus.CANCELLED
+        Set<TicketStatus> restrictedStatuses = EnumSet.of(
+                TicketStatus.RESOLVED,
+                TicketStatus.COMPLETED,
+                TicketStatus.CANCELLED
         );
 
-        if(restrictedStatuses.contains(ticket.getStatus())) {
+        if (restrictedStatuses.contains(ticket.getStatus())) {
             throw new AppException(ErrorCode.TICKET_CANNOT_UPVOTE);
         }
 

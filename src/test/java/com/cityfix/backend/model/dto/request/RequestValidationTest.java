@@ -92,6 +92,20 @@ class RequestValidationTest {
                     .as("Phone '%s' should be rejected", badPhone)
                     .isNotEmpty();
         }
+
+        // Malformed email must fail (REQ_51 UTCID04)
+        UserRegisterRequest badEmailReq = UserRegisterRequest.builder()
+                .email("invalid-email")
+                .password("CityFix@2026")
+                .fullName("Nguyễn Văn A")
+                .phoneNumber("0912345678")
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường 1")
+                .address("123 Lê Lợi")
+                .build();
+        assertThat(validator.validate(badEmailReq))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("email");
     }
 
     @Test
@@ -135,6 +149,40 @@ class RequestValidationTest {
         Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(req);
         assertThat(violations).extracting(v -> v.getPropertyPath().toString())
                 .contains("address", "confidenceScore", "imageUrls", "subCategoryIds[1].<list element>");
+    }
+
+    @Test
+    @DisplayName("createTicketRequest_latitudeAbove90_violatesRangeConstraint")
+    void createTicketRequest_latitudeAbove90_violatesRangeConstraint() {
+        CreateTicketRequest req = new CreateTicketRequest();
+        req.setDescription("Sụt lún mặt đường");
+        req.setSubCategoryIds(List.of(UUID.randomUUID()));
+        req.setPriority(Priority.HIGH);
+        req.setLocationMethod(LocationMethod.AUTO_GPS);
+        req.setAddress("123 Lê Lợi, Quận 1");
+        req.setLatitude(95.0);
+        req.setLongitude(106.70);
+
+        Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(req);
+        assertThat(violations).extracting(v -> v.getPropertyPath().toString())
+                .contains("latitude");
+    }
+
+    @Test
+    @DisplayName("createTicketRequest_longitudeBelowMinus180_violatesRangeConstraint")
+    void createTicketRequest_longitudeBelowMinus180_violatesRangeConstraint() {
+        CreateTicketRequest req = new CreateTicketRequest();
+        req.setDescription("Sụt lún mặt đường");
+        req.setSubCategoryIds(List.of(UUID.randomUUID()));
+        req.setPriority(Priority.HIGH);
+        req.setLocationMethod(LocationMethod.AUTO_GPS);
+        req.setAddress("123 Lê Lợi, Quận 1");
+        req.setLatitude(10.77);
+        req.setLongitude(-185.0);
+
+        Set<ConstraintViolation<CreateTicketRequest>> violations = validator.validate(req);
+        assertThat(violations).extracting(v -> v.getPropertyPath().toString())
+                .contains("longitude");
     }
 
     @Test
@@ -193,6 +241,111 @@ class RequestValidationTest {
 
         UpdateRoutingRuleRequest badRule = new UpdateRoutingRuleRequest(null, null, " ", "");
         assertThat(validator.validate(badRule)).hasSize(4);
+    }
+
+    @Test
+    @DisplayName("createRatingRequest_enforcesRateBetween1And5")
+    void createRatingRequest_enforcesRateBetween1And5() {
+        CreateRatingRequest valid = CreateRatingRequest.builder()
+                .rate(5)
+                .feedback("Fast resolution")
+                .isAnonymous(false)
+                .build();
+        assertThat(validator.validate(valid)).isEmpty();
+
+        CreateRatingRequest tooLow = CreateRatingRequest.builder().rate(0).build();
+        assertThat(validator.validate(tooLow))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("rate");
+
+        CreateRatingRequest tooHigh = CreateRatingRequest.builder().rate(6).build();
+        assertThat(validator.validate(tooHigh))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("rate");
+    }
+
+    @Test
+    @DisplayName("createDepartmentRequest_rejectsBlankNameAndMalformedContactEmail")
+    void createDepartmentRequest_rejectsBlankNameAndMalformedContactEmail() {
+        CreateDepartmentRequest valid = new CreateDepartmentRequest(
+                "Urban Infrastructure Department",
+                DepartmentLevel.WARD,
+                "infra@cityfix.vn",
+                "0901234567"
+        );
+        assertThat(validator.validate(valid)).isEmpty();
+
+        CreateDepartmentRequest blankName = new CreateDepartmentRequest(
+                "   ",
+                DepartmentLevel.WARD,
+                "infra@cityfix.vn",
+                "0901234567"
+        );
+        assertThat(validator.validate(blankName))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("name");
+
+        CreateDepartmentRequest badEmail = new CreateDepartmentRequest(
+                "Urban Infrastructure Department",
+                DepartmentLevel.WARD,
+                "invalid-email-format",
+                "0901234567"
+        );
+        assertThat(validator.validate(badEmail))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("contactEmail");
+    }
+
+    @Test
+    @DisplayName("resetPasswordRequest_rejectsBlankOrWeakNewPassword")
+    void resetPasswordRequest_rejectsBlankOrWeakNewPassword() {
+        ResetPasswordRequest valid = ResetPasswordRequest.builder()
+                .firebaseIdToken("valid-firebase-id-token")
+                .newPassword("NewSecret@123")
+                .build();
+        assertThat(validator.validate(valid)).isEmpty();
+
+        ResetPasswordRequest blankPassword = ResetPasswordRequest.builder()
+                .firebaseIdToken("valid-firebase-id-token")
+                .newPassword("   ")
+                .build();
+        assertThat(validator.validate(blankPassword))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("newPassword");
+
+        ResetPasswordRequest weakPassword = ResetPasswordRequest.builder()
+                .firebaseIdToken("valid-firebase-id-token")
+                .newPassword("123")
+                .build();
+        assertThat(validator.validate(weakPassword))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("newPassword");
+    }
+
+    @Test
+    @DisplayName("categoryRequest_rejectsBlankNameAndNameExceeding150Chars")
+    void categoryRequest_rejectsBlankNameAndNameExceeding150Chars() {
+        CategoryRequest valid = CategoryRequest.builder()
+                .name("Hạ tầng cầu đường")
+                .description("Mô tả danh mục")
+                .build();
+        assertThat(validator.validate(valid)).isEmpty();
+
+        CategoryRequest blankName = CategoryRequest.builder()
+                .name("   ")
+                .description("Mô tả")
+                .build();
+        assertThat(validator.validate(blankName))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("name");
+
+        CategoryRequest tooLongName = CategoryRequest.builder()
+                .name("A".repeat(151))
+                .description("Mô tả")
+                .build();
+        assertThat(validator.validate(tooLongName))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("name");
     }
 }
 

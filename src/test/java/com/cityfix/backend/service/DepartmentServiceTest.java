@@ -163,6 +163,20 @@ class DepartmentServiceTest {
     }
 
     @Test
+    @DisplayName("updateDepartment_duplicateName_throwsDepartmentNameExistsException")
+    void updateDepartment_duplicateName_throwsDepartmentNameExistsException() {
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(updateRequest.name(), departmentId)).thenReturn(true);
+
+        assertThatThrownBy(() -> departmentService.updateDepartment(departmentId, updateRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NAME_EXISTS);
+
+        verify(departmentRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("getDepartmentById_validId_returnsDepartmentResponse")
     void getDepartmentById_validId_returnsDepartmentResponse() {
         when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
@@ -174,6 +188,19 @@ class DepartmentServiceTest {
         assertThat(result.departmentId()).isEqualTo(departmentId);
 
         verify(departmentRepository, times(1)).findByDepartmentIdAndIsDeletedFalse(departmentId);
+    }
+
+    @Test
+    @DisplayName("getDepartmentById_nonExistentOrSoftDeleted_throwsDepartmentNotFoundException")
+    void getDepartmentById_nonExistentOrSoftDeleted_throwsDepartmentNotFoundException() {
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.getDepartmentById(departmentId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(departmentMapper, never()).toResponse(any());
     }
 
     @Test
@@ -208,6 +235,23 @@ class DepartmentServiceTest {
     }
 
     @Test
+    @DisplayName("getAllDepartments_activeOnlyTrueWhenNoActiveDepartments_returnsEmptyPage")
+    void getAllDepartments_activeOnlyTrueWhenNoActiveDepartments_returnsEmptyPage() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Department> emptyPage = new PageImpl<>(List.of(), pageable, 0);
+
+        when(departmentRepository.findByIsDeletedFalse(pageable)).thenReturn(emptyPage);
+
+        Page<DepartmentResponse> result = departmentService.getAllDepartments(pageable, true);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isZero();
+        assertThat(result.getContent()).isEmpty();
+        verify(departmentRepository, times(1)).findByIsDeletedFalse(pageable);
+        verify(departmentMapper, never()).toResponse(any());
+    }
+
+    @Test
     @DisplayName("deleteDepartment_validId_unlinksOfficersAndSoftDeletes")
     void deleteDepartment_validId_unlinksOfficersAndSoftDeletes() {
         when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
@@ -217,6 +261,19 @@ class DepartmentServiceTest {
         verify(departmentRepository, times(1)).save(mockDepartment);
         assertThat(mockDepartment.isDeleted()).isTrue();
         assertThat(mockDepartment.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("deleteDepartment_nonExistentId_throwsDepartmentNotFoundException")
+    void deleteDepartment_nonExistentId_throwsDepartmentNotFoundException() {
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.deleteDepartment(departmentId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(departmentRepository, never()).save(any());
     }
 
 
@@ -290,6 +347,23 @@ class DepartmentServiceTest {
     }
 
     @Test
+    @DisplayName("assignUsersToDepartment_userNotFound_throwsAccountNotFoundException")
+    void assignUsersToDepartment_userNotFound_throwsAccountNotFoundException() {
+        UUID unknownUserId = UUID.randomUUID();
+        AssignDepartmentUsersRequest req = new AssignDepartmentUsersRequest(List.of(unknownUserId));
+
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(userRepository.findById(unknownUserId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.assignUsersToDepartment(departmentId, req))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+
+        verify(userDepartmentRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("removeUserFromDepartment_success")
     void removeUserFromDepartment_success() {
         UUID staffId = UUID.randomUUID();
@@ -304,6 +378,36 @@ class DepartmentServiceTest {
         departmentService.removeUserFromDepartment(departmentId, staffId);
 
         verify(userDepartmentRepository).deleteByUserUserIdAndDepartmentDepartmentId(staffId, departmentId);
+    }
+
+    @Test
+    @DisplayName("removeUserFromDepartment_userNotFound_throwsAccountNotFoundException")
+    void removeUserFromDepartment_userNotFound_throwsAccountNotFoundException() {
+        UUID unknownUserId = UUID.randomUUID();
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(userRepository.findById(unknownUserId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.removeUserFromDepartment(departmentId, unknownUserId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+
+        verify(userDepartmentRepository, never()).deleteByUserUserIdAndDepartmentDepartmentId(any(), any());
+    }
+
+    @Test
+    @DisplayName("removeUserFromDepartment_departmentNotFound_throwsDepartmentNotFoundException")
+    void removeUserFromDepartment_departmentNotFound_throwsDepartmentNotFoundException() {
+        UUID unknownDeptId = UUID.randomUUID();
+        UUID staffId = UUID.randomUUID();
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(unknownDeptId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.removeUserFromDepartment(unknownDeptId, staffId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(userDepartmentRepository, never()).deleteByUserUserIdAndDepartmentDepartmentId(any(), any());
     }
 
     @Test
@@ -332,5 +436,31 @@ class DepartmentServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getEmail()).isEqualTo("staff@cityfix.vn");
+    }
+
+    @Test
+    @DisplayName("getDepartmentUsers_whenNoUsersAssigned_returnsEmptyList")
+    void getDepartmentUsers_whenNoUsersAssigned_returnsEmptyList() {
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(departmentId)).thenReturn(List.of());
+
+        List<DepartmentUserResponse> result = departmentService.getDepartmentUsers(departmentId);
+
+        assertThat(result).isNotNull().isEmpty();
+        verify(userDepartmentRepository).findDepartmentUsersWithRole(departmentId);
+    }
+
+    @Test
+    @DisplayName("getDepartmentUsers_departmentNotFound_throwsDepartmentNotFoundException")
+    void getDepartmentUsers_departmentNotFound_throwsDepartmentNotFoundException() {
+        UUID unknownDeptId = UUID.randomUUID();
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(unknownDeptId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.getDepartmentUsers(unknownDeptId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(userDepartmentRepository, never()).findDepartmentUsersWithRole(any());
     }
 }

@@ -105,6 +105,16 @@ class AdminUserServiceImplTest {
     }
 
     @Test
+    @DisplayName("getAllUsers_whenEmpty_returnsEmptyList")
+    void getAllUsers_whenEmpty_returnsEmptyList() {
+        when(userRepository.findAllByIsDeletedFalse()).thenReturn(List.of());
+
+        List<AdminUserResponse> result = adminUserService.getAllUsers();
+
+        assertThat(result).isNotNull().isEmpty();
+    }
+
+    @Test
     @DisplayName("createUser_validRequest_returnsResponse")
     void createUser_validRequest_returnsResponse() {
         when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
@@ -171,6 +181,68 @@ class AdminUserServiceImplTest {
         assertThatThrownBy(() -> adminUserService.createUser(userRequest))
                 .isInstanceOf(AppException.class)
                 .hasMessageContaining("Cannot create user with ADMIN role");
+    }
+
+    @Test
+    @DisplayName("createUser_duplicateEmail_throwsEmailAlreadyExists")
+    void createUser_duplicateEmail_throwsEmailAlreadyExists() {
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(userRepository.findByEmailAndIsDeletedFalse(userRequest.getEmail())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> adminUserService.createUser(userRequest))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.EMAIL_ALREADY_EXISTS);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createUser_duplicatePhone_throwsPhoneAlreadyExists")
+    void createUser_duplicatePhone_throwsPhoneAlreadyExists() {
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(userRepository.findByEmailAndIsDeletedFalse(userRequest.getEmail())).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse(userRequest.getPhoneNumber())).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> adminUserService.createUser(userRequest))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.PHONE_ALREADY_EXISTS);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createUser_roleNotFound_throwsRoleNotFound")
+    void createUser_roleNotFound_throwsRoleNotFound() {
+        when(roleRepository.findById(roleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminUserService.createUser(userRequest))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.ROLE_NOT_FOUND);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createUser_departmentNotFound_throwsDepartmentNotFound")
+    void createUser_departmentNotFound_throwsDepartmentNotFound() {
+        Role staffRole = new Role(roleId, "STAFF");
+        UUID unknownDeptId = UUID.randomUUID();
+        userRequest.setDepartmentIds(List.of(unknownDeptId));
+
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(staffRole));
+        when(userRepository.findByEmailAndIsDeletedFalse(userRequest.getEmail())).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse(userRequest.getPhoneNumber())).thenReturn(Optional.empty());
+        when(departmentRepository.findAllById(any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> adminUserService.createUser(userRequest))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -253,5 +325,128 @@ class AdminUserServiceImplTest {
         assertThat(user.isDeleted()).isTrue();
         verify(userRepository, times(1)).save(user);
         verify(userDepartmentRepository, times(1)).deleteByUserUserId(userId);
+    }
+
+    @Test
+    @DisplayName("createUser_managerWithDepartmentIds_syncsUserDepartments")
+    void createUser_managerWithDepartmentIds_syncsUserDepartments() {
+        Role managerRole = new Role(roleId, "MANAGER");
+        UUID deptId = UUID.randomUUID();
+        Department dept = Department.builder().departmentId(deptId).name("Phòng Quản lý").build();
+
+        AdminUserRequest req = AdminUserRequest.builder()
+                .roleId(roleId)
+                .email("manager@example.com")
+                .phoneNumber("0901234569")
+                .password("password123")
+                .fullName("Manager User")
+                .departmentIds(List.of(deptId))
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        User managerUser = User.builder()
+                .userId(userId)
+                .email("manager@example.com")
+                .role(managerRole)
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(managerRole));
+        when(userRepository.findByEmailAndIsDeletedFalse("manager@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0901234569")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode("password123")).thenReturn("hashedpassword");
+        when(userRepository.save(any(User.class))).thenReturn(managerUser);
+        when(departmentRepository.findAllById(any())).thenReturn(List.of(dept));
+        when(userDepartmentRepository.findDepartmentsByUserId(userId)).thenReturn(List.of(dept));
+
+        AdminUserResponse res = adminUserService.createUser(req);
+
+        assertThat(res).isNotNull();
+        assertThat(res.getDepartments()).hasSize(1);
+        verify(userDepartmentRepository, times(1)).save(any(UserDepartment.class));
+    }
+
+    @Test
+    @DisplayName("updateUser_updateStatusToBlocked_returnsUpdatedStatus")
+    void updateUser_updateStatusToBlocked_returnsUpdatedStatus() {
+        userRequest.setStatus(UserStatus.BLOCKED);
+        when(userRepository.findByUserIdAndIsDeletedFalse(userId)).thenReturn(Optional.of(user));
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(userRepository.findByEmailAndIsDeletedFalse(userRequest.getEmail())).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse(userRequest.getPhoneNumber())).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(userRequest.getPassword())).thenReturn("newhashedpassword");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(userDepartmentRepository.findDepartmentsByUserId(any())).thenReturn(List.of());
+
+        AdminUserResponse result = adminUserService.updateUser(userId, userRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getStatus()).isEqualTo(UserStatus.BLOCKED);
+    }
+
+    @Test
+    @DisplayName("updateUser_userNotFound_throwsAccountNotFound")
+    void updateUser_userNotFound_throwsAccountNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(userRepository.findByUserIdAndIsDeletedFalse(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminUserService.updateUser(unknownId, userRequest))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.ACCOUNT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("updateUser_targetUserIsAdmin_throwsValidationError")
+    void updateUser_targetUserIsAdmin_throwsValidationError() {
+        user.setRole(new Role(UUID.randomUUID(), "ADMIN"));
+        when(userRepository.findByUserIdAndIsDeletedFalse(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> adminUserService.updateUser(userId, userRequest))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.VALIDATION_ERROR);
+    }
+
+    @Test
+    @DisplayName("updateUser_duplicateEmailOfAnotherUser_throwsEmailAlreadyExists")
+    void updateUser_duplicateEmailOfAnotherUser_throwsEmailAlreadyExists() {
+        User anotherUser = User.builder().userId(UUID.randomUUID()).email(userRequest.getEmail()).build();
+        when(userRepository.findByUserIdAndIsDeletedFalse(userId)).thenReturn(Optional.of(user));
+        when(roleRepository.findById(roleId)).thenReturn(Optional.of(role));
+        when(userRepository.findByEmailAndIsDeletedFalse(userRequest.getEmail())).thenReturn(Optional.of(anotherUser));
+
+        assertThatThrownBy(() -> adminUserService.updateUser(userId, userRequest))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
+    @Test
+    @DisplayName("deleteUser_adminUser_throwsValidationError")
+    void deleteUser_adminUser_throwsValidationError() {
+        user.setRole(new Role(UUID.randomUUID(), "ADMIN"));
+        when(userRepository.findByUserIdAndIsDeletedFalse(userId)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> adminUserService.deleteUser(userId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.VALIDATION_ERROR);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("deleteUser_userNotFound_throwsAccountNotFound")
+    void deleteUser_userNotFound_throwsAccountNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(userRepository.findByUserIdAndIsDeletedFalse(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> adminUserService.deleteUser(unknownId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.ACCOUNT_NOT_FOUND);
+
+        verify(userRepository, never()).save(any());
     }
 }

@@ -1102,4 +1102,235 @@ class NotificationServiceTest {
         verify(userRepository, never()).findActiveResidentsWithWard();
         verify(notificationRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("notifySosTicketStatusChanged_nullTicket_doesNothing")
+    void notifySosTicketStatusChanged_nullTicket_doesNothing() {
+        notificationService.notifySosTicketStatusChanged(
+                null,
+                com.cityfix.backend.model.enums.TicketStatus.INITIATED,
+                com.cityfix.backend.model.enums.TicketStatus.IN_PROGRESS
+        );
+
+        verifyNoInteractions(userRepository);
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createAndSendNotification_whenWebSocketThrowsException_persistsNotificationWithoutFailing")
+    void createAndSendNotification_whenWebSocketThrowsException_persistsNotificationWithoutFailing() {
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(notificationMapper.toResponse(any(UserNotification.class)))
+                .thenReturn(NotificationResponse.builder().title("Cảnh báo").build());
+        doThrow(new RuntimeException("WebSocket broker unavailable"))
+                .when(messagingTemplate).convertAndSend(anyString(), any(NotificationResponse.class));
+
+        notificationService.createAndSendNotification(ticket, List.of(reporter), "Cảnh báo", "Nội dung thông báo");
+
+        verify(notificationRepository, times(1)).save(any(Notification.class));
+        verify(messagingTemplate, times(1)).convertAndSend(eq("/topic/notifications/" + reporter.getUserId()), any(NotificationResponse.class));
+    }
+
+    @Test
+    @DisplayName("notifyStepStarted_nullStepOrNullTicket_doesNothing")
+    void notifyStepStarted_nullStepOrNullTicket_doesNothing() {
+        notificationService.notifyStepStarted(null, staff);
+
+        TicketStep stepWithoutTicket = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(null)
+                .assignee(staff)
+                .build();
+        notificationService.notifyStepStarted(stepWithoutTicket, staff);
+
+        verify(notificationRepository, never()).save(any());
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(NotificationResponse.class));
+    }
+
+    @Test
+    @DisplayName("notifyStepCompleted_onlyReporterNoUpvoters_notifiesReporterAndManager")
+    void notifyStepCompleted_onlyReporterNoUpvoters_notifiesReporterAndManager() {
+        when(ticketVoteRepository.findUpvotersByTicketId(ticket.getTicketId()))
+                .thenReturn(Collections.emptyList());
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId()))
+                .thenReturn(List.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any()))
+                .thenReturn(List.of(manager1));
+        when(departmentRepository.findById(department.getDepartmentId()))
+                .thenReturn(Optional.of(department));
+        when(notificationRepository.save(any(Notification.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.notifyStepCompleted(ticketStep, staff, false);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository, times(2)).save(captor.capture());
+        List<Notification> saved = captor.getAllValues();
+        assertThat(saved.get(0).getRecipients()).hasSize(1);
+        assertThat(saved.get(0).getRecipients().get(0).getUser().getUserId()).isEqualTo(reporter.getUserId());
+    }
+
+    @Test
+    @DisplayName("notifyStepCompleted_nullStepOrNullTicket_doesNothing")
+    void notifyStepCompleted_nullStepOrNullTicket_doesNothing() {
+        notificationService.notifyStepCompleted(null, staff, false);
+
+        TicketStep stepWithoutTicket = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(null)
+                .assignee(staff)
+                .build();
+        notificationService.notifyStepCompleted(stepWithoutTicket, staff, true);
+
+        verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("markAsRead_alreadyReadNotification_returnsResponseWithoutResaving")
+    void markAsRead_alreadyReadNotification_returnsResponseWithoutResaving() {
+        mockCurrentUser(reporter);
+        UUID notifId = UUID.randomUUID();
+        Notification n = Notification.builder()
+                .notificationId(notifId)
+                .title("Đã đọc")
+                .content("Nội dung")
+                .build();
+        UserNotification un = UserNotification.builder()
+                .id(UUID.randomUUID())
+                .notification(n)
+                .user(reporter)
+                .isRead(true)
+                .readAt(ZonedDateTime.now().minusMinutes(5))
+                .build();
+
+        when(userNotificationRepository.findByNotificationIdAndUserId(notifId, reporter.getUserId()))
+                .thenReturn(Optional.of(un));
+        when(notificationMapper.toResponse(un)).thenReturn(
+                NotificationResponse.builder().notificationId(notifId).isRead(true).build()
+        );
+
+        NotificationResponse res = notificationService.markAsRead(notifId);
+
+        assertThat(res.isRead()).isTrue();
+        verify(userNotificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("markAsRead_nonExistentNotification_throwsNotificationNotFound")
+    void markAsRead_nonExistentNotification_throwsNotificationNotFound() {
+        mockCurrentUser(reporter);
+        UUID unknownNotifId = UUID.randomUUID();
+
+        when(userNotificationRepository.findByNotificationIdAndUserId(unknownNotifId, reporter.getUserId()))
+                .thenReturn(Optional.empty());
+        when(notificationRepository.existsById(unknownNotifId)).thenReturn(false);
+
+        assertThatThrownBy(() -> notificationService.markAsRead(unknownNotifId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.NOTIFICATION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("getMyNotifications_withIsReadFalse_filtersUnreadNotifications")
+    void getMyNotifications_withIsReadFalse_filtersUnreadNotifications() {
+        mockCurrentUser(manager1);
+        Notification n = Notification.builder()
+                .notificationId(UUID.randomUUID())
+                .title("Chưa đọc")
+                .content("Nội dung")
+                .build();
+        UserNotification un = UserNotification.builder()
+                .id(UUID.randomUUID())
+                .notification(n)
+                .user(manager1)
+                .isRead(false)
+                .build();
+        NotificationResponse resp = NotificationResponse.builder()
+                .notificationId(n.getNotificationId())
+                .userId(manager1.getUserId())
+                .isRead(false)
+                .build();
+
+        when(userNotificationRepository.findByUserIdAndIsReadOrderByCreatedAtDesc(eq(manager1.getUserId()), eq(false), any()))
+                .thenReturn(new PageImpl<>(List.of(un)));
+        when(notificationMapper.toResponse(un)).thenReturn(resp);
+
+        Page<NotificationResponse> result = notificationService.getMyNotifications(false, PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).isRead()).isFalse();
+        verify(userNotificationRepository).findByUserIdAndIsReadOrderByCreatedAtDesc(eq(manager1.getUserId()), eq(false), any());
+    }
+
+    @Test
+    @DisplayName("getMyNotifications_withIsReadTrueAndNoReadNotifications_returnsEmptyPage")
+    void getMyNotifications_withIsReadTrueAndNoReadNotifications_returnsEmptyPage() {
+        mockCurrentUser(manager1);
+        when(userNotificationRepository.findByUserIdAndIsReadOrderByCreatedAtDesc(eq(manager1.getUserId()), eq(true), any()))
+                .thenReturn(Page.empty());
+
+        Page<NotificationResponse> result = notificationService.getMyNotifications(true, PageRequest.of(0, 10));
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("getMyNotifications_unauthenticated_throwsUnauthenticated")
+    void getMyNotifications_unauthenticated_throwsUnauthenticated() {
+        SecurityContextHolder.setContext(securityContext);
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> notificationService.getMyNotifications(null, PageRequest.of(0, 10)))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+    }
+
+    @Test
+    @DisplayName("getUnreadCount_zeroUnreadNotifications_returnsZero")
+    void getUnreadCount_zeroUnreadNotifications_returnsZero() {
+        mockCurrentUser(manager1);
+        when(userNotificationRepository.countByUser_UserIdAndIsReadFalse(manager1.getUserId())).thenReturn(0L);
+
+        long count = notificationService.getUnreadCount();
+
+        assertThat(count).isZero();
+    }
+
+    @Test
+    @DisplayName("getUnreadCount_unauthenticated_throwsUnauthenticated")
+    void getUnreadCount_unauthenticated_throwsUnauthenticated() {
+        SecurityContextHolder.setContext(securityContext);
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> notificationService.getUnreadCount())
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+    }
+
+    @Test
+    @DisplayName("markAllAsRead_zeroUnreadNotifications_executesIdempotently")
+    void markAllAsRead_zeroUnreadNotifications_executesIdempotently() {
+        mockCurrentUser(reporter);
+        when(userNotificationRepository.markAllAsReadByUserId(reporter.getUserId())).thenReturn(0);
+
+        notificationService.markAllAsRead();
+
+        verify(userNotificationRepository).markAllAsReadByUserId(reporter.getUserId());
+    }
+
+    @Test
+    @DisplayName("markAllAsRead_unauthenticated_throwsUnauthenticated")
+    void markAllAsRead_unauthenticated_throwsUnauthenticated() {
+        SecurityContextHolder.setContext(securityContext);
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> notificationService.markAllAsRead())
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+    }
 }

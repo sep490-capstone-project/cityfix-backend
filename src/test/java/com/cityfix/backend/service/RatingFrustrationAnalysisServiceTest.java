@@ -340,4 +340,21 @@ class RatingFrustrationAnalysisServiceTest {
         // Assert: Không gửi lại thông báo trùng mốc
         verify(notificationService, never()).createAndSendNotification(any(), any(), anyString(), anyString());
     }
+
+    @Test
+    @DisplayName("Không gửi thông báo khi điểm phạt dưới ngưỡng khủng hoảng")
+    void testCheckAndTriggerCrisisAlert_BelowThreshold_DoesNotSendNotification() {
+        List<Rating> ratings = List.of(
+                Rating.builder().rate(4).build(),
+                Rating.builder().rate(5).build()
+        ); // 0 điểm phạt < ngưỡng 5.0
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketVoteRepository.findUpvotersByTicketId(ticketId)).thenReturn(upvoters);
+        when(ratingRepository.findByTicket_TicketIdAndIsDeletedFalse(ticketId)).thenReturn(ratings);
+
+        frustrationService.checkAndTriggerCrisisAlert(ticketId);
+
+        verify(notificationService, never()).createAndSendNotification(any(), any(), anyString(), anyString());
+    }
 }
