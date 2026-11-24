@@ -246,6 +246,25 @@ class TicketStepServiceImplTest {
     }
 
     @Test
+    @DisplayName("updateTicketStepStatus_whenPrerequisiteIncomplete_throwsStepPrerequisitesNotMet")
+    void updateTicketStepStatus_whenPrerequisiteIncomplete_throwsStepPrerequisitesNotMet() {
+        mockCurrentUser(staffUser);
+        TicketStep prereq = new TicketStep();
+        prereq.setId(UUID.randomUUID());
+        prereq.setStatus(AssignmentStatus.IN_PROGRESS);
+        step.setDependsOn(java.util.Set.of(prereq));
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        assertThatThrownBy(() -> ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.IN_PROGRESS))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.STEP_PREREQUISITES_NOT_MET);
+
+        verify(ticketStepRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("updateTicketStepStatus_recalculatesTicketDeadline")
     void updateTicketStepStatus_recalculatesTicketDeadline() {
         mockCurrentUser(staffUser);
@@ -284,6 +303,20 @@ class TicketStepServiceImplTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getId()).isEqualTo(stepId);
+    }
+
+    @Test
+    @DisplayName("getTicketStepsByTicketId_zeroSteps_returnsEmptyList")
+    void getTicketStepsByTicketId_zeroSteps_returnsEmptyList() {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketStepRepository.findByTicket_TicketIdOrderByCreatedAtAscIdAsc(ticketId)).thenReturn(Collections.emptyList());
+        when(ticketStepRepository.findByTicketTicketId(ticketId)).thenReturn(Collections.emptyList());
+        when(ticketStepMapper.toTicketStepResponseList(Collections.emptyList())).thenReturn(Collections.emptyList());
+
+        List<TicketStepResponse> result = ticketStepService.getTicketStepsByTicketId(ticketId);
+
+        assertThat(result).isNotNull().isEmpty();
     }
 
     @Test
@@ -335,6 +368,19 @@ class TicketStepServiceImplTest {
     }
 
     @Test
+    @DisplayName("deleteTicketStep_whenCurrentUserIsAdmin_throwsForbidden")
+    void deleteTicketStep_whenCurrentUserIsAdmin_throwsForbidden() {
+        mockCurrentUser(adminUser);
+
+        assertThatThrownBy(() -> ticketStepService.deleteTicketStep(stepId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketStepRepository, never()).delete(any());
+    }
+
+    @Test
     @DisplayName("cascadeCancelTicketSteps_cancelsActiveStepsAndSetsTimestamps")
     void cascadeCancelTicketSteps_cancelsActiveStepsAndSetsTimestamps() {
         UUID ticketId = UUID.randomUUID();
@@ -364,6 +410,35 @@ class TicketStepServiceImplTest {
             List<TicketStep> saved = (List<TicketStep>) iterable;
             return saved.size() == 2;
         }));
+    }
+
+    @Test
+    @DisplayName("cascadeCancelTicketSteps_allThreeStepsActive_cancelsAllThreeInBatch")
+    void cascadeCancelTicketSteps_allThreeStepsActive_cancelsAllThreeInBatch() {
+        UUID ticketId = UUID.randomUUID();
+        TicketStep s1 = TicketStep.builder().id(UUID.randomUUID()).status(AssignmentStatus.ASSIGNED).build();
+        TicketStep s2 = TicketStep.builder().id(UUID.randomUUID()).status(AssignmentStatus.IN_PROGRESS).build();
+        TicketStep s3 = TicketStep.builder().id(UUID.randomUUID()).status(AssignmentStatus.ASSIGNED).build();
+
+        when(ticketStepRepository.findByTicketTicketId(ticketId)).thenReturn(List.of(s1, s2, s3));
+
+        ticketStepService.cascadeCancelTicketSteps(ticketId);
+
+        assertThat(s1.getStatus()).isEqualTo(AssignmentStatus.CANCELLED);
+        assertThat(s2.getStatus()).isEqualTo(AssignmentStatus.CANCELLED);
+        assertThat(s3.getStatus()).isEqualTo(AssignmentStatus.CANCELLED);
+        verify(ticketStepRepository).saveAll(argThat(iterable -> ((List<TicketStep>) iterable).size() == 3));
+    }
+
+    @Test
+    @DisplayName("cascadeCancelTicketSteps_emptyStepList_doesNotCallSaveAll")
+    void cascadeCancelTicketSteps_emptyStepList_doesNotCallSaveAll() {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketStepRepository.findByTicketTicketId(ticketId)).thenReturn(Collections.emptyList());
+
+        ticketStepService.cascadeCancelTicketSteps(ticketId);
+
+        verify(ticketStepRepository, never()).saveAll(any());
     }
 
     @Test
@@ -420,6 +495,38 @@ class TicketStepServiceImplTest {
                 .isEqualTo(ErrorCode.FORBIDDEN);
 
         verify(ticketService, never()).uploadImage(any(), any());
+        verify(resolutionEvidenceRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("uploadEvidences_stepNotFound_throwsStepNotFound")
+    void uploadEvidences_stepNotFound_throwsStepNotFound() {
+        UUID unknownStepId = UUID.randomUUID();
+        when(ticketStepRepository.findById(unknownStepId)).thenReturn(Optional.empty());
+
+        org.springframework.web.multipart.MultipartFile file = mock(org.springframework.web.multipart.MultipartFile.class);
+
+        assertThatThrownBy(() -> ticketStepService.uploadEvidences(unknownStepId, List.of(file), "Note"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.STEP_NOT_FOUND);
+
+        verify(ticketService, never()).uploadImage(any(), any());
+    }
+
+    @Test
+    @DisplayName("uploadEvidences_emptyOrNullFilesList_throwsInvalidFileFormat")
+    void uploadEvidences_emptyOrNullFilesList_throwsInvalidFileFormat() {
+        mockCurrentUser(staffUser);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketService.uploadImage(Collections.emptyList(), "cityfix/evidences"))
+                .thenThrow(new AppException(ErrorCode.INVALID_FILE_FORMAT));
+
+        assertThatThrownBy(() -> ticketStepService.uploadEvidences(stepId, Collections.emptyList(), "Note"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_FILE_FORMAT);
+
         verify(resolutionEvidenceRepository, never()).saveAll(any());
     }
 }

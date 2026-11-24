@@ -180,6 +180,142 @@ class RoutingRuleServiceTest {
     }
 
     @Test
+    @DisplayName("getRoutingRuleById_nonExistentOrSoftDeleted_throwsRoutingRuleNotFoundException")
+    void getRoutingRuleById_nonExistentOrSoftDeleted_throwsRoutingRuleNotFoundException() {
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> routingRuleService.getRoutingRuleById(ruleId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ROUTING_RULE_NOT_FOUND);
+
+        verify(routingRuleMapper, never()).toResponse(any());
+    }
+
+    @Test
+    @DisplayName("updateRoutingRule_validData_returnsUpdatedRoutingRuleResponse")
+    void updateRoutingRule_validData_returnsUpdatedRoutingRuleResponse() {
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.of(mockRule));
+        when(routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndRuleIdNotAndIsDeletedFalse(
+                categoryId, updateRequest.province(), updateRequest.ward(), ruleId)).thenReturn(false);
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(categoryId)).thenReturn(List.of(mockRule));
+        when(routingRuleRepository.save(mockRule)).thenReturn(mockRule);
+        when(routingRuleMapper.toResponse(mockRule)).thenReturn(mockResponse);
+
+        RoutingRuleResponse result = routingRuleService.updateRoutingRule(ruleId, updateRequest);
+
+        assertThat(result).isNotNull();
+        verify(routingRuleMapper).updateEntityFromRequest(updateRequest, mockRule);
+        verify(routingRuleRepository).save(mockRule);
+    }
+
+    @Test
+    @DisplayName("updateRoutingRule_ruleNotFound_throwsRoutingRuleNotFoundException")
+    void updateRoutingRule_ruleNotFound_throwsRoutingRuleNotFoundException() {
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> routingRuleService.updateRoutingRule(ruleId, updateRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ROUTING_RULE_NOT_FOUND);
+
+        verify(routingRuleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateRoutingRule_conflictingScope_throwsRoutingRuleConflictException")
+    void updateRoutingRule_conflictingScope_throwsRoutingRuleConflictException() {
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.of(mockRule));
+        when(routingRuleRepository.existsByCategoryCategoryIdAndProvinceAndWardAndRuleIdNotAndIsDeletedFalse(
+                categoryId, updateRequest.province(), updateRequest.ward(), ruleId)).thenReturn(true);
+
+        assertThatThrownBy(() -> routingRuleService.updateRoutingRule(ruleId, updateRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ROUTING_RULE_CONFLICT);
+
+        verify(routingRuleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateRoutingRule_departmentNotFound_throwsDepartmentNotFoundException")
+    void updateRoutingRule_departmentNotFound_throwsDepartmentNotFoundException() {
+        UUID newDeptId = UUID.randomUUID();
+        UpdateRoutingRuleRequest reqWithUnknownDept = new UpdateRoutingRuleRequest(
+                newDeptId, categoryId, "Thành phố Hồ Chí Minh", "Phường Trường Thạnh"
+        );
+
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.of(mockRule));
+        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(newDeptId)).thenReturn(Optional.empty());
+        when(departmentRepository.findById(newDeptId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> routingRuleService.updateRoutingRule(ruleId, reqWithUnknownDept))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
+
+        verify(routingRuleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("searchRoutingRules_withSpecificFilters_returnsMatchingPage")
+    @SuppressWarnings("unchecked")
+    void searchRoutingRules_withSpecificFilters_returnsMatchingPage() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<RoutingRule> rulePage = new PageImpl<>(List.of(mockRule), pageable, 1);
+
+        when(routingRuleRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(rulePage);
+        when(routingRuleMapper.toResponse(mockRule)).thenReturn(mockResponse);
+
+        Page<RoutingRuleResponse> result = routingRuleService.searchRoutingRules(
+                categoryId, "Thành phố Hồ Chí Minh", "Phường Long Trường", departmentId, pageable
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).ruleId()).isEqualTo(ruleId);
+        verify(routingRuleRepository).findAll(any(Specification.class), eq(pageable));
+    }
+
+    @Test
+    @DisplayName("searchRoutingRules_withAllOptionalFiltersNull_returnsAllActiveRulesPage")
+    @SuppressWarnings("unchecked")
+    void searchRoutingRules_withAllOptionalFiltersNull_returnsAllActiveRulesPage() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<RoutingRule> rulePage = new PageImpl<>(List.of(mockRule), pageable, 1);
+
+        when(routingRuleRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(rulePage);
+        when(routingRuleMapper.toResponse(mockRule)).thenReturn(mockResponse);
+
+        Page<RoutingRuleResponse> result = routingRuleService.searchRoutingRules(null, null, null, null, pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).hasSize(1);
+        verify(routingRuleRepository).findAll(any(Specification.class), eq(pageable));
+    }
+
+    @Test
+    @DisplayName("searchRoutingRules_whenNoRulesMatchFilters_returnsEmptyPage")
+    @SuppressWarnings("unchecked")
+    void searchRoutingRules_whenNoRulesMatchFilters_returnsEmptyPage() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<RoutingRule> emptyPage = new PageImpl<>(List.of(), pageable, 0);
+
+        when(routingRuleRepository.findAll(any(Specification.class), eq(pageable))).thenReturn(emptyPage);
+
+        Page<RoutingRuleResponse> result = routingRuleService.searchRoutingRules(
+                categoryId, "Tỉnh Cà Mau", "Phường 1", departmentId, pageable
+        );
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isZero();
+        assertThat(result.getContent()).isEmpty();
+        verify(routingRuleMapper, never()).toResponse(any());
+    }
+
+    @Test
     @DisplayName("getRoutingRulesByDepartment_validDepartmentId_returnsList")
     void getRoutingRulesByDepartment_validDepartmentId_returnsList() {
         when(departmentRepository.existsByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(true);
@@ -191,6 +327,19 @@ class RoutingRuleServiceTest {
         assertThat(result).hasSize(1);
         verify(departmentRepository, times(1)).existsByDepartmentIdAndIsDeletedFalse(departmentId);
         verify(routingRuleRepository, times(1)).findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);
+    }
+
+    @Test
+    @DisplayName("getRoutingRulesByDepartment_zeroRulesConfigured_returnsEmptyList")
+    void getRoutingRulesByDepartment_zeroRulesConfigured_returnsEmptyList() {
+        when(departmentRepository.existsByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(true);
+        when(routingRuleRepository.findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(List.of());
+        when(routingRuleMapper.toResponseList(List.of())).thenReturn(List.of());
+
+        List<RoutingRuleResponse> result = routingRuleService.getRoutingRulesByDepartment(departmentId);
+
+        assertThat(result).isNotNull().isEmpty();
+        verify(routingRuleRepository).findByDepartmentDepartmentIdAndIsDeletedFalse(departmentId);
     }
 
     @Test
@@ -216,6 +365,19 @@ class RoutingRuleServiceTest {
         verify(routingRuleRepository, times(1)).save(mockRule);
         assertThat(mockRule.isDeleted()).isTrue();
         assertThat(mockRule.getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("deleteRoutingRule_nonExistentOrAlreadyDeleted_throwsRoutingRuleNotFoundException")
+    void deleteRoutingRule_nonExistentOrAlreadyDeleted_throwsRoutingRuleNotFoundException() {
+        when(routingRuleRepository.findByRuleIdAndIsDeletedFalse(ruleId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> routingRuleService.deleteRoutingRule(ruleId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ROUTING_RULE_NOT_FOUND);
+
+        verify(routingRuleRepository, never()).save(any());
     }
 
     @Test

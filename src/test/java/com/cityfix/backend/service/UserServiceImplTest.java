@@ -194,6 +194,62 @@ class UserServiceImplTest {
     }
 
     @Test
+    @DisplayName("login_nonExistentEmail_throwsAccountNotFound")
+    void login_nonExistentEmail_throwsAccountNotFound() {
+        LoginRequest loginRequest = LoginRequest.builder()
+                .email("unknown@gmail.com")
+                .password("password123")
+                .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse("unknown@gmail.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.login(loginRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
+    @DisplayName("login_softDeletedAccount_throwsAccountNotFound")
+    void login_softDeletedAccount_throwsAccountNotFound() {
+        LoginRequest loginRequest = LoginRequest.builder()
+                .email("deleted@gmail.com")
+                .password("password123")
+                .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse("deleted@gmail.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.login(loginRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
+    @DisplayName("login_blockedUser_throwsAccountBanned")
+    void login_blockedUser_throwsAccountBanned() {
+        mockUser.setStatus(UserStatus.BLOCKED);
+        LoginRequest loginRequest = LoginRequest.builder()
+                .email("nguyenvana@gmail.com")
+                .password("password123")
+                .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
+        when(passwordEncoder.matches("password123", "encodedPassword123")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.login(loginRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_BANNED);
+
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
     @DisplayName("logout_callsTokenServiceBlacklist: Đăng xuất gọi đúng phương thức vô hiệu hóa token")
     void logout_callsTokenServiceBlacklist() {
         String token = "jwt-access-token-xyz";
@@ -203,6 +259,17 @@ class UserServiceImplTest {
         userService.logout(token);
 
         verify(tokenService, times(1)).blacklistToken(token);
+    }
+
+    @Test
+    @DisplayName("logout_nullOrBlankToken_doesNotCallTokenService")
+    void logout_nullOrBlankToken_doesNotCallTokenService() {
+        userService.logout(null);
+        userService.logout("   ");
+        userService.logout("   ", "   ");
+
+        verify(tokenService, never()).blacklistToken(any());
+        verify(tokenService, never()).revokeRefreshToken(any());
     }
 
     @Test
@@ -231,6 +298,37 @@ class UserServiceImplTest {
         assertThat(result.getPhoneNumber()).isEqualTo("0912345678");
 
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("getMyProfile_accountNotFound_throwsAccountNotFound")
+    void getMyProfile_accountNotFound_throwsAccountNotFound() {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.empty());
+
+        try {
+            assertThatThrownBy(() -> userService.getMyProfile())
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    @DisplayName("getMyProfile_unauthenticated_throwsUnauthenticated")
+    void getMyProfile_unauthenticated_throwsUnauthenticated() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> userService.getMyProfile())
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
     }
 
     @Test
@@ -274,6 +372,96 @@ class UserServiceImplTest {
         verify(userRepository, times(1)).save(mockUser);
 
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("updateMyProfile_keepingSamePhoneNumber_updatesWithoutConflict")
+    void updateMyProfile_keepingSamePhoneNumber_updatesWithoutConflict() {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
+                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
+                        .fullName("Nguyen Van A Updated")
+                        .phoneNumber("0912345678")
+                        .address("456 Nguyen Hue")
+                        .build();
+
+        com.cityfix.backend.model.dto.response.UserProfileResponse updatedResponse =
+                com.cityfix.backend.model.dto.response.UserProfileResponse.builder()
+                        .email("nguyenvana@gmail.com")
+                        .fullName("Nguyen Van A Updated")
+                        .phoneNumber("0912345678")
+                        .address("456 Nguyen Hue")
+                        .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
+        when(userMapper.toUserProfileResponse(mockUser)).thenReturn(updatedResponse);
+
+        com.cityfix.backend.model.dto.response.UserProfileResponse result = userService.updateMyProfile(updateRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getFullName()).isEqualTo("Nguyen Van A Updated");
+        assertThat(result.getPhoneNumber()).isEqualTo("0912345678");
+        verify(userRepository, never()).findByPhoneNumber(anyString());
+        verify(userMapper).updateUserFromRequest(updateRequest, mockUser);
+        verify(userRepository).save(mockUser);
+
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("updateMyProfile_duplicatePhoneBelongingToAnotherUser_throwsPhoneAlreadyExists")
+    void updateMyProfile_duplicatePhoneBelongingToAnotherUser_throwsPhoneAlreadyExists() {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        User otherUser = new User();
+        otherUser.setUserId(UUID.randomUUID());
+        otherUser.setPhoneNumber("0999888777");
+
+        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
+                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
+                        .fullName("Nguyen Van A")
+                        .phoneNumber("0999888777")
+                        .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByPhoneNumber("0999888777")).thenReturn(Optional.of(otherUser));
+
+        try {
+            assertThatThrownBy(() -> userService.updateMyProfile(updateRequest))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PHONE_ALREADY_EXISTS);
+
+            verify(userRepository, never()).save(any());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    @DisplayName("updateMyProfile_unauthenticated_throwsUnauthenticated")
+    void updateMyProfile_unauthenticated_throwsUnauthenticated() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+
+        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
+                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
+                        .fullName("Nguyen Van A")
+                        .phoneNumber("0987654321")
+                        .build();
+
+        assertThatThrownBy(() -> userService.updateMyProfile(updateRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(userRepository, never()).save(any());
     }
 
     @Test
@@ -328,6 +516,46 @@ class UserServiceImplTest {
     }
 
     @Test
+    @DisplayName("verifyPhoneByFirebaseToken_firebaseAuthException_throwsUnauthenticated")
+    void verifyPhoneByFirebaseToken_firebaseAuthException_throwsUnauthenticated() throws Exception {
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseAuthException mockEx = mock(com.google.firebase.auth.FirebaseAuthException.class);
+        when(mockFirebaseAuth.verifyIdToken("expired-firebase-token")).thenThrow(mockEx);
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.verifyPhoneByFirebaseToken("expired-firebase-token"))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UNAUTHENTICATED);
+        }
+    }
+
+    @Test
+    @DisplayName("verifyPhoneByFirebaseToken_phoneNotFoundInDatabase_throwsUserNotFound")
+    void verifyPhoneByFirebaseToken_phoneNotFoundInDatabase_throwsUserNotFound() throws Exception {
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Map.of("phone_number", "+84912345678"));
+        when(mockFirebaseAuth.verifyIdToken("valid-token-unknown-phone")).thenReturn(mockFirebaseToken);
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0912345678")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("+84912345678")).thenReturn(Optional.empty());
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.verifyPhoneByFirebaseToken("valid-token-unknown-phone"))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.USER_NOT_FOUND);
+        }
+    }
+
+    @Test
     @DisplayName("resetPassword_validFirebaseToken_encodesAndSavesNewPassword")
     void resetPassword_validFirebaseToken_encodesAndSavesNewPassword() throws Exception {
         mockUser.setPhoneNumber("0912345678");
@@ -355,6 +583,58 @@ class UserServiceImplTest {
             verify(passwordEncoder).encode("newSecret123");
             verify(userRepository).save(mockUser);
             verify(tokenService).revokeAllRefreshTokens(mockUser.getUserId());
+        }
+    }
+
+    @Test
+    @DisplayName("resetPassword_missingPhoneClaimOrInvalidToken_throwsInvalidTokenOrUnauthenticated")
+    void resetPassword_missingPhoneClaimOrInvalidToken_throwsInvalidTokenOrUnauthenticated() throws Exception {
+        com.cityfix.backend.model.dto.request.ResetPasswordRequest missingPhoneReq =
+                com.cityfix.backend.model.dto.request.ResetPasswordRequest.builder()
+                        .firebaseIdToken("token-no-phone")
+                        .newPassword("newSecret123")
+                        .build();
+
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Collections.emptyMap());
+        when(mockFirebaseAuth.verifyIdToken("token-no-phone")).thenReturn(mockFirebaseToken);
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.resetPassword(missingPhoneReq))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_TOKEN);
+        }
+    }
+
+    @Test
+    @DisplayName("resetPassword_phoneNotFoundInDatabase_throwsUserNotFound")
+    void resetPassword_phoneNotFoundInDatabase_throwsUserNotFound() throws Exception {
+        com.cityfix.backend.model.dto.request.ResetPasswordRequest resetRequest =
+                com.cityfix.backend.model.dto.request.ResetPasswordRequest.builder()
+                        .firebaseIdToken("valid-token-unknown-user")
+                        .newPassword("newSecret123")
+                        .build();
+
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Map.of("phone_number", "+84912345678"));
+        when(mockFirebaseAuth.verifyIdToken("valid-token-unknown-user")).thenReturn(mockFirebaseToken);
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0912345678")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("+84912345678")).thenReturn(Optional.empty());
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.resetPassword(resetRequest))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.USER_NOT_FOUND);
         }
     }
 
@@ -420,6 +700,26 @@ class UserServiceImplTest {
 
         verify(tokenService, times(1)).consumeRefreshToken("valid-refresh-token");
         verify(tokenService, never()).revokeRefreshToken(any());
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
+    @DisplayName("refreshToken_userNotFoundOrSoftDeleted_throwsInvalidRefreshToken")
+    void refreshToken_userNotFoundOrSoftDeleted_throwsInvalidRefreshToken() {
+        mockUser.setDeleted(true);
+        com.cityfix.backend.model.dto.request.RefreshTokenRequest request =
+                com.cityfix.backend.model.dto.request.RefreshTokenRequest.builder()
+                        .refreshToken("valid-refresh-token")
+                        .build();
+
+        when(tokenService.consumeRefreshToken("valid-refresh-token")).thenReturn(true);
+        when(tokenService.extractUser("valid-refresh-token")).thenReturn(mockUser);
+
+        assertThatThrownBy(() -> userService.refreshToken(request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REFRESH_TOKEN);
+
         verify(tokenService, never()).generateAccessToken(any());
     }
 

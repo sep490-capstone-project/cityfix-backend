@@ -293,4 +293,48 @@ class AiServiceImplTest {
         assertThat(response.getSubCategoryIds()).isEmpty();
         assertThat(response.getSubCategoryNames()).isEmpty();
     }
+
+    @Test
+    @DisplayName("analyzeMedia_singleValidUrlString_delegatesToAnalyzeAndReturnsResponse")
+    void analyzeMedia_singleValidUrlString_delegatesToAnalyzeAndReturnsResponse() {
+        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(catGiaoThong, catKhac));
+        when(subCategoryRepository.findByIsActiveTrueAndIsDeletedFalse()).thenReturn(List.of(subSutLun, subKhac));
+        when(subCategoryRepository.findById(subSutLun.getSubCategoryId())).thenReturn(Optional.of(subSutLun));
+
+        String geminiJson = String.format("""
+                {
+                  "candidates": [
+                    {
+                      "content": {
+                        "parts": [
+                          {
+                            "text": "{\\"isValidIssue\\": true, \\"subCategoryIds\\": [\\"%s\\"], \\"severityScore\\": 7.0, \\"impact\\": 6.0, \\"urgency\\": 7.0, \\"context\\": 5.0, \\"confidenceScore\\": 92.0, \\"description\\": \\"Ổ gà lớn\\", \\"priorityReasoning\\": \\"Khớp ổ gà\\"}"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """, subSutLun.getSubCategoryId());
+
+        when(restTemplate.postForEntity(anyString(), any(HttpEntity.class), eq(String.class)))
+                .thenReturn(new ResponseEntity<>(geminiJson, HttpStatus.OK));
+
+        AiAnalyzeResponse response = aiService.analyzeMedia("https://example.com/single-pothole.jpg");
+
+        assertThat(response.getIsValidIssue()).isTrue();
+        assertThat(response.getSubCategoryIds()).containsExactly(subSutLun.getSubCategoryId());
+    }
+
+    @Test
+    @DisplayName("analyze_whenEmptyOrNullMediaUrls_throwsInvalidRequest")
+    void analyze_whenEmptyOrNullMediaUrls_throwsInvalidRequest() {
+        AiAnalyzeRequest emptyRequest = new AiAnalyzeRequest();
+        emptyRequest.setMediaUrls(List.of());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> aiService.analyze(emptyRequest))
+                .isInstanceOf(com.cityfix.backend.exception.AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.INVALID_REQUEST);
+    }
 }

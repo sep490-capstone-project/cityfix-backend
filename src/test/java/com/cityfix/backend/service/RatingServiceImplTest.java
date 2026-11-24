@@ -367,6 +367,24 @@ class RatingServiceImplTest {
     }
 
     @Test
+    @DisplayName("getRatings_zeroRatings_returnsEmptyPage")
+    void getRatings_zeroRatings_returnsEmptyPage() {
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<Rating> emptyPage = new PageImpl<>(List.of(), pageable, 0);
+
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ratingRepository.findByTicket_TicketIdAndIsDeletedFalse(ticketId, pageable)).thenReturn(emptyPage);
+
+        Page<RatingResponse> result = ratingService.getTicketRatings(ticketId, pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isZero();
+        assertThat(result.getContent()).isEmpty();
+        verify(ratingRepository).findByTicket_TicketIdAndIsDeletedFalse(ticketId, pageable);
+        verify(ratingMapper, never()).toResponse(any());
+    }
+
+    @Test
     @DisplayName("getRatings_ticketNotFound_throwsNotFound")
     void getRatings_ticketNotFound_throwsNotFound() {
         Pageable pageable = PageRequest.of(0, 10);
@@ -433,6 +451,19 @@ class RatingServiceImplTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("getMyRating_unauthenticated_throwsUnauthenticated")
+    void getMyRating_unauthenticated_throwsUnauthenticated() {
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> ratingService.getMyRating(ticketId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(ratingRepository, never()).findByTicket_TicketIdAndUser_UserIdAndIsDeletedFalse(any(), any());
     }
 
     @Test

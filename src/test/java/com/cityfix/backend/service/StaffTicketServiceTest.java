@@ -493,4 +493,81 @@ public class StaffTicketServiceTest {
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.STEP_PREREQUISITES_NOT_MET);
     }
+
+    @Test
+    @DisplayName("submitEvidence_validFilesAndNote_savesEvidencesAndHistory")
+    void submitEvidence_validFilesAndNote_savesEvidencesAndHistory() {
+        setupSecurityContext();
+        setupActiveAssignment();
+        TicketStep targetStep = ticket.getSteps().get(0);
+        targetStep.setStatus(AssignmentStatus.IN_PROGRESS);
+
+        when(ticketStepRepository.findById(targetStep.getId())).thenReturn(Optional.of(targetStep));
+
+        MultipartFile file1 = mock(MultipartFile.class);
+        MultipartFile file2 = mock(MultipartFile.class);
+        List<MultipartFile> files = List.of(file1, file2);
+
+        ImageUploadResponse up1 = ImageUploadResponse.builder().secureUrl("https://cloudinary.com/ev1.jpg").build();
+        ImageUploadResponse up2 = ImageUploadResponse.builder().secureUrl("https://cloudinary.com/ev2.png").build();
+        when(ticketService.uploadImage(files, "cityfix/evidences")).thenReturn(List.of(up1, up2));
+
+        ResolutionEvidence ev1 = ResolutionEvidence.builder().evidenceId(UUID.randomUUID()).imageUrl("https://cloudinary.com/ev1.jpg").build();
+        ResolutionEvidence ev2 = ResolutionEvidence.builder().evidenceId(UUID.randomUUID()).imageUrl("https://cloudinary.com/ev2.png").build();
+        when(evidenceMapper.toResolutionEvidence(eq(targetStep), eq(staffUser), anyString(), eq("Đã sửa xong"))).thenReturn(ev1, ev2);
+        when(resolutionEvidenceRepository.saveAll(anyList())).thenReturn(List.of(ev1, ev2));
+
+        ResolutionEvidenceResponse res1 = ResolutionEvidenceResponse.builder().evidenceId(ev1.getEvidenceId()).imageUrl("https://cloudinary.com/ev1.jpg").build();
+        ResolutionEvidenceResponse res2 = ResolutionEvidenceResponse.builder().evidenceId(ev2.getEvidenceId()).imageUrl("https://cloudinary.com/ev2.png").build();
+        when(evidenceMapper.toResponseList(List.of(ev1, ev2))).thenReturn(List.of(res1, res2));
+
+        List<ResolutionEvidenceResponse> result = staffTicketService.submitEvidence(targetStep.getId(), files, "Đã sửa xong");
+
+        assertThat(result).hasSize(2);
+        verify(resolutionEvidenceRepository).saveAll(anyList());
+        verify(ticketHistoryRepository).save(any());
+    }
+
+    @Test
+    @DisplayName("submitEvidence_emptyOrNullFilesList_throwsInvalidFileFormat")
+    void submitEvidence_emptyOrNullFilesList_throwsInvalidFileFormat() {
+        setupSecurityContext();
+        setupActiveAssignment();
+        TicketStep targetStep = ticket.getSteps().get(0);
+        targetStep.setStatus(AssignmentStatus.IN_PROGRESS);
+
+        when(ticketStepRepository.findById(targetStep.getId())).thenReturn(Optional.of(targetStep));
+        when(ticketService.uploadImage(Collections.emptyList(), "cityfix/evidences"))
+                .thenThrow(new AppException(ErrorCode.INVALID_FILE_FORMAT));
+
+        assertThatThrownBy(() -> staffTicketService.submitEvidence(targetStep.getId(), Collections.emptyList(), "Note"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_FILE_FORMAT);
+
+        verify(resolutionEvidenceRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("submitEvidence_fileExceedsMax10MbLimit_throwsFileSizeExceeded")
+    void submitEvidence_fileExceedsMax10MbLimit_throwsFileSizeExceeded() {
+        setupSecurityContext();
+        setupActiveAssignment();
+        TicketStep targetStep = ticket.getSteps().get(0);
+        targetStep.setStatus(AssignmentStatus.IN_PROGRESS);
+
+        MultipartFile oversizedFile = mock(MultipartFile.class);
+        List<MultipartFile> files = List.of(oversizedFile);
+
+        when(ticketStepRepository.findById(targetStep.getId())).thenReturn(Optional.of(targetStep));
+        when(ticketService.uploadImage(files, "cityfix/evidences"))
+                .thenThrow(new AppException(ErrorCode.FILE_SIZE_EXCEEDED));
+
+        assertThatThrownBy(() -> staffTicketService.submitEvidence(targetStep.getId(), files, "Note"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FILE_SIZE_EXCEEDED);
+
+        verify(resolutionEvidenceRepository, never()).saveAll(any());
+    }
 }
