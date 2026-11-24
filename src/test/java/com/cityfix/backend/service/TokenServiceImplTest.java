@@ -82,6 +82,28 @@ class TokenServiceImplTest {
     }
 
     @Test
+    @DisplayName("generateAccessToken_adminOrManagerRole_setsAdminOrManagerRoleClaim")
+    void generateAccessToken_adminOrManagerRole_setsAdminOrManagerRoleClaim() {
+        testUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
+        String token = tokenService.generateAccessToken(testUser);
+
+        Claims claims = tokenService.extractAllClaims(token);
+        assertThat(claims.getSubject()).isEqualTo("resident@cityfix.com");
+        assertThat(claims.get("role", String.class)).isEqualTo("ADMIN");
+        assertThat(claims.get("type", String.class)).isEqualTo(TokenServiceImpl.TOKEN_TYPE_ACCESS);
+        assertThat(claims.getId()).isNotBlank();
+    }
+
+    @Test
+    @DisplayName("generateAccessToken_nullRole_throwsNullPointerException")
+    void generateAccessToken_nullRole_throwsNullPointerException() {
+        testUser.setRole(null);
+
+        assertThatThrownBy(() -> tokenService.generateAccessToken(testUser))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
     @DisplayName("generateRefreshToken_setsRefreshType7DayTtlAndStoresAtomicallyViaLuaScript")
     @SuppressWarnings("unchecked")
     void generateRefreshToken_setsRefreshType7DayTtlAndStoresAtomicallyViaLuaScript() {
@@ -107,6 +129,47 @@ class TokenServiceImplTest {
                 eq(jti),
                 eq("604800000")
         );
+    }
+
+    @Test
+    @DisplayName("generateRefreshToken_userWithExistingActiveRefreshTokens_addsDistinctJtiToUserSetAndRefreshesTtl")
+    @SuppressWarnings("unchecked")
+    void generateRefreshToken_userWithExistingActiveRefreshTokens_addsDistinctJtiToUserSetAndRefreshesTtl() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+
+        String firstToken = tokenService.generateRefreshToken(testUser);
+        String secondToken = tokenService.generateRefreshToken(testUser);
+
+        String firstJti = tokenService.extractJti(firstToken);
+        String secondJti = tokenService.extractJti(secondToken);
+        String userIdStr = testUser.getUserId().toString();
+
+        assertThat(firstJti).isNotBlank().isNotEqualTo(secondJti);
+        verify(redisTemplate).execute(
+                any(RedisScript.class),
+                eq(List.of("jwt:refresh:" + firstJti, "jwt:user-refresh:" + userIdStr)),
+                eq(userIdStr),
+                eq(firstJti),
+                eq("604800000")
+        );
+        verify(redisTemplate).execute(
+                any(RedisScript.class),
+                eq(List.of("jwt:refresh:" + secondJti, "jwt:user-refresh:" + userIdStr)),
+                eq(userIdStr),
+                eq(secondJti),
+                eq("604800000")
+        );
+    }
+
+    @Test
+    @DisplayName("generateRefreshToken_redisConnectionFailure_propagatesException")
+    @SuppressWarnings("unchecked")
+    void generateRefreshToken_redisConnectionFailure_propagatesException() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any()))
+                .thenThrow(new RedisConnectionFailureException("Redis connection refused"));
+
+        assertThatThrownBy(() -> tokenService.generateRefreshToken(testUser))
+                .isInstanceOf(RedisConnectionFailureException.class);
     }
 
     @Test
@@ -204,6 +267,34 @@ class TokenServiceImplTest {
     }
 
     @Test
+    @DisplayName("revokeRefreshToken_alreadyDeletedFromRedis_deletesRefreshKeyAndSkipsUserSetRemoval")
+    @SuppressWarnings("unchecked")
+    void revokeRefreshToken_alreadyDeletedFromRedis_deletesRefreshKeyAndSkipsUserSetRemoval() {
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any())).thenReturn(1L);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        String refreshToken = tokenService.generateRefreshToken(testUser);
+        String jti = tokenService.extractJti(refreshToken);
+
+        when(valueOperations.get("jwt:refresh:" + jti)).thenReturn(null);
+
+        tokenService.revokeRefreshToken(refreshToken);
+
+        verify(redisTemplate).delete("jwt:refresh:" + jti);
+        verify(redisTemplate, never()).opsForSet();
+    }
+
+    @Test
+    @DisplayName("revokeRefreshToken_malformedOrBlankToken_doesNotInteractWithRedis")
+    void revokeRefreshToken_malformedOrBlankToken_doesNotInteractWithRedis() {
+        tokenService.revokeRefreshToken("   ");
+        tokenService.revokeRefreshToken(null);
+        tokenService.revokeRefreshToken("malformed-jwt-token");
+
+        verifyNoInteractions(redisTemplate);
+    }
+
+    @Test
     @DisplayName("revokeAllRefreshTokens_deletesAllUserJtisAndSetKey")
     void revokeAllRefreshTokens_deletesAllUserJtisAndSetKey() {
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
@@ -218,9 +309,58 @@ class TokenServiceImplTest {
     }
 
     @Test
+    @DisplayName("revokeAllRefreshTokens_emptyOrNonExistentUserSet_deletesOnlyUserSetKey")
+    void revokeAllRefreshTokens_emptyOrNonExistentUserSet_deletesOnlyUserSetKey() {
+        when(redisTemplate.opsForSet()).thenReturn(setOperations);
+        String userSetKey = "jwt:user-refresh:" + testUser.getUserId();
+        when(setOperations.members(userSetKey)).thenReturn(Set.of());
+
+        tokenService.revokeAllRefreshTokens(testUser.getUserId());
+
+        verify(redisTemplate, never()).delete(anyCollection());
+        verify(redisTemplate).delete(userSetKey);
+    }
+
+    @Test
+    @DisplayName("revokeAllRefreshTokens_nullUserId_doesNotInteractWithRedis")
+    void revokeAllRefreshTokens_nullUserId_doesNotInteractWithRedis() {
+        tokenService.revokeAllRefreshTokens(null);
+
+        verifyNoInteractions(redisTemplate);
+    }
+
+    @Test
     @DisplayName("blacklistToken_expiredOrMalformedToken_doesNotThrow")
     void blacklistToken_expiredOrMalformedToken_doesNotThrow() {
         tokenService.blacklistToken("not-a-valid-jwt");
+        verify(redisTemplate, never()).opsForValue();
+    }
+
+    @Test
+    @DisplayName("blacklistToken_validNonExpiredAccessToken_storesBlacklistedKeyWithRemainingTtl")
+    void blacklistToken_validNonExpiredAccessToken_storesBlacklistedKeyWithRemainingTtl() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        String accessToken = tokenService.generateAccessToken(testUser);
+        String jti = tokenService.extractJti(accessToken);
+
+        tokenService.blacklistToken(accessToken);
+
+        verify(valueOperations).set(
+                eq("jwt:blacklist:" + jti),
+                eq("blacklisted"),
+                longThat(ttl -> ttl > 0 && ttl <= 1_800_000L),
+                eq(java.util.concurrent.TimeUnit.MILLISECONDS)
+        );
+    }
+
+    @Test
+    @DisplayName("blacklistToken_alreadyExpiredAccessToken_doesNotCallRedisValueOperations")
+    void blacklistToken_alreadyExpiredAccessToken_doesNotCallRedisValueOperations() {
+        ReflectionTestUtils.setField(tokenService, "accessTokenExpirationMs", -10_000L);
+        String expiredAccessToken = tokenService.generateAccessToken(testUser);
+
+        tokenService.blacklistToken(expiredAccessToken);
+
         verify(redisTemplate, never()).opsForValue();
     }
 }

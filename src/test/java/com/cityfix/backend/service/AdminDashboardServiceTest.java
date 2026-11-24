@@ -462,4 +462,88 @@ class AdminDashboardServiceTest {
         assertThat(csv).contains("'+Sở Công thức");
         assertThat(csv).contains("'-Danh mục âm");
     }
+
+    @Test
+    @DisplayName("getDashboardSummary_emptyDatabaseState_returnsZeroedKpisAndZeroRates")
+    @SuppressWarnings("unchecked")
+    void getDashboardSummary_emptyDatabaseState_returnsZeroedKpisAndZeroRates() {
+        when(ticketRepository.countTicketsGroupByStatus()).thenReturn(List.of());
+        when(ticketRepository.countUnassignedTickets()).thenReturn(0L);
+        when(ticketRepository.countByNeedsManualReviewTrue()).thenReturn(0L);
+        when(ticketRepository.countActiveLifeThreateningTickets(any())).thenReturn(0L);
+        when(ticketRepository.countOverdueTickets(any(), any())).thenReturn(0L);
+        when(ratingRepository.findAverageActiveRating()).thenReturn(null);
+
+        when(userRepository.countUsersGroupByStatus()).thenReturn(List.of());
+        when(userRepository.countUsersGroupByRole()).thenReturn(List.of());
+
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of(department));
+        when(categoryRepository.countByIsDeletedFalse()).thenReturn(0L);
+        when(categoryRepository.countByIsActiveTrueAndIsDeletedFalse()).thenReturn(0L);
+        when(subCategoryRepository.countByIsDeletedFalse()).thenReturn(0L);
+        when(subCategoryRepository.countByIsActiveTrueAndIsDeletedFalse()).thenReturn(0L);
+        when(stepRepository.countByIsDeletedFalse()).thenReturn(0L);
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of());
+
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        AdminDashboardSummaryResponse summary = adminDashboardService.getDashboardSummary();
+
+        assertThat(summary).isNotNull();
+        assertThat(summary.getTicketSummary().getTotalTickets()).isZero();
+        assertThat(summary.getTicketSummary().getOverallResolutionRate()).isEqualTo(0.0);
+        assertThat(summary.getTicketSummary().getAverageRating()).isEqualTo(0.0);
+        assertThat(summary.getAccountSummary().getTotalUsers()).isZero();
+        assertThat(summary.getDepartmentSummaries()).hasSize(1);
+        assertThat(summary.getDepartmentSummaries().get(0).getTotalAssignedTickets()).isZero();
+        assertThat(summary.getDepartmentSummaries().get(0).getResolutionRate()).isEqualTo(0.0);
+    }
+
+    @Test
+    @DisplayName("getAnalytics_zeroMatchingTickets_returnsEmptyBreakdownsAndZeroTotals")
+    @SuppressWarnings("unchecked")
+    void getAnalytics_zeroMatchingTickets_returnsEmptyBreakdownsAndZeroTotals() {
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of(department));
+        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of(category));
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of());
+
+        AdminAnalyticsResponse analytics = adminDashboardService.getAnalytics(
+                LocalDateTime.now().minusDays(7), LocalDateTime.now(), "DAY", null, null, null, null
+        );
+
+        assertThat(analytics).isNotNull();
+        assertThat(analytics.getOverview().getTotalTickets()).isZero();
+        assertThat(analytics.getOverview().getResolutionRate()).isEqualTo(0.0);
+        assertThat(analytics.getOverview().getOnTimeResolutionRate()).isEqualTo(0.0);
+        assertThat(analytics.getOverview().getAverageResolutionHours()).isEqualTo(0.0);
+        assertThat(analytics.getOverview().getAverageRating()).isEqualTo(0.0);
+        assertThat(analytics.getTimeSeries()).isEmpty();
+        assertThat(analytics.getGeographicBreakdown()).isEmpty();
+        assertThat(analytics.getDepartmentBreakdown()).hasSize(1);
+        assertThat(analytics.getDepartmentBreakdown().get(0).getTotalTickets()).isZero();
+    }
+
+    @Test
+    @DisplayName("exportAnalyticsCsv_zeroMatchingTickets_returnsBomHeadersWithZeroOverviewMetrics")
+    @SuppressWarnings("unchecked")
+    void exportAnalyticsCsv_zeroMatchingTickets_returnsBomHeadersWithZeroOverviewMetrics() {
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(departmentRepository.findAllByIsDeletedFalse()).thenReturn(List.of());
+        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of());
+        when(routingRuleRepository.findByIsDeletedFalse()).thenReturn(List.of());
+
+        byte[] csvBytes = adminDashboardService.exportAnalyticsCsv(
+                LocalDateTime.now().minusDays(7), LocalDateTime.now(), "DAY", null, null, null, null
+        );
+
+        String csvContent = new String(csvBytes, StandardCharsets.UTF_8);
+        assertThat(csvContent).startsWith("\uFEFF");
+        assertThat(csvContent).contains("Tong so ho so,0");
+        assertThat(csvContent).contains("Ty le giai quyet (%),0.0");
+        assertThat(csvContent).contains("=== XU HUONG SU CO THEO THOI GIAN (TIME SERIES) ===");
+    }
 }

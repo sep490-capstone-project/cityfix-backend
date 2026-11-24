@@ -119,4 +119,135 @@ class SubCategoryServiceTest {
         AppException ex = assertThrows(AppException.class, () -> subCategoryService.createSubCategory(request));
         assertEquals(ErrorCode.CATEGORY_NOT_FOUND, ex.getErrorCode());
     }
+
+    @Test
+    void getAllSubCategories_WhenExist_ReturnsList() {
+        when(subCategoryRepository.findByIsDeletedFalse()).thenReturn(java.util.List.of(subCategory));
+        when(subCategoryMapper.toResponse(subCategory)).thenReturn(response);
+
+        java.util.List<SubCategoryResponse> result = subCategoryService.getAllSubCategories();
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("Test", result.get(0).getName());
+        verify(subCategoryRepository).findByIsDeletedFalse();
+    }
+
+    @Test
+    void getAllSubCategories_WhenEmpty_ReturnsEmptyList() {
+        when(subCategoryRepository.findByIsDeletedFalse()).thenReturn(java.util.Collections.emptyList());
+
+        java.util.List<SubCategoryResponse> result = subCategoryService.getAllSubCategories();
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        verify(subCategoryRepository).findByIsDeletedFalse();
+    }
+
+    @Test
+    void getSubCategoriesByCategoryId_WhenExist_ReturnsMatchingList() {
+        UUID catId = category.getCategoryId();
+        when(subCategoryRepository.findByCategory_CategoryIdAndIsActiveTrueAndIsDeletedFalse(catId))
+                .thenReturn(java.util.List.of(subCategory));
+        when(subCategoryMapper.toResponse(subCategory)).thenReturn(response);
+
+        java.util.List<SubCategoryResponse> result = subCategoryService.getSubCategoriesByCategoryId(catId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(catId, result.get(0).getCategoryId());
+        verify(subCategoryRepository).findByCategory_CategoryIdAndIsActiveTrueAndIsDeletedFalse(catId);
+    }
+
+    @Test
+    void getSubCategoriesByCategoryId_WhenEmpty_ReturnsEmptyList() {
+        UUID catId = category.getCategoryId();
+        when(subCategoryRepository.findByCategory_CategoryIdAndIsActiveTrueAndIsDeletedFalse(catId))
+                .thenReturn(java.util.Collections.emptyList());
+
+        java.util.List<SubCategoryResponse> result = subCategoryService.getSubCategoriesByCategoryId(catId);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        verify(subCategoryRepository).findByCategory_CategoryIdAndIsActiveTrueAndIsDeletedFalse(catId);
+    }
+
+    @Test
+    void updateSubCategory_WhenZeroStepTemplates_SetsSlaToZero() {
+        UUID subCatId = subCategory.getSubCategoryId();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCategory));
+        when(categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())).thenReturn(Optional.of(category));
+        when(stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(java.util.Collections.emptyList());
+        when(subCategoryRepository.save(any(SubCategory.class))).thenReturn(subCategory);
+        when(subCategoryMapper.toResponse(subCategory)).thenReturn(response);
+
+        SubCategoryResponse result = subCategoryService.updateSubCategory(subCatId, request);
+
+        assertNotNull(result);
+        assertEquals(0, subCategory.getSla());
+        verify(subCategoryRepository).save(subCategory);
+    }
+
+    @Test
+    void updateSubCategory_SubCategoryNotFound_ThrowsSubcategoryNotFound() {
+        UUID unknownSubId = UUID.randomUUID();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(unknownSubId)).thenReturn(Optional.empty());
+
+        AppException ex = assertThrows(AppException.class, () -> subCategoryService.updateSubCategory(unknownSubId, request));
+        assertEquals(ErrorCode.SUBCATEGORY_NOT_FOUND, ex.getErrorCode());
+    }
+
+    @Test
+    void updateSubCategory_CategoryNotFound_ThrowsCategoryNotFound() {
+        UUID subCatId = subCategory.getSubCategoryId();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCategory));
+        when(categoryRepository.findByCategoryIdAndIsDeletedFalse(request.getCategoryId())).thenReturn(Optional.empty());
+
+        AppException ex = assertThrows(AppException.class, () -> subCategoryService.updateSubCategory(subCatId, request));
+        assertEquals(ErrorCode.CATEGORY_NOT_FOUND, ex.getErrorCode());
+    }
+
+    @Test
+    void deleteSubCategory_ExistingId_MarksInactiveAndSoftDeleted() {
+        UUID subCatId = subCategory.getSubCategoryId();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCategory));
+
+        subCategoryService.deleteSubCategory(subCatId);
+
+        assertFalse(subCategory.isActive());
+        assertTrue(subCategory.isDeleted());
+        assertNotNull(subCategory.getDeletedAt());
+        verify(subCategoryRepository).save(subCategory);
+    }
+
+    @Test
+    void deleteSubCategory_NotFound_ThrowsSubcategoryNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(unknownId)).thenReturn(Optional.empty());
+
+        AppException ex = assertThrows(AppException.class, () -> subCategoryService.deleteSubCategory(unknownId));
+        assertEquals(ErrorCode.SUBCATEGORY_NOT_FOUND, ex.getErrorCode());
+        verify(subCategoryRepository, never()).save(any());
+    }
+
+    @Test
+    void getSubCategory_ExistingId_ReturnsResponse() {
+        UUID subCatId = subCategory.getSubCategoryId();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCategory));
+        when(subCategoryMapper.toResponse(subCategory)).thenReturn(response);
+
+        SubCategoryResponse result = subCategoryService.getSubCategory(subCatId);
+
+        assertNotNull(result);
+        assertEquals(subCatId, result.getSubCategoryId());
+    }
+
+    @Test
+    void getSubCategory_NotFound_ThrowsSubcategoryNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(unknownId)).thenReturn(Optional.empty());
+
+        AppException ex = assertThrows(AppException.class, () -> subCategoryService.getSubCategory(unknownId));
+        assertEquals(ErrorCode.SUBCATEGORY_NOT_FOUND, ex.getErrorCode());
+    }
 }

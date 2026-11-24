@@ -67,6 +67,16 @@ class CategoryServiceImplTest {
     }
 
     @Test
+    @DisplayName("getAllCategories_whenEmpty_returnsEmptyList")
+    void getAllCategories_whenEmpty_returnsEmptyList() {
+        when(categoryRepository.findAllByIsDeletedFalse()).thenReturn(List.of());
+
+        List<CategoryResponse> result = categoryService.getAllCategories();
+
+        assertThat(result).isNotNull().isEmpty();
+    }
+
+    @Test
     @DisplayName("createCategory_validRequest_returnsResponse")
     void createCategory_validRequest_returnsResponse() {
         when(categoryRepository.findByNameAndIsDeletedFalse(categoryRequest.getName())).thenReturn(Optional.empty());
@@ -103,6 +113,20 @@ class CategoryServiceImplTest {
     }
 
     @Test
+    @DisplayName("updateCategory_sameNameUpdatesDescriptionOnly_returnsResponse")
+    void updateCategory_sameNameUpdatesDescriptionOnly_returnsResponse() {
+        when(categoryRepository.findByCategoryIdAndIsDeletedFalse(categoryId)).thenReturn(Optional.of(category));
+        when(categoryRepository.findByNameAndIsDeletedFalse(categoryRequest.getName())).thenReturn(Optional.of(category));
+        when(categoryRepository.save(any(Category.class))).thenReturn(category);
+
+        CategoryResponse result = categoryService.updateCategory(categoryId, categoryRequest);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getName()).isEqualTo("Hạ tầng");
+        verify(categoryRepository).save(category);
+    }
+
+    @Test
     @DisplayName("updateCategory_notFound_throwsException")
     void updateCategory_notFound_throwsException() {
         when(categoryRepository.findByCategoryIdAndIsDeletedFalse(categoryId)).thenReturn(Optional.empty());
@@ -134,5 +158,19 @@ class CategoryServiceImplTest {
 
         assertThat(category.isDeleted()).isTrue();
         verify(categoryRepository, times(1)).save(category);
+    }
+
+    @Test
+    @DisplayName("deleteCategory_notFound_throwsCategoryNotFound")
+    void deleteCategory_notFound_throwsCategoryNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(categoryRepository.findByCategoryIdAndIsDeletedFalse(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> categoryService.deleteCategory(unknownId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.CATEGORY_NOT_FOUND);
+
+        verify(categoryRepository, never()).save(any());
     }
 }

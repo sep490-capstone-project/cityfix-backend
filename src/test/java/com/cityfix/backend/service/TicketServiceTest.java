@@ -479,6 +479,19 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("createTicket_unauthenticated_throwsUnauthenticatedAppException")
+    void createTicket_unauthenticated_throwsUnauthenticatedAppException() {
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> ticketService.createTicket(createRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("createTicket_multiSubCategory_triggersManualReviewAndBypassesAutoRouting")
     void createTicket_multiSubCategory_triggersManualReviewAndBypassesAutoRouting() {
         UUID subId1 = UUID.randomUUID();
@@ -963,6 +976,139 @@ class TicketServiceTest {
         verify(ticketRepository, never()).findDuplicateTickets(any(), any(), any());
     }
 
+    @Test
+    @DisplayName("findDuplicateTickets_coordinatesOver200mAway_returnsEmptyList")
+    void findDuplicateTickets_coordinatesOver200mAway_returnsEmptyList() {
+        Double farLat = 10.780000;
+        Double farLng = 106.680000;
+        when(ticketRepository.findDuplicateTickets(farLat, farLng, subCategoryId))
+                .thenReturn(Collections.emptyList());
+        when(ticketMapper.toDuplicateTicketResponseList(Collections.emptyList()))
+                .thenReturn(Collections.emptyList());
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(farLat, farLng, subCategoryId);
+
+        assertThat(result).isNotNull().isEmpty();
+        verify(ticketRepository).findDuplicateTickets(farLat, farLng, subCategoryId);
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_boundaryExactly50m_returnsMatchingDuplicatesList")
+    void findDuplicateTickets_boundaryExactly50m_returnsMatchingDuplicatesList() {
+        Double lat = 10.763071;
+        Double lng = 106.660172;
+        DuplicateTicketProjection boundaryProjection = mock(DuplicateTicketProjection.class);
+        DuplicateTicketResponse boundaryResponse = DuplicateTicketResponse.builder()
+                .ticketId(UUID.randomUUID())
+                .status("ASSIGNED")
+                .distanceMeters(50.0)
+                .build();
+
+        when(ticketRepository.findDuplicateTickets(lat, lng, subCategoryId))
+                .thenReturn(List.of(boundaryProjection));
+        when(ticketMapper.toDuplicateTicketResponseList(List.of(boundaryProjection)))
+                .thenReturn(List.of(boundaryResponse));
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(lat, lng, subCategoryId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getDistanceMeters()).isEqualTo(50.0);
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_coordinatesJustOutside50mRadius_returnsEmptyList")
+    void findDuplicateTickets_coordinatesJustOutside50mRadius_returnsEmptyList() {
+        Double lat = 10.763090;
+        Double lng = 106.660172;
+        when(ticketRepository.findDuplicateTickets(lat, lng, subCategoryId))
+                .thenReturn(Collections.emptyList());
+        when(ticketMapper.toDuplicateTicketResponseList(Collections.emptyList()))
+                .thenReturn(Collections.emptyList());
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(lat, lng, subCategoryId);
+
+        assertThat(result).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_within50mButDifferentSubCategory_returnsEmptyList")
+    void findDuplicateTickets_within50mButDifferentSubCategory_returnsEmptyList() {
+        UUID differentSubCatId = UUID.randomUUID();
+        when(ticketRepository.findDuplicateTickets(10.762622, 106.660172, differentSubCatId))
+                .thenReturn(Collections.emptyList());
+        when(ticketMapper.toDuplicateTicketResponseList(Collections.emptyList()))
+                .thenReturn(Collections.emptyList());
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(10.762622, 106.660172, differentSubCatId);
+
+        assertThat(result).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_ticketWithMultipleSubCategoriesMatching_returnsDuplicatesList")
+    void findDuplicateTickets_ticketWithMultipleSubCategoriesMatching_returnsDuplicatesList() {
+        DuplicateTicketProjection multiSubProjection = mock(DuplicateTicketProjection.class);
+        DuplicateTicketResponse multiSubResponse = DuplicateTicketResponse.builder()
+                .ticketId(UUID.randomUUID())
+                .status("IN_PROGRESS")
+                .distanceMeters(12.0)
+                .build();
+
+        when(ticketRepository.findDuplicateTickets(10.762622, 106.660172, subCategoryId))
+                .thenReturn(List.of(multiSubProjection));
+        when(ticketMapper.toDuplicateTicketResponseList(List.of(multiSubProjection)))
+                .thenReturn(List.of(multiSubResponse));
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(10.762622, 106.660172, subCategoryId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo("IN_PROGRESS");
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_closedCompletedOrCancelledTicketsOnly_returnsEmptyList")
+    void findDuplicateTickets_closedCompletedOrCancelledTicketsOnly_returnsEmptyList() {
+        when(ticketRepository.findDuplicateTickets(10.762622, 106.660172, subCategoryId))
+                .thenReturn(Collections.emptyList());
+        when(ticketMapper.toDuplicateTicketResponseList(Collections.emptyList()))
+                .thenReturn(Collections.emptyList());
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(10.762622, 106.660172, subCategoryId);
+
+        assertThat(result).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_rejectedTicketsOnly_returnsEmptyList")
+    void findDuplicateTickets_rejectedTicketsOnly_returnsEmptyList() {
+        when(ticketRepository.findDuplicateTickets(10.762650, 106.660180, subCategoryId))
+                .thenReturn(Collections.emptyList());
+        when(ticketMapper.toDuplicateTicketResponseList(Collections.emptyList()))
+                .thenReturn(Collections.emptyList());
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(10.762650, 106.660180, subCategoryId);
+
+        assertThat(result).isNotNull().isEmpty();
+    }
+
+    @Test
+    @DisplayName("findDuplicateTickets_multipleActiveStatusesWithinRadius_returnsAllMatchingDuplicates")
+    void findDuplicateTickets_multipleActiveStatusesWithinRadius_returnsAllMatchingDuplicates() {
+        DuplicateTicketProjection p1 = mock(DuplicateTicketProjection.class);
+        DuplicateTicketProjection p2 = mock(DuplicateTicketProjection.class);
+        DuplicateTicketResponse r1 = DuplicateTicketResponse.builder().ticketId(UUID.randomUUID()).status("INITIATED").distanceMeters(10.0).build();
+        DuplicateTicketResponse r2 = DuplicateTicketResponse.builder().ticketId(UUID.randomUUID()).status("IN_PROGRESS").distanceMeters(25.0).build();
+
+        when(ticketRepository.findDuplicateTickets(10.762622, 106.660172, subCategoryId))
+                .thenReturn(List.of(p1, p2));
+        when(ticketMapper.toDuplicateTicketResponseList(List.of(p1, p2)))
+                .thenReturn(List.of(r1, r2));
+
+        List<DuplicateTicketResponse> result = ticketService.findDuplicateTickets(10.762622, 106.660172, subCategoryId);
+
+        assertThat(result).hasSize(2);
+    }
+
     // ==========================================
     // 4. Admin Ticket Management Tests
     // ==========================================
@@ -991,6 +1137,47 @@ class TicketServiceTest {
 
         assertThat(result.getContent()).hasSize(1);
         verify(ticketRepository, times(1)).findByUserId(eq(mockUser.getUserId()), any());
+    }
+
+    @Test
+    @DisplayName("getMyReportedTickets_emptyResult_returnsEmptyPage")
+    void getMyReportedTickets_emptyResult_returnsEmptyPage() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        org.springframework.data.domain.Page<Ticket> emptyPage =
+                new org.springframework.data.domain.PageImpl<>(Collections.emptyList(), pageable, 0);
+        when(ticketRepository.findByUserId(eq(mockUser.getUserId()), eq(pageable))).thenReturn(emptyPage);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getMyReportedTickets(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isZero();
+        assertThat(result.getContent()).isEmpty();
+        verify(ticketRepository).findByUserId(mockUser.getUserId(), pageable);
+        verify(ticketMapper, never()).toTicketResponse(any());
+    }
+
+    @Test
+    @DisplayName("getMyReportedTickets_negativePageIndex_throwsIllegalArgumentException")
+    void getMyReportedTickets_negativePageIndex_throwsIllegalArgumentException() {
+        assertThatThrownBy(() -> ticketService.getMyReportedTickets(org.springframework.data.domain.PageRequest.of(-1, 10)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Page index must not be less than zero");
+
+        verify(ticketRepository, never()).findByUserId(any(), any());
+    }
+
+    @Test
+    @DisplayName("getMyReportedTickets_unauthenticated_throwsUnauthenticated")
+    void getMyReportedTickets_unauthenticated_throwsUnauthenticated() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> ticketService.getMyReportedTickets(pageable))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(ticketRepository, never()).findByUserId(any(), any());
     }
 
     @Test
@@ -1133,6 +1320,29 @@ class TicketServiceTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.TICKET_INVALID_STATUS);
+    }
+
+    @Test
+    @DisplayName("rerouteTicket_nonExistentTargetDepartment_throwsDEPARTMENT_NOT_FOUND")
+    void rerouteTicket_nonExistentTargetDepartment_throwsDEPARTMENT_NOT_FOUND() {
+        Role adminRole = new Role(UUID.randomUUID(), "ADMIN");
+        mockUser.setRole(adminRole);
+        mockTicket.setStatus(TicketStatus.ASSIGNED);
+
+        UUID unknownDeptId = UUID.randomUUID();
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(unknownDeptId)
+                        .reason("Chuyển sang phòng ban khác")
+                        .build();
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(departmentRepository.findById(unknownDeptId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
     }
 
     @Test
@@ -1809,6 +2019,464 @@ class TicketServiceTest {
     }
 
     @Test
+    @DisplayName("getInProgressTickets_emptyResult_returnsEmptyPage")
+    void getInProgressTickets_emptyResult_returnsEmptyPage() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        org.springframework.data.domain.Page<Ticket> emptyPage =
+                new org.springframework.data.domain.PageImpl<>(Collections.emptyList(), pageable, 0);
+
+        when(ticketRepository.findByStatus(eq(TicketStatus.IN_PROGRESS), eq(pageable)))
+                .thenReturn(emptyPage);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getInProgressTickets(pageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isZero();
+        assertThat(result.getContent()).isEmpty();
+
+        verify(ticketRepository).findByStatus(TicketStatus.IN_PROGRESS, pageable);
+        verify(ticketMapper, never()).toTicketResponse(any());
+    }
+
+    @Test
+    @DisplayName("getInProgressTickets_boundaryPageSizeOne_returnsSingleElementPage")
+    void getInProgressTickets_boundaryPageSizeOne_returnsSingleElementPage() {
+        org.springframework.data.domain.Pageable boundaryPageable = org.springframework.data.domain.PageRequest.of(0, 1);
+        Ticket ticket1 = Ticket.builder()
+                .ticketId(UUID.randomUUID())
+                .description("Sự cố sụt lún mặt đường")
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+        TicketResponse resp1 = TicketResponse.builder()
+                .id(ticket1.getTicketId())
+                .description(ticket1.getDescription())
+                .status(TicketStatus.IN_PROGRESS)
+                .build();
+
+        org.springframework.data.domain.Page<Ticket> ticketPage =
+                new org.springframework.data.domain.PageImpl<>(List.of(ticket1), boundaryPageable, 5);
+
+        when(ticketRepository.findByStatus(eq(TicketStatus.IN_PROGRESS), eq(boundaryPageable)))
+                .thenReturn(ticketPage);
+        when(ticketMapper.toTicketResponse(ticket1)).thenReturn(resp1);
+
+        org.springframework.data.domain.Page<TicketResponse> result = ticketService.getInProgressTickets(boundaryPageable);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getTotalElements()).isEqualTo(5);
+        assertThat(result.getTotalPages()).isEqualTo(5);
+        assertThat(result.getContent().get(0).getId()).isEqualTo(ticket1.getTicketId());
+    }
+
+    @Test
+    @DisplayName("getTicketHistory_existingTicketWithMultipleHistories_returnsOrderedList")
+    void getTicketHistory_existingTicketWithMultipleHistories_returnsOrderedList() {
+        UUID ticketId = UUID.randomUUID();
+        TicketHistory h1 = TicketHistory.builder()
+                .historyId(UUID.randomUUID())
+                .actionNote("Chuyển trạng thái sang IN_PROGRESS")
+                .build();
+        TicketHistory h2 = TicketHistory.builder()
+                .historyId(UUID.randomUUID())
+                .actionNote("Khởi tạo sự cố")
+                .build();
+
+        com.cityfix.backend.model.dto.response.TicketHistoryResponse r1 =
+                com.cityfix.backend.model.dto.response.TicketHistoryResponse.builder()
+                        .historyId(h1.getHistoryId())
+                        .ticketId(ticketId)
+                        .actionNote(h1.getActionNote())
+                        .build();
+        com.cityfix.backend.model.dto.response.TicketHistoryResponse r2 =
+                com.cityfix.backend.model.dto.response.TicketHistoryResponse.builder()
+                        .historyId(h2.getHistoryId())
+                        .ticketId(ticketId)
+                        .actionNote(h2.getActionNote())
+                        .build();
+
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketHistoryRepository.findByTicketTicketIdOrderByCreatedAtDesc(ticketId)).thenReturn(List.of(h1, h2));
+        when(ticketHistoryMapper.toTicketHistoryResponseList(List.of(h1, h2))).thenReturn(List.of(r1, r2));
+
+        List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> result = ticketService.getTicketHistory(ticketId);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).getHistoryId()).isEqualTo(h1.getHistoryId());
+        assertThat(result.get(1).getHistoryId()).isEqualTo(h2.getHistoryId());
+        verify(ticketRepository).existsById(ticketId);
+        verify(ticketHistoryRepository).findByTicketTicketIdOrderByCreatedAtDesc(ticketId);
+    }
+
+    @Test
+    @DisplayName("getTicketHistory_existingTicketWithSingleCreationEntry_returnsSingleItemList")
+    void getTicketHistory_existingTicketWithSingleCreationEntry_returnsSingleItemList() {
+        UUID ticketId = UUID.randomUUID();
+        TicketHistory h1 = TicketHistory.builder()
+                .historyId(UUID.randomUUID())
+                .actionNote("Khởi tạo sự cố mới")
+                .build();
+        com.cityfix.backend.model.dto.response.TicketHistoryResponse r1 =
+                com.cityfix.backend.model.dto.response.TicketHistoryResponse.builder()
+                        .historyId(h1.getHistoryId())
+                        .ticketId(ticketId)
+                        .actionNote(h1.getActionNote())
+                        .build();
+
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketHistoryRepository.findByTicketTicketIdOrderByCreatedAtDesc(ticketId)).thenReturn(List.of(h1));
+        when(ticketHistoryMapper.toTicketHistoryResponseList(List.of(h1))).thenReturn(List.of(r1));
+
+        List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> result = ticketService.getTicketHistory(ticketId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getHistoryId()).isEqualTo(h1.getHistoryId());
+    }
+
+    @Test
+    @DisplayName("getTicketHistory_ticketNotFound_throwsTicketNotFound")
+    void getTicketHistory_ticketNotFound_throwsTicketNotFound() {
+        UUID unknownTicketId = UUID.randomUUID();
+        when(ticketRepository.existsById(unknownTicketId)).thenReturn(false);
+
+        assertThatThrownBy(() -> ticketService.getTicketHistory(unknownTicketId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+
+        verify(ticketHistoryRepository, never()).findByTicketTicketIdOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    @DisplayName("upvoteTicket_activeTicketNotYetUpvoted_persistsVote")
+    void upvoteTicket_activeTicketNotYetUpvoted_persistsVote() {
+        UUID ticketId = mockTicket.getTicketId();
+        mockTicket.setStatus(TicketStatus.IN_PROGRESS);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
+        when(ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, mockUser.getUserId())).thenReturn(false);
+
+        ticketService.upvoteTicket(ticketId);
+
+        verify(ticketVoteRepository).save(argThat(v -> v.getTicket().equals(mockTicket) && v.getUser().equals(mockUser)));
+    }
+
+    @Test
+    @DisplayName("upvoteTicket_creatorUpvotesOwnInitiatedTicket_persistsVote")
+    void upvoteTicket_creatorUpvotesOwnInitiatedTicket_persistsVote() {
+        UUID ticketId = mockTicket.getTicketId();
+        mockTicket.setStatus(TicketStatus.INITIATED);
+        mockTicket.setUser(mockUser);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
+        when(ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, mockUser.getUserId())).thenReturn(false);
+
+        ticketService.upvoteTicket(ticketId);
+
+        verify(ticketVoteRepository).save(any(TicketVote.class));
+    }
+
+    @Test
+    @DisplayName("upvoteTicket_alreadyUpvoted_throwsTicketAlreadyUpvoted")
+    void upvoteTicket_alreadyUpvoted_throwsTicketAlreadyUpvoted() {
+        UUID ticketId = mockTicket.getTicketId();
+        mockTicket.setStatus(TicketStatus.IN_PROGRESS);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
+        when(ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, mockUser.getUserId())).thenReturn(true);
+
+        assertThatThrownBy(() -> ticketService.upvoteTicket(ticketId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_ALREADY_UPVOTED);
+
+        verify(ticketVoteRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("upvoteTicket_terminalStatus_throwsTicketCannotUpvote")
+    void upvoteTicket_terminalStatus_throwsTicketCannotUpvote() {
+        UUID ticketId = mockTicket.getTicketId();
+        for (TicketStatus terminalStatus : List.of(TicketStatus.RESOLVED, TicketStatus.COMPLETED, TicketStatus.CANCELLED)) {
+            mockTicket.setStatus(terminalStatus);
+            when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
+
+            assertThatThrownBy(() -> ticketService.upvoteTicket(ticketId))
+                    .isInstanceOf(AppException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.TICKET_CANNOT_UPVOTE);
+        }
+        verify(ticketVoteRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("upvoteTicket_ticketNotFound_throwsTicketNotFound")
+    void upvoteTicket_ticketNotFound_throwsTicketNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(ticketRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.upvoteTicket(unknownId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("cancelTicket_creatorCancelsInitiatedTicket_cancelsTicketAndSteps")
+    void cancelTicket_creatorCancelsInitiatedTicket_cancelsTicketAndSteps() {
+        UUID ticketId = mockTicket.getTicketId();
+        mockTicket.setStatus(TicketStatus.INITIATED);
+        mockTicket.setUser(mockUser);
+
+        TicketStep pendingStep = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(mockTicket)
+                .status(AssignmentStatus.ASSIGNED)
+                .build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
+        when(ticketStepRepository.findByTicketTicketId(ticketId))
+                .thenReturn(List.of(pendingStep));
+        when(ticketRepository.save(mockTicket)).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(
+                TicketResponse.builder().id(ticketId).status(TicketStatus.CANCELLED).build()
+        );
+
+        TicketResponse result = ticketService.cancelTicket(ticketId);
+
+        assertThat(result).isNotNull();
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.CANCELLED);
+        assertThat(pendingStep.getStatus()).isEqualTo(AssignmentStatus.CANCELLED);
+        verify(ticketHistoryRepository).save(any(TicketHistory.class));
+        verify(ticketRepository).save(mockTicket);
+    }
+
+    @Test
+    @DisplayName("cancelTicket_nonInitiatedStatus_throwsTicketInvalidStatus")
+    void cancelTicket_nonInitiatedStatus_throwsTicketInvalidStatus() {
+        UUID ticketId = mockTicket.getTicketId();
+        mockTicket.setStatus(TicketStatus.IN_PROGRESS);
+        mockTicket.setUser(mockUser);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.cancelTicket(ticketId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_INVALID_STATUS);
+    }
+
+    @Test
+    @DisplayName("cancelTicket_notCreator_throwsForbidden")
+    void cancelTicket_notCreator_throwsForbidden() {
+        UUID ticketId = mockTicket.getTicketId();
+        User otherUser = User.builder().userId(UUID.randomUUID()).build();
+        mockTicket.setStatus(TicketStatus.INITIATED);
+        mockTicket.setUser(otherUser);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.cancelTicket(ticketId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("cancelTicket_ticketNotFound_throwsTicketNotFound")
+    void cancelTicket_ticketNotFound_throwsTicketNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(ticketRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.cancelTicket(unknownId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("getAssignedTicketsForStaff_withSpecificStatusFilter_passesStatusToRepository")
+    void getAssignedTicketsForStaff_withSpecificStatusFilter_passesStatusToRepository() {
+        Department dept = Department.builder().departmentId(UUID.randomUUID()).name("Phòng Giao thông").build();
+        mockUser.setDepartment(dept);
+
+        TicketStep staffStep = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(mockTicket)
+                .assignee(mockUser)
+                .status(AssignmentStatus.IN_PROGRESS)
+                .build();
+        mockTicket.setSteps(List.of(staffStep));
+
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        when(ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(
+                eq(mockUser.getUserId()),
+                eq(List.of(AssignmentStatus.IN_PROGRESS)),
+                any()
+        )).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(mockTicket), pageable, 1));
+        when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(TicketResponse.builder().id(mockTicket.getTicketId()).build());
+        when(ticketStepMapper.toTicketStepResponseList(List.of(staffStep))).thenReturn(List.of());
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getAssignedTicketsForStaff(AssignmentStatus.IN_PROGRESS, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        verify(ticketStepRepository).findDistinctTicketsByAssigneeUserIdAndStatusIn(
+                eq(mockUser.getUserId()),
+                eq(List.of(AssignmentStatus.IN_PROGRESS)),
+                any()
+        );
+    }
+
+    @Test
+    @DisplayName("getAssignedTicketsForStaff_whenNoAssignedTickets_returnsEmptyPage")
+    void getAssignedTicketsForStaff_whenNoAssignedTickets_returnsEmptyPage() {
+        Department dept = Department.builder().departmentId(UUID.randomUUID()).name("Phòng Giao thông").build();
+        mockUser.setDepartment(dept);
+
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        when(ticketStepRepository.findDistinctTicketsByAssigneeUserIdAndStatusIn(any(), any(), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty(pageable));
+
+        org.springframework.data.domain.Page<TicketResponse> result =
+                ticketService.getAssignedTicketsForStaff(AssignmentStatus.IN_PROGRESS, pageable);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("assignTicket_ticketNotFound_throwsTicketNotFound")
+    void assignTicket_ticketNotFound_throwsTicketNotFound() {
+        UUID unknownTicketId = UUID.randomUUID();
+        when(ticketRepository.findById(unknownTicketId)).thenReturn(Optional.empty());
+
+        AssignTicketRequest req = new AssignTicketRequest(UUID.randomUUID(), UUID.randomUUID());
+
+        assertThatThrownBy(() -> ticketService.assignTicket(unknownTicketId, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("assignTicket_assigneeNotFound_throwsAccountNotFound")
+    void assignTicket_assigneeNotFound_throwsAccountNotFound() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
+        UUID unknownAssigneeId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .status(AssignmentStatus.ASSIGNED)
+                .build();
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(eq(mockTicket.getTicketId()), any()))
+                .thenReturn(List.of(step));
+        when(userRepository.findById(unknownAssigneeId)).thenReturn(Optional.empty());
+
+        AssignTicketRequest req = new AssignTicketRequest(step.getId(), unknownAssigneeId);
+
+        assertThatThrownBy(() -> ticketService.assignTicket(mockTicket.getTicketId(), req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("forwardTicket_ticketNotFound_throwsTicketNotFound")
+    void forwardTicket_ticketNotFound_throwsTicketNotFound() {
+        UUID unknownTicketId = UUID.randomUUID();
+        when(ticketRepository.findById(unknownTicketId)).thenReturn(Optional.empty());
+
+        com.cityfix.backend.model.dto.request.RejectTicketRequest req =
+                new com.cityfix.backend.model.dto.request.RejectTicketRequest(null, UUID.randomUUID(), "Sai đơn vị");
+
+        assertThatThrownBy(() -> ticketService.forwardTicket(unknownTicketId, req))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("rejectAssignedTicket_assignedStaffInTicketDepartment_rejectsTicketAndCancelsSteps")
+    void rejectAssignedTicket_assignedStaffInTicketDepartment_rejectsTicketAndCancelsSteps() {
+        Department dept = Department.builder().departmentId(UUID.randomUUID()).name("Phòng Hạ tầng").build();
+        mockUser.setRole(new Role(UUID.randomUUID(), "STAFF"));
+        mockUser.setDepartment(dept);
+
+        TicketStep assignedStep = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(mockTicket)
+                .assignee(mockUser)
+                .status(AssignmentStatus.ASSIGNED)
+                .build();
+        mockTicket.setStatus(TicketStatus.ASSIGNED);
+        mockTicket.setSteps(List.of(assignedStep));
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketStepRepository.findByTicketTicketId(mockTicket.getTicketId()))
+                .thenReturn(List.of(assignedStep));
+        when(ticketRepository.save(mockTicket)).thenReturn(mockTicket);
+        when(ticketMapper.toTicketResponse(mockTicket)).thenReturn(
+                TicketResponse.builder().id(mockTicket.getTicketId()).status(TicketStatus.REJECTED).reviewNote("Không thuộc thẩm quyền").build()
+        );
+
+        TicketResponse result = ticketService.rejectAssignedTicket(mockTicket.getTicketId(), "Không thuộc thẩm quyền");
+
+        assertThat(result).isNotNull();
+        assertThat(mockTicket.getStatus()).isEqualTo(TicketStatus.REJECTED);
+        assertThat(mockTicket.getReviewNote()).isEqualTo("Không thuộc thẩm quyền");
+        assertThat(assignedStep.getStatus()).isEqualTo(AssignmentStatus.CANCELLED);
+        verify(ticketHistoryRepository).save(any(TicketHistory.class));
+    }
+
+    @Test
+    @DisplayName("rejectAssignedTicket_userNotBelongingToAssignedDepartment_throwsForbidden")
+    void rejectAssignedTicket_userNotBelongingToAssignedDepartment_throwsForbidden() {
+        Department deptA = Department.builder().departmentId(UUID.randomUUID()).name("Phòng A").build();
+        Department deptB = Department.builder().departmentId(UUID.randomUUID()).name("Phòng B").build();
+        mockUser.setRole(new Role(UUID.randomUUID(), "STAFF"));
+        mockUser.setDepartment(deptB);
+
+        User assigneeInDeptA = User.builder().userId(UUID.randomUUID()).department(deptA).build();
+        TicketStep assignedStep = TicketStep.builder()
+                .id(UUID.randomUUID())
+                .ticket(mockTicket)
+                .assignee(assigneeInDeptA)
+                .status(AssignmentStatus.ASSIGNED)
+                .build();
+        mockTicket.setStatus(TicketStatus.ASSIGNED);
+        mockTicket.setSteps(List.of(assignedStep));
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.rejectAssignedTicket(mockTicket.getTicketId(), "Từ chối"))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
+    @DisplayName("rejectAssignedTicket_ticketNotInAssignedStatus_throwsTicketInvalidStatus")
+    void rejectAssignedTicket_ticketNotInAssignedStatus_throwsTicketInvalidStatus() {
+        mockUser.setRole(new Role(UUID.randomUUID(), "ADMIN"));
+        mockTicket.setStatus(TicketStatus.RESOLVED);
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+
+        assertThatThrownBy(() -> ticketService.rejectAssignedTicket(mockTicket.getTicketId(), "Từ chối"))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_INVALID_STATUS);
+    }
+
+    @Test
+    @DisplayName("rejectAssignedTicket_ticketNotFound_throwsTicketNotFound")
+    void rejectAssignedTicket_ticketNotFound_throwsTicketNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(ticketRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.rejectAssignedTicket(unknownId, "Từ chối"))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
     @DisplayName("getLifeThreateningTicketsInSameWard_success_normalizesWardAndReturnsPagedTickets")
     void getLifeThreateningTicketsInSameWard_success_normalizesWardAndReturnsPagedTickets() {
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
@@ -2274,6 +2942,19 @@ class TicketServiceTest {
                 .thenReturn(java.util.Collections.emptyList());
         assertThat(ticketService.getTopUpvotedTicketsInSameWard()).isEmpty();
         verify(ticketRepository).findTopUpvotedTicketIdsByWard("TT. 2", "Thị trấn 2", "Lâm Đồng", expectedStatuses, top3Pageable);
+    }
+
+    @Test
+    @DisplayName("getTopUpvotedTicketsInSameWard_unauthenticated_throwsUnauthenticated")
+    void getTopUpvotedTicketsInSameWard_unauthenticated_throwsUnauthenticated() {
+        when(securityContext.getAuthentication()).thenReturn(null);
+
+        assertThatThrownBy(() -> ticketService.getTopUpvotedTicketsInSameWard())
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(ticketRepository, never()).findTopUpvotedTicketIdsByWard(any(), any(), any(), any(), any());
     }
 }
 

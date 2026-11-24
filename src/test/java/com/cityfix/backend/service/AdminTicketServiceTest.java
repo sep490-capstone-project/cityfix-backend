@@ -347,4 +347,40 @@ class AdminTicketServiceTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
     }
+
+    @Test
+    @DisplayName("getTicketDetail_ticketWithNullLocationAndEmptyStepsAndRatings_returnsDetailWithNullCoordinatesAndEmptyCollections")
+    void getTicketDetail_ticketWithNullLocationAndEmptyStepsAndRatings_returnsDetailWithNullCoordinatesAndEmptyCollections() {
+        ticket.setLocation(null);
+        ticket.setSteps(List.of());
+
+        TicketResponse mappedBase = TicketResponse.builder()
+                .id(ticketId)
+                .description(ticket.getDescription())
+                .categories(List.of(new TicketCategoryResponse(categoryId, "Giao thông")))
+                .imageUrls(List.of())
+                .build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketStepRepository.findByTicketTicketIdIn(List.of(ticketId))).thenReturn(List.of());
+        when(ticketMapper.toTicketResponse(ticket)).thenReturn(mappedBase);
+        when(ticketStepMapper.toTicketStepResponseList(List.of())).thenReturn(List.of());
+        when(ticketHistoryRepository.findByTicketTicketIdOrderByCreatedAtDesc(ticketId)).thenReturn(List.of());
+        when(ticketHistoryMapper.toTicketHistoryResponseList(List.of())).thenReturn(List.of());
+        when(ratingRepository.findByTicket_TicketIdAndIsDeletedFalse(ticketId)).thenReturn(List.of());
+        when(ratingMapper.toResponseList(List.of())).thenReturn(List.of());
+        when(ticketVoteRepository.countByTicket_TicketId(ticketId)).thenReturn(0L);
+
+        AdminTicketDetailResponse detail = adminTicketService.getTicketDetail(ticketId);
+
+        assertThat(detail).isNotNull();
+        assertThat(detail.getId()).isEqualTo(ticketId);
+        assertThat(detail.getCreatorFullName()).isEqualTo("Nguyen Van A");
+        assertThat(detail.getLatitude()).isNull();
+        assertThat(detail.getLongitude()).isNull();
+        assertThat(detail.getUpvoteCount()).isZero();
+        assertThat(detail.getSteps()).isEmpty();
+        assertThat(detail.getHistories()).isEmpty();
+        assertThat(detail.getRatings()).isEmpty();
+    }
 }
