@@ -1,6 +1,5 @@
 package com.cityfix.backend.model.dto.response;
 
-import com.cityfix.backend.model.enums.DepartmentLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,7 +16,6 @@ public class ManagerDepartmentResponse {
 
     private UUID departmentId;
     private String departmentName;
-    private DepartmentLevel level;
     private String contactEmail;
     private String phoneNumber;
     private List<StaffSummaryResponse> staffs;

@@ -12,4 +12,5 @@ public interface StepService {
     void deleteStep(UUID id);
     List<StepResponse> getAllSteps();
     List<StepResponse> getStepsBySubCategoryId(UUID subCategoryId);
+    List<StepResponse> getStepsBySubCategoryIds(List<UUID> subCategoryIds);
 }

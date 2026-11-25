@@ -8,13 +8,17 @@ import com.cityfix.backend.model.dto.request.CreateDepartmentRequest;
 import com.cityfix.backend.model.dto.request.UpdateDepartmentRequest;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.DepartmentUserResponse;
+import com.cityfix.backend.model.entity.Category;
 import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.Role;
+import com.cityfix.backend.model.entity.RoutingRule;
+import com.cityfix.backend.model.entity.SubCategory;
 import com.cityfix.backend.model.entity.User;
 import com.cityfix.backend.model.entity.UserDepartment;
-import com.cityfix.backend.model.enums.DepartmentLevel;
 import com.cityfix.backend.model.enums.UserStatus;
 import com.cityfix.backend.repository.DepartmentRepository;
+import com.cityfix.backend.repository.RoutingRuleRepository;
+import com.cityfix.backend.repository.SubCategoryRepository;
 import com.cityfix.backend.repository.UserDepartmentRepository;
 import com.cityfix.backend.repository.UserRepository;
 import com.cityfix.backend.service.impl.DepartmentServiceImpl;
@@ -56,6 +60,12 @@ class DepartmentServiceTest {
     @Mock
     private UserDepartmentRepository userDepartmentRepository;
 
+    @Mock
+    private SubCategoryRepository subCategoryRepository;
+
+    @Mock
+    private RoutingRuleRepository routingRuleRepository;
+
     @InjectMocks
     private DepartmentServiceImpl departmentService;
 
@@ -72,7 +82,6 @@ class DepartmentServiceTest {
         mockDepartment = Department.builder()
                 .departmentId(departmentId)
                 .name("Phòng xử lý sự cố hạ tầng phường Long Trường")
-                .level(DepartmentLevel.WARD)
                 .contactEmail("longtruong@cityfix.vn")
                 .phoneNumber("0901234567")
                 .build();
@@ -80,7 +89,6 @@ class DepartmentServiceTest {
         mockResponse = new DepartmentResponse(
                 departmentId,
                 "Phòng xử lý sự cố hạ tầng phường Long Trường",
-                DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567",
                 0,
@@ -89,14 +97,12 @@ class DepartmentServiceTest {
 
         createRequest = new CreateDepartmentRequest(
                 "Phòng xử lý sự cố hạ tầng phường Long Trường",
-                DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567"
         );
 
         updateRequest = new UpdateDepartmentRequest(
                 "Phòng QLĐT Quận 9",
-                DepartmentLevel.CITY,
                 "quan9@cityfix.vn",
                 "0909999999",
                 true
@@ -115,7 +121,6 @@ class DepartmentServiceTest {
 
         assertThat(result).isNotNull();
         assertThat(result.name()).isEqualTo(createRequest.name());
-        assertThat(result.level()).isEqualTo(DepartmentLevel.WARD);
 
         verify(departmentRepository, times(1)).existsByNameAndIsDeletedFalse(createRequest.name());
         verify(departmentRepository, times(1)).save(any(Department.class));
@@ -462,5 +467,100 @@ class DepartmentServiceTest {
                 .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
 
         verify(userDepartmentRepository, never()).findDepartmentUsersWithRole(any());
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryId_normalizedLocationMatch_returnsActiveStaffOnly")
+    void getDepartmentStaffBySubCategoryId_normalizedLocationMatch_returnsActiveStaffOnly() {
+        UUID subCatId = UUID.randomUUID();
+        UUID catId = UUID.randomUUID();
+        Category category = Category.builder().categoryId(catId).name("Giao thông").isActive(true).build();
+        SubCategory subCat = SubCategory.builder().subCategoryId(subCatId).name("Ổ gà").category(category).isActive(true).build();
+
+        RoutingRule rule = RoutingRule.builder()
+                .ruleId(UUID.randomUUID())
+                .category(category)
+                .department(mockDepartment)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("Phường Đức Nhuận")
+                .build();
+
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+        Role managerRole = new Role(UUID.randomUUID(), "MANAGER");
+
+        User activeStaff = User.builder()
+                .userId(UUID.randomUUID())
+                .email("staff.active@cityfix.vn")
+                .fullName("Cán bộ Đang hoạt động")
+                .role(staffRole)
+                .status(UserStatus.ACTIVE)
+                .build();
+        User blockedStaff = User.builder()
+                .userId(UUID.randomUUID())
+                .email("staff.blocked@cityfix.vn")
+                .fullName("Cán bộ Bị khóa")
+                .role(staffRole)
+                .status(UserStatus.BLOCKED)
+                .build();
+        User managerUser = User.builder()
+                .userId(UUID.randomUUID())
+                .email("manager@cityfix.vn")
+                .fullName("Quản lý")
+                .role(managerRole)
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        UserDepartment ud1 = UserDepartment.builder().user(activeStaff).department(mockDepartment).createdAt(LocalDateTime.now()).build();
+        UserDepartment ud2 = UserDepartment.builder().user(blockedStaff).department(mockDepartment).createdAt(LocalDateTime.now()).build();
+        UserDepartment ud3 = UserDepartment.builder().user(managerUser).department(mockDepartment).createdAt(LocalDateTime.now()).build();
+
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCat));
+        when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(catId, "TP. Hồ Chí Minh", "p. đức nhuận"))
+                .thenReturn(Optional.empty());
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId))
+                .thenReturn(List.of(rule));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(departmentId))
+                .thenReturn(List.of(ud1, ud2, ud3));
+
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryId(
+                subCatId, "TP. Hồ Chí Minh", "p. đức nhuận");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getUserId()).isEqualTo(activeStaff.getUserId());
+        assertThat(result.get(0).getEmail()).isEqualTo("staff.active@cityfix.vn");
+        assertThat(result.get(0).getRoleName()).isEqualTo("STAFF");
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryId_noMatchingRule_returnsEmptyList")
+    void getDepartmentStaffBySubCategoryId_noMatchingRule_returnsEmptyList() {
+        UUID subCatId = UUID.randomUUID();
+        UUID catId = UUID.randomUUID();
+        Category category = Category.builder().categoryId(catId).name("Giao thông").isActive(true).build();
+        SubCategory subCat = SubCategory.builder().subCategoryId(subCatId).name("Ổ gà").category(category).isActive(true).build();
+
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCat));
+        when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId))
+                .thenReturn(List.of());
+
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryId(
+                subCatId, "Tỉnh Cà Mau", "Phường 1");
+
+        assertThat(result).isNotNull().isEmpty();
+        verify(userDepartmentRepository, never()).findDepartmentUsersWithRole(any());
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryId_subCategoryNotFound_throwsSubCategoryNotFound")
+    void getDepartmentStaffBySubCategoryId_subCategoryNotFound_throwsSubCategoryNotFound() {
+        UUID subCatId = UUID.randomUUID();
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.getDepartmentStaffBySubCategoryId(subCatId, "TP.HCM", "Phường 1"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.SUBCATEGORY_NOT_FOUND);
     }
 }

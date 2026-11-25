@@ -52,23 +52,7 @@ public class UserServiceImpl implements UserService {
             if (existingUser.isDeleted()) {
                 throw new AppException(ErrorCode.ACCOUNT_REACTIVATION_REQUIRED);
             }
-            if (existingUser.isEmailVerified()) {
-                throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
-            } else {
-                existingUser.setFullName(request.getFullName());
-                existingUser.setPhoneNumber(request.getPhoneNumber());
-                existingUser.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-                userRepository.save(existingUser);
-
-                // [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
-                // String otp = otpService.generateAndStore(request.getEmail());
-                // emailService.sendOtpEmail(request.getEmail(), otp);
-
-                UserRegisterResponse response = userMapper.toCustomerRegisterResponse(existingUser);
-                // response.setNextStep("VERIFY_EMAIL");
-                response.setNextStep("VERIFY_PHONE");
-                return response;
-            }
+            throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
         if (userRepository.findByPhoneNumber(request.getPhoneNumber()).isPresent()) {
@@ -81,7 +65,6 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new RuntimeException("Default role not found"));
         user.setRole(residentRole);
         user.setStatus(com.cityfix.backend.model.enums.UserStatus.BLOCKED);
-        user.setEmailVerified(false);
 
         userRepository.save(user);
 
@@ -94,29 +77,6 @@ public class UserServiceImpl implements UserService {
         response.setNextStep("VERIFY_PHONE");
         return response;
     }
-
-    /*
-     * [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
-     *
-    @Override
-    @Transactional
-    public void verifyEmail(VerifyOtpRequest request) {
-        otpService.verify(request.getEmail(), request.getOtp());
-
-        User user = userRepository.findByEmailAndIsDeletedFalse(request.getEmail())
-                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
-
-        if (user.isEmailVerified()) {
-            throw new AppException(ErrorCode.ACCOUNT_ALREADY_VERIFIED);
-        }
-
-        // Delete OTP from Redis and activate user
-        otpService.delete(request.getEmail());
-        user.setEmailVerified(true);
-        user.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
-        userRepository.save(user);
-    }
-    */
 
     @Override
     @Transactional
@@ -138,7 +98,6 @@ public class UserServiceImpl implements UserService {
                     .or(() -> userRepository.findByPhoneNumberAndIsDeletedFalse(verifiedPhone))
                     .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
-            user.setEmailVerified(true);
             user.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
             userRepository.save(user);
 
@@ -189,26 +148,6 @@ public class UserServiceImpl implements UserService {
             throw new AppException(ErrorCode.UNAUTHENTICATED);
         }
     }
-
-    /*
-     * [LEGACY EMAIL OTP - COMMENTED OUT FOR FIREBASE PHONE AUTH MIGRATION]
-     *
-    @Override
-    public void resendOtp(ResendOtpRequest request) {
-        User user = userRepository.findByEmailAndIsDeletedFalse(request.getEmail())
-                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
-
-        if (user.isEmailVerified()) {
-            throw new AppException(ErrorCode.ACCOUNT_ALREADY_VERIFIED);
-        }
-        if (otpService.isOnCooldown(request.getEmail())) {
-            throw new AppException(ErrorCode.OTP_COOLDOWN);
-        }
-
-        String otp = otpService.generateAndStore(request.getEmail());
-        emailService.sendOtpEmail(request.getEmail(), otp);
-    }
-    */
 
     @Override
     public LoginResponse login(LoginRequest request) {

@@ -17,7 +17,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/admin/sub-categories")
-@PreAuthorize("hasRole('ADMIN')")
 @RequiredArgsConstructor
 @Tag(name = "ADMIN SubCategory API", description = "CRUD operations for SubCategories")
 public class AdminSubCategoryController {
@@ -25,12 +24,14 @@ public class AdminSubCategoryController {
     private final SubCategoryService subCategoryService;
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Create a new SubCategory")
     public ResponseEntity<BaseResponse<SubCategoryResponse>> createSubCategory(@Valid @RequestBody SubCategoryRequest request) {
         return ResponseEntity.ok(BaseResponse.success("Created successfully", subCategoryService.createSubCategory(request)));
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Update an existing SubCategory")
     public ResponseEntity<BaseResponse<SubCategoryResponse>> updateSubCategory(
             @PathVariable UUID id, @Valid @RequestBody SubCategoryRequest request) {
@@ -38,6 +39,7 @@ public class AdminSubCategoryController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Delete a SubCategory (Soft Delete)")
     public ResponseEntity<BaseResponse<Void>> deleteSubCategory(@PathVariable UUID id) {
         subCategoryService.deleteSubCategory(id);
@@ -59,6 +61,7 @@ public class AdminSubCategoryController {
     }
 
     @GetMapping("/category/{categoryId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Get SubCategories by Category ID")
     public ResponseEntity<BaseResponse<List<SubCategoryResponse>>> getSubCategoriesByCategory(@PathVariable UUID categoryId) {
         return ResponseEntity.ok(BaseResponse.success("Success", subCategoryService.getSubCategoriesByCategoryId(categoryId)));

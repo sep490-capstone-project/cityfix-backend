@@ -37,7 +37,7 @@ public class RoutingRuleController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
     @Operation(summary = "Tìm kiếm / Tìm danh sách quy tắc định tuyến", description = "Hỗ trợ lọc theo categoryId, province, ward, departmentId và phân trang")
     public ResponseEntity<BaseResponse<Page<RoutingRuleResponse>>> searchRoutingRules(
             @RequestParam(value = "categoryId", required = false) UUID categoryId,
@@ -50,7 +50,7 @@ public class RoutingRuleController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
     @Operation(summary = "Chi tiết quy tắc định tuyến", description = "Lấy chi tiết quy tắc định tuyến theo ID")
     public ResponseEntity<BaseResponse<RoutingRuleResponse>> getRoutingRuleById(@PathVariable UUID id) {
         RoutingRuleResponse response = routingRuleService.getRoutingRuleById(id);
@@ -58,7 +58,7 @@ public class RoutingRuleController {
     }
 
     @GetMapping("/department/{departmentId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'MANAGER')")
     @Operation(summary = "Danh sách quy tắc định tuyến theo cơ quan phụ trách", description = "Lấy danh sách quy tắc định tuyến gán cho cơ quan cụ thể")
     public ResponseEntity<BaseResponse<List<RoutingRuleResponse>>> getRoutingRulesByDepartment(
             @PathVariable UUID departmentId) {

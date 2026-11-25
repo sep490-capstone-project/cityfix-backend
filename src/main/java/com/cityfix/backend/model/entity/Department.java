@@ -1,6 +1,5 @@
 package com.cityfix.backend.model.entity;
 
-import com.cityfix.backend.model.enums.DepartmentLevel;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -24,10 +23,6 @@ public class Department extends BaseEntity {
 
     @Column(nullable = false, length = 255)
     private String name;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
-    private DepartmentLevel level;
 
     @Column(name = "contact_email", length = 150)
     private String contactEmail;
