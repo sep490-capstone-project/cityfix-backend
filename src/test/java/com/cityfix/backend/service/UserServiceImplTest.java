@@ -80,7 +80,6 @@ class UserServiceImplTest {
         mockUser.setPhoneNumber("0912345678");
         mockUser.setRole(new com.cityfix.backend.model.entity.Role(java.util.UUID.randomUUID(), "RESIDENT"));
         mockUser.setStatus(UserStatus.ACTIVE);
-        mockUser.setEmailVerified(true);
     }
 
     @Test
@@ -124,7 +123,6 @@ class UserServiceImplTest {
     @Test
     @DisplayName("registerCustomer_duplicateEmail_throwsConflict: Trùng email ném ra EMAIL_ALREADY_EXISTS")
     void registerCustomer_duplicateEmail_throwsConflict() {
-        mockUser.setEmailVerified(true);
         when(userRepository.findByEmail("nguyenvana@gmail.com")).thenReturn(Optional.of(mockUser));
 
         assertThatThrownBy(() -> userService.registerUser(registerRequest))
@@ -468,7 +466,6 @@ class UserServiceImplTest {
     @DisplayName("verifyPhoneByFirebaseToken_validE164Phone_activatesUserAndReturnsTokens")
     void verifyPhoneByFirebaseToken_validE164Phone_activatesUserAndReturnsTokens() throws Exception {
         mockUser.setStatus(UserStatus.BLOCKED);
-        mockUser.setEmailVerified(false);
         mockUser.setPhoneNumber("0912345678");
 
         com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
@@ -490,7 +487,6 @@ class UserServiceImplTest {
             assertThat(result.getAccessToken()).isEqualTo("jwt-access-token");
             assertThat(result.getRefreshToken()).isEqualTo("jwt-refresh-token");
             assertThat(mockUser.getStatus()).isEqualTo(UserStatus.ACTIVE);
-            assertThat(mockUser.isEmailVerified()).isTrue();
             verify(userRepository).save(mockUser);
         }
     }

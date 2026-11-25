@@ -72,7 +72,7 @@ class AdminStepControllerTest {
     @Test
     @DisplayName("getStepsBySubCategory_returns200OK")
     void getStepsBySubCategory_returns200OK() {
-        when(stepService.getStepsBySubCategoryId(subCategoryId)).thenReturn(List.of(mockResponse));
+        when(stepService.getStepsBySubCategoryIds(List.of(subCategoryId))).thenReturn(List.of(mockResponse));
 
         ResponseEntity<BaseResponse<List<StepResponse>>> response = adminStepController.getStepsBySubCategory(subCategoryId);
 
@@ -80,6 +80,22 @@ class AdminStepControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().isSuccess()).isTrue();
         assertThat(response.getBody().getData()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("getStepsBySubCategories_multipleIds_returns200OK")
+    void getStepsBySubCategories_multipleIds_returns200OK() {
+        UUID subCatId2 = UUID.randomUUID();
+        when(stepService.getStepsBySubCategoryIds(List.of(subCategoryId, subCatId2))).thenReturn(List.of(mockResponse));
+
+        ResponseEntity<BaseResponse<List<StepResponse>>> response =
+                adminStepController.getStepsBySubCategories(List.of(subCategoryId, subCatId2));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData()).hasSize(1);
+        verify(stepService, times(1)).getStepsBySubCategoryIds(List.of(subCategoryId, subCatId2));
     }
 
     @Test

@@ -1,6 +1,5 @@
 package com.cityfix.backend.model.dto.request;
 
-import com.cityfix.backend.model.enums.DepartmentLevel;
 import com.cityfix.backend.model.enums.LocationMethod;
 import com.cityfix.backend.model.enums.Priority;
 import jakarta.validation.ConstraintViolation;
@@ -232,11 +231,11 @@ class RequestValidationTest {
     @Test
     @DisplayName("departmentAndRoutingRuleUpdateRequests_enforceRequiredFields")
     void departmentAndRoutingRuleUpdateRequests_enforceRequiredFields() {
-        UpdateDepartmentRequest badDept = new UpdateDepartmentRequest("", null, "bad-email", "00123", true);
-        assertThat(validator.validate(badDept)).hasSizeGreaterThanOrEqualTo(4);
+        UpdateDepartmentRequest badDept = new UpdateDepartmentRequest("", "bad-email", "00123", true);
+        assertThat(validator.validate(badDept)).hasSizeGreaterThanOrEqualTo(3);
 
         UpdateDepartmentRequest goodDept = new UpdateDepartmentRequest(
-                "Phòng Quản lý Đô thị", DepartmentLevel.WARD, "qldt@cityfix.vn", "02838223344", true);
+                "Phòng Quản lý Đô thị", "qldt@cityfix.vn", "02838223344", true);
         assertThat(validator.validate(goodDept)).isEmpty();
 
         UpdateRoutingRuleRequest badRule = new UpdateRoutingRuleRequest(null, null, " ", "");
@@ -269,7 +268,6 @@ class RequestValidationTest {
     void createDepartmentRequest_rejectsBlankNameAndMalformedContactEmail() {
         CreateDepartmentRequest valid = new CreateDepartmentRequest(
                 "Urban Infrastructure Department",
-                DepartmentLevel.WARD,
                 "infra@cityfix.vn",
                 "0901234567"
         );
@@ -277,7 +275,6 @@ class RequestValidationTest {
 
         CreateDepartmentRequest blankName = new CreateDepartmentRequest(
                 "   ",
-                DepartmentLevel.WARD,
                 "infra@cityfix.vn",
                 "0901234567"
         );
@@ -287,7 +284,6 @@ class RequestValidationTest {
 
         CreateDepartmentRequest badEmail = new CreateDepartmentRequest(
                 "Urban Infrastructure Department",
-                DepartmentLevel.WARD,
                 "invalid-email-format",
                 "0901234567"
         );

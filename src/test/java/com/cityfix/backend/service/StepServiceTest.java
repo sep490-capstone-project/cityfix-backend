@@ -217,6 +217,27 @@ class StepServiceTest {
     }
 
     @Test
+    void getStepsBySubCategoryIds_MultipleIds_ReturnsList() {
+        UUID subCatId2 = UUID.randomUUID();
+        when(stepRepository.findBySubCategory_SubCategoryIdInAndIsDeletedFalse(any()))
+                .thenReturn(java.util.List.of(step));
+        when(stepMapper.toResponse(step)).thenReturn(response);
+
+        java.util.List<StepResponse> result = stepService.getStepsBySubCategoryIds(java.util.List.of(subCategoryId, subCatId2));
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        verify(stepRepository).findBySubCategory_SubCategoryIdInAndIsDeletedFalse(any());
+    }
+
+    @Test
+    void getStepsBySubCategoryIds_WhenEmptyOrNull_ReturnsEmptyList() {
+        assertTrue(stepService.getStepsBySubCategoryIds(null).isEmpty());
+        assertTrue(stepService.getStepsBySubCategoryIds(java.util.Collections.emptyList()).isEmpty());
+        verify(stepRepository, never()).findBySubCategory_SubCategoryIdInAndIsDeletedFalse(any());
+    }
+
+    @Test
     void updateStep_SubCategoryNotFound_ThrowsSubcategoryNotFound() {
         when(stepRepository.findByStepIdAndIsDeletedFalse(stepId)).thenReturn(Optional.of(step));
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(request.getSubCategoryId())).thenReturn(Optional.empty());

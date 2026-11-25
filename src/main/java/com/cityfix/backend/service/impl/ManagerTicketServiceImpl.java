@@ -452,7 +452,6 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             result.add(ManagerDepartmentResponse.builder()
                     .departmentId(dept.getDepartmentId())
                     .departmentName(dept.getName())
-                    .level(dept.getLevel())
                     .contactEmail(dept.getContactEmail())
                     .phoneNumber(dept.getPhoneNumber())
                     .staffs(staffResponses)

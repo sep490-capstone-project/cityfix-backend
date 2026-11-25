@@ -17,7 +17,6 @@ public interface UserMapper {
     @Mapping(target = "role", ignore = true)
     @Mapping(target = "passwordHash", ignore = true)
     @Mapping(target = "status", ignore = true)
-    @Mapping(target = "emailVerified", ignore = true)
     User toUser(UserRegisterRequest request);
 
     @Mapping(source = "status", target = "status")

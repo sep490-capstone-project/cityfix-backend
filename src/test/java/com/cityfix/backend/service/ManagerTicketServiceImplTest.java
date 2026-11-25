@@ -555,7 +555,6 @@ class ManagerTicketServiceImplTest {
         Department dept = Department.builder()
                 .departmentId(UUID.randomUUID())
                 .name("Phòng Quản lý Đô thị")
-                .level(com.cityfix.backend.model.enums.DepartmentLevel.WARD)
                 .contactEmail("dept@cityfix.vn")
                 .phoneNumber("0281234567")
                 .build();

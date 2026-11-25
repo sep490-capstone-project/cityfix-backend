@@ -124,7 +124,6 @@ public class AdminUserServiceImpl implements AdminUserService {
 
         if (!user.getEmail().equals(request.getEmail())) {
             user.setEmail(request.getEmail());
-            user.setEmailVerified(false);
         }
 
         user.setFullName(request.getFullName());
