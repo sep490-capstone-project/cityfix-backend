@@ -1,10 +1,8 @@
 package com.cityfix.backend.model.dto.request;
 
-import com.cityfix.backend.model.enums.DepartmentLevel;
 import com.cityfix.backend.util.ValidationPatterns;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -14,9 +12,6 @@ public record CreateDepartmentRequest(
     @NotBlank(message = "Tên phòng ban không được để trống")
     @Size(max = 255, message = "Tên phòng ban không được vượt quá 255 ký tự")
     String name,
-
-    @NotNull(message = "Cấp quản lý không được để trống")
-    DepartmentLevel level,
 
     @NotBlank(message = "Email liên hệ không được để trống")
     @Email(message = "Email liên hệ không hợp lệ")
@@ -29,7 +24,7 @@ public record CreateDepartmentRequest(
 
     UUID managerId
 ) {
-    public CreateDepartmentRequest(String name, DepartmentLevel level, String contactEmail, String phoneNumber) {
-        this(name, level, contactEmail, phoneNumber, null);
+    public CreateDepartmentRequest(String name, String contactEmail, String phoneNumber) {
+        this(name, contactEmail, phoneNumber, null);
     }
 }

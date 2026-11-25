@@ -6,7 +6,6 @@ import com.cityfix.backend.model.dto.request.UpdateDepartmentRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DepartmentResponse;
 import com.cityfix.backend.model.dto.response.DepartmentUserResponse;
-import com.cityfix.backend.model.enums.DepartmentLevel;
 import com.cityfix.backend.service.DepartmentService;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -64,14 +63,12 @@ class DepartmentControllerTest {
 
         validCreateRequest = new CreateDepartmentRequest(
                 "Phòng xử lý sự cố hạ tầng phường Long Trường",
-                DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567"
         );
 
         validUpdateRequest = new UpdateDepartmentRequest(
                 "Phòng QLĐT Quận 9",
-                DepartmentLevel.CITY,
                 "quan9@cityfix.vn",
                 "0909999999",
                 true
@@ -80,7 +77,6 @@ class DepartmentControllerTest {
         mockResponse = new DepartmentResponse(
                 departmentId,
                 "Phòng xử lý sự cố hạ tầng phường Long Trường",
-                DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567",
                 0,
@@ -108,7 +104,6 @@ class DepartmentControllerTest {
     void validation_missingName_producesConstraintViolation() {
         CreateDepartmentRequest invalidRequest = new CreateDepartmentRequest(
                 "",
-                DepartmentLevel.WARD,
                 "longtruong@cityfix.vn",
                 "0901234567"
         );
@@ -252,5 +247,29 @@ class DepartmentControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getData()).hasSize(1);
         verify(departmentService).getDepartmentUsers(departmentId);
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubID_validParams_returns200OK")
+    void getDepartmentStaffBySubID_validParams_returns200OK() {
+        UUID subCatId = UUID.randomUUID();
+        UUID staffId = UUID.randomUUID();
+        DepartmentUserResponse userResp = DepartmentUserResponse.builder()
+                .userId(staffId)
+                .email("staff@cityfix.vn")
+                .roleName("STAFF")
+                .build();
+
+        when(departmentService.getDepartmentStaffBySubCategoryId(subCatId, "TP. Hồ Chí Minh", "Phường Đức Nhuận"))
+                .thenReturn(List.of(userResp));
+
+        ResponseEntity<BaseResponse<List<DepartmentUserResponse>>> response =
+                departmentController.getDepartmentStaffBySubID(subCatId, "TP. Hồ Chí Minh", "Phường Đức Nhuận");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData()).hasSize(1);
+        assertThat(response.getBody().getData().get(0).getUserId()).isEqualTo(staffId);
+        verify(departmentService).getDepartmentStaffBySubCategoryId(subCatId, "TP. Hồ Chí Minh", "Phường Đức Nhuận");
     }
 }

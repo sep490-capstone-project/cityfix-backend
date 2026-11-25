@@ -47,16 +47,25 @@ public class AdminStepController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Get all Steps")
     public ResponseEntity<BaseResponse<List<StepResponse>>> getAllSteps() {
         return ResponseEntity.ok(BaseResponse.success("Success", stepService.getAllSteps()));
+    }
+
+    @GetMapping("/sub-category")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @Operation(summary = "Get Steps by list of SubCategory IDs")
+    public ResponseEntity<BaseResponse<List<StepResponse>>> getStepsBySubCategories(
+            @RequestParam("subCategoryIds") List<UUID> subCategoryIds) {
+        return ResponseEntity.ok(BaseResponse.success("Success", stepService.getStepsBySubCategoryIds(subCategoryIds)));
     }
 
     @GetMapping("/sub-category/{subCategoryId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(summary = "Get Steps by SubCategory ID")
     public ResponseEntity<BaseResponse<List<StepResponse>>> getStepsBySubCategory(@PathVariable UUID subCategoryId) {
-        return ResponseEntity.ok(BaseResponse.success("Success", stepService.getStepsBySubCategoryId(subCategoryId)));
+        return ResponseEntity.ok(BaseResponse.success("Success", stepService.getStepsBySubCategoryIds(
+                subCategoryId != null ? List.of(subCategoryId) : List.of())));
     }
 }

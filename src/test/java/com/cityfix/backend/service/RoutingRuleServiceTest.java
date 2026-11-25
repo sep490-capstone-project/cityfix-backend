@@ -9,7 +9,6 @@ import com.cityfix.backend.model.dto.response.RoutingRuleResponse;
 import com.cityfix.backend.model.entity.Category;
 import com.cityfix.backend.model.entity.Department;
 import com.cityfix.backend.model.entity.RoutingRule;
-import com.cityfix.backend.model.enums.DepartmentLevel;
 import com.cityfix.backend.repository.CategoryRepository;
 import com.cityfix.backend.repository.DepartmentRepository;
 import com.cityfix.backend.repository.RoutingRuleRepository;
@@ -75,7 +74,6 @@ class RoutingRuleServiceTest {
         mockDepartment = Department.builder()
                 .departmentId(departmentId)
                 .name("Phòng xử lý sự cố hạ tầng phường Long Trường")
-                .level(DepartmentLevel.WARD)
                 .build();
 
         mockCategory = Category.builder()

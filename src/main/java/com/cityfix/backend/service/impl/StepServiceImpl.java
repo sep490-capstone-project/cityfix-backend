@@ -15,7 +15,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -116,7 +120,26 @@ public class StepServiceImpl implements StepService {
 
     @Override
     public List<StepResponse> getStepsBySubCategoryId(UUID subCategoryId) {
+        if (subCategoryId == null) {
+            return Collections.emptyList();
+        }
         return stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(subCategoryId).stream()
+                .map(stepMapper::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<StepResponse> getStepsBySubCategoryIds(List<UUID> subCategoryIds) {
+        if (subCategoryIds == null || subCategoryIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Set<UUID> distinctIds = subCategoryIds.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (distinctIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return stepRepository.findBySubCategory_SubCategoryIdInAndIsDeletedFalse(distinctIds).stream()
                 .map(stepMapper::toResponse)
                 .collect(Collectors.toList());
     }

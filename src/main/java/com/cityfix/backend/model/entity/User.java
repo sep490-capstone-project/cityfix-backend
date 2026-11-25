@@ -44,10 +44,6 @@ public class User extends BaseEntity implements Principal {
     @Column(nullable = false, length = 20)
     private UserStatus status = UserStatus.ACTIVE;
 
-    @Builder.Default
-    @Column(name = "email_verified", nullable = false)
-    private boolean emailVerified = false;
-
     @PrePersist
     @PreUpdate
     protected void syncSatelliteEntities() {
@@ -257,8 +253,7 @@ public class User extends BaseEntity implements Principal {
                     this.userDepartments$set ? this.userDepartments$value : new ArrayList<>(),
                     this.email,
                     this.passwordHash,
-                    this.status$set ? this.status$value : UserStatus.ACTIVE,
-                    this.emailVerified$set && this.emailVerified$value
+                    this.status$set ? this.status$value : UserStatus.ACTIVE
             );
             if (user.userProfile != null) {
                 user.userProfile.setUser(user);
