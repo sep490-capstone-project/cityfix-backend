@@ -1215,24 +1215,60 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
     @Override
     @Transactional
-    public TicketStepResponse updateResolvedTicketStepStatus(UUID stepId, AssignmentStatus targetStatus) {
+    public TicketStepResponse updateResolvedTicketStepStatus(UUID stepId, AssignmentStatus targetStatus, String note) {
         User currentUser = getCurrentUser();
         if (!isManager(currentUser)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        TicketStep step = ticketStepRepository.findById(stepId)
-                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
-
-        if (step.getStatus() != AssignmentStatus.RESOLVED
-                || (targetStatus != AssignmentStatus.COMPLETED && targetStatus != AssignmentStatus.IN_PROGRESS)) {
+        if (targetStatus == null
+                || (targetStatus != AssignmentStatus.IN_PROGRESS
+                && targetStatus != AssignmentStatus.RESOLVED
+                && targetStatus != AssignmentStatus.COMPLETED)) {
             throw new AppException(ErrorCode.INVALID_STATUS_TRANSITION);
         }
 
+        TicketStep step = ticketStepRepository.findById(stepId)
+                .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        AssignmentStatus currentStatus = step.getStatus();
+        if (currentStatus == AssignmentStatus.CANCELLED || currentStatus == targetStatus) {
+            throw new AppException(ErrorCode.INVALID_STATUS_TRANSITION);
+        }
+
+        String normalizedNote = (note != null && !note.isBlank()) ? note.trim() : null;
+        if (normalizedNote != null && normalizedNote.length() > 1000) {
+            throw new AppException(ErrorCode.VALIDATION_ERROR, "Ghi chú không được vượt quá 1000 ký tự");
+        }
+
+        boolean isNoteRequired = (currentStatus == AssignmentStatus.RESOLVED && targetStatus == AssignmentStatus.IN_PROGRESS)
+                || (currentStatus == AssignmentStatus.COMPLETED
+                && (targetStatus == AssignmentStatus.RESOLVED || targetStatus == AssignmentStatus.IN_PROGRESS));
+
+        if (isNoteRequired && normalizedNote == null) {
+            throw new AppException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "Vui lòng nhập ghi chú (note) khi chuyển trạng thái từ " + currentStatus + " sang " + targetStatus
+            );
+        }
+
         LocalDateTime now = LocalDateTime.now();
+        if (normalizedNote != null) {
+            step.setNotes(normalizedNote);
+        }
+
+        String stepName = (step.getStep() != null && step.getStep().getStepName() != null)
+                ? step.getStep().getStepName()
+                : String.valueOf(step.getId());
+
+        Ticket ticket = step.getTicket();
+        TicketStatus prevTicketStatus = (ticket != null) ? ticket.getStatus() : null;
 
         if (targetStatus == AssignmentStatus.COMPLETED) {
             step.setStatus(AssignmentStatus.COMPLETED);
+            if (step.getStartedAt() == null) {
+                step.setStartedAt(now);
+            }
             if (step.getCompletedAt() == null) {
                 step.setCompletedAt(now);
             }
@@ -1243,30 +1279,104 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
                 ticketWorkflowEngine.handleStepCompletion(stepId);
                 step = ticketStepRepository.findById(stepId).orElse(step);
             }
-        } else if (targetStatus == AssignmentStatus.IN_PROGRESS) {
-            step.setStatus(AssignmentStatus.IN_PROGRESS);
-            step.setCompletedAt(null);
-            step.setUpdatedAt(now);
-            step = ticketStepRepository.save(step);
 
-            Ticket ticket = step.getTicket();
-            if (ticket != null && ticket.getStatus() != TicketStatus.IN_PROGRESS) {
-                TicketStatus prevStatus = ticket.getStatus();
-                ticket.setStatus(TicketStatus.IN_PROGRESS);
-                ticketRepository.save(ticket);
-
-                String stepName = (step.getStep() != null && step.getStep().getStepName() != null)
-                        ? step.getStep().getStepName()
-                        : String.valueOf(step.getId());
+            Ticket updatedTicket = step.getTicket() != null ? step.getTicket() : ticket;
+            if (normalizedNote != null && updatedTicket != null && ticketHistoryMapper != null) {
                 TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                        ticket, currentUser, ActionType.WORK_STARTED, prevStatus, TicketStatus.IN_PROGRESS,
-                        "Quản lý yêu cầu thực hiện lại bước xử lý '" + stepName + "'. Sự cố chuyển về trạng thái Đang xử lý."
+                        updatedTicket, currentUser, ActionType.CLOSED, prevTicketStatus, updatedTicket.getStatus(),
+                        "Quản lý xác nhận hoàn thành bước xử lý '" + stepName + "' (" + currentStatus + " -> COMPLETED). Ghi chú: " + normalizedNote
                 );
                 if (history != null) {
                     ticketHistoryRepository.save(history);
                 }
-                if (notificationService != null) {
-                    notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.IN_PROGRESS);
+            }
+        } else if (targetStatus == AssignmentStatus.RESOLVED) {
+            step.setStatus(AssignmentStatus.RESOLVED);
+            if (step.getStartedAt() == null) {
+                step.setStartedAt(now);
+            }
+            if (step.getCompletedAt() == null) {
+                step.setCompletedAt(now);
+            }
+            step.setUpdatedAt(now);
+            step = ticketStepRepository.save(step);
+
+            if (currentStatus == AssignmentStatus.COMPLETED) {
+                if (ticket != null) {
+                    if (prevTicketStatus == TicketStatus.COMPLETED) {
+                        ticket.setStatus(TicketStatus.RESOLVED);
+                        ticketRepository.save(ticket);
+                        if (notificationService != null) {
+                            notificationService.notifySosTicketStatusChanged(ticket, prevTicketStatus, TicketStatus.RESOLVED);
+                        }
+                    }
+
+                    if (ticketHistoryMapper != null) {
+                        TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                                ticket, currentUser, ActionType.WORK_STARTED, prevTicketStatus, ticket.getStatus(),
+                                "Quản lý chuyển bước xử lý '" + stepName + "' từ COMPLETED về RESOLVED. Ghi chú: " + normalizedNote
+                        );
+                        if (history != null) {
+                            ticketHistoryRepository.save(history);
+                        }
+                    }
+                }
+            } else {
+                if (ticketWorkflowEngine != null) {
+                    ticketWorkflowEngine.handleStepCompletion(stepId);
+                    step = ticketStepRepository.findById(stepId).orElse(step);
+                }
+
+                Ticket updatedTicket = step.getTicket() != null ? step.getTicket() : ticket;
+                if (normalizedNote != null && updatedTicket != null && ticketHistoryMapper != null) {
+                    TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                            updatedTicket, currentUser, ActionType.CLOSED, prevTicketStatus, updatedTicket.getStatus(),
+                            "Quản lý chuyển bước xử lý '" + stepName + "' sang RESOLVED (" + currentStatus + " -> RESOLVED). Ghi chú: " + normalizedNote
+                    );
+                    if (history != null) {
+                        ticketHistoryRepository.save(history);
+                    }
+                }
+            }
+        } else if (targetStatus == AssignmentStatus.IN_PROGRESS) {
+            step.setStatus(AssignmentStatus.IN_PROGRESS);
+            if (step.getStartedAt() == null) {
+                step.setStartedAt(now);
+            }
+            step.setCompletedAt(null);
+            step.setUpdatedAt(now);
+            step = ticketStepRepository.save(step);
+
+            if (ticket != null) {
+                if (prevTicketStatus != TicketStatus.IN_PROGRESS) {
+                    ticket.setStatus(TicketStatus.IN_PROGRESS);
+                    ticketRepository.save(ticket);
+                    if (notificationService != null) {
+                        notificationService.notifySosTicketStatusChanged(ticket, prevTicketStatus, TicketStatus.IN_PROGRESS);
+                    }
+                }
+
+                if (currentStatus == AssignmentStatus.ASSIGNED && notificationService != null) {
+                    User staffToNotify = step.getAssignee() != null ? step.getAssignee() : currentUser;
+                    notificationService.notifyStepStarted(step, staffToNotify);
+                }
+
+                if (ticketHistoryMapper != null) {
+                    String historyNote;
+                    if (currentStatus == AssignmentStatus.ASSIGNED) {
+                        historyNote = (normalizedNote != null)
+                                ? "Quản lý chuyển bước xử lý '" + stepName + "' sang Đang xử lý. Ghi chú: " + normalizedNote
+                                : "Quản lý chuyển bước xử lý '" + stepName + "' sang Đang xử lý.";
+                    } else {
+                        historyNote = "Quản lý yêu cầu thực hiện lại bước xử lý '" + stepName + "' (" + currentStatus + " -> IN_PROGRESS). Ghi chú: " + normalizedNote;
+                    }
+                    TicketHistory history = ticketHistoryMapper.toTicketHistory(
+                            ticket, currentUser, ActionType.WORK_STARTED, prevTicketStatus, TicketStatus.IN_PROGRESS,
+                            historyNote
+                    );
+                    if (history != null) {
+                        ticketHistoryRepository.save(history);
+                    }
                 }
             }
         }

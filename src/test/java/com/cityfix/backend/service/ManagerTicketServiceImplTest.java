@@ -870,6 +870,48 @@ class ManagerTicketServiceImplTest {
     }
 
     @Test
+    @DisplayName("updateResolvedTicketStepStatus_toCompletedWithNote_savesNoteAndHistory")
+    void updateResolvedTicketStepStatus_toCompletedWithNote_savesNoteAndHistory() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.RESOLVED);
+
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TicketHistory());
+        when(ticketStepMapper.toTicketStepResponse(step)).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
+                        .id(stepId)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED)
+                        .notes("Đã nghiệm thu đạt yêu cầu")
+                        .build()
+        );
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse response =
+                managerTicketService.updateResolvedTicketStepStatus(
+                        stepId,
+                        com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED,
+                        "  Đã nghiệm thu đạt yêu cầu  "
+                );
+
+        assertThat(response.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED);
+        assertThat(step.getNotes()).isEqualTo("Đã nghiệm thu đạt yêu cầu");
+        verify(ticketWorkflowEngine).handleStepCompletion(stepId);
+        verify(ticketHistoryMapper).toTicketHistory(
+                eq(ticket), eq(managerUser), eq(com.cityfix.backend.model.enums.ActionType.CLOSED),
+                eq(TicketStatus.RESOLVED), any(), contains("Đã nghiệm thu đạt yêu cầu")
+        );
+        verify(ticketHistoryRepository).save(any(TicketHistory.class));
+    }
+
+    @Test
     @DisplayName("updateResolvedTicketStepStatus_toInProgress_revertsStepAndTicketToInProgress")
     void updateResolvedTicketStepStatus_toInProgress_revertsStepAndTicketToInProgress() {
         mockCurrentUser(managerUser);
@@ -892,39 +934,322 @@ class ManagerTicketServiceImplTest {
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
                         .id(stepId)
                         .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                        .notes("Bằng chứng chưa rõ nét, yêu cầu làm lại")
                         .build()
         );
 
         com.cityfix.backend.model.dto.response.TicketStepResponse response =
                 managerTicketService.updateResolvedTicketStepStatus(
-                        stepId, com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
+                        stepId,
+                        com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS,
+                        "Bằng chứng chưa rõ nét, yêu cầu làm lại"
+                );
 
         assertThat(response.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
         assertThat(step.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
         assertThat(step.getCompletedAt()).isNull();
+        assertThat(step.getNotes()).isEqualTo("Bằng chứng chưa rõ nét, yêu cầu làm lại");
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        verify(ticketRepository).save(ticket);
+        verify(ticketHistoryMapper).toTicketHistory(
+                eq(ticket), eq(managerUser), eq(com.cityfix.backend.model.enums.ActionType.WORK_STARTED),
+                eq(TicketStatus.RESOLVED), eq(TicketStatus.IN_PROGRESS), contains("Bằng chứng chưa rõ nét, yêu cầu làm lại")
+        );
+        verify(ticketHistoryRepository).save(any(TicketHistory.class));
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_resolvedToInProgressWithoutNote_throwsValidationError")
+    void updateResolvedTicketStepStatus_resolvedToInProgressWithoutNote_throwsValidationError() {
+        mockCurrentUser(managerUser);
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS, "   "))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.VALIDATION_ERROR);
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_completedToResolvedWithNote_revertsTicketWithoutWorkflowEngine")
+    void updateResolvedTicketStepStatus_completedToResolvedWithNote_revertsTicketWithoutWorkflowEngine() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.COMPLETED);
+
+        UUID stepId = UUID.randomUUID();
+        LocalDateTime completedTime = LocalDateTime.now().minusHours(1);
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED)
+                .completedAt(completedTime)
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TicketHistory());
+        when(ticketStepMapper.toTicketStepResponse(step)).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
+                        .id(stepId)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                        .notes("Mở lại để kiểm tra lại hồ sơ")
+                        .build()
+        );
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse response =
+                managerTicketService.updateResolvedTicketStepStatus(
+                        stepId,
+                        com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED,
+                        "Mở lại để kiểm tra lại hồ sơ"
+                );
+
+        assertThat(response.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED);
+        assertThat(step.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED);
+        assertThat(step.getNotes()).isEqualTo("Mở lại để kiểm tra lại hồ sơ");
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.RESOLVED);
+        verify(ticketWorkflowEngine, never()).handleStepCompletion(any());
+        verify(ticketRepository).save(ticket);
+        verify(notificationService).notifySosTicketStatusChanged(ticket, TicketStatus.COMPLETED, TicketStatus.RESOLVED);
+        verify(ticketHistoryMapper).toTicketHistory(
+                eq(ticket), eq(managerUser), eq(com.cityfix.backend.model.enums.ActionType.WORK_STARTED),
+                eq(TicketStatus.COMPLETED), eq(TicketStatus.RESOLVED), contains("Mở lại để kiểm tra lại hồ sơ")
+        );
+        verify(ticketHistoryRepository).save(any(TicketHistory.class));
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_completedToResolvedWithoutNote_throwsValidationError")
+    void updateResolvedTicketStepStatus_completedToResolvedWithoutNote_throwsValidationError() {
+        mockCurrentUser(managerUser);
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED)
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED, null))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.VALIDATION_ERROR);
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_completedToInProgressWithNote_revertsStepAndTicket")
+    void updateResolvedTicketStepStatus_completedToInProgressWithNote_revertsStepAndTicket() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.COMPLETED);
+
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED)
+                .completedAt(LocalDateTime.now())
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TicketHistory());
+        when(ticketStepMapper.toTicketStepResponse(step)).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
+                        .id(stepId)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                        .notes("Sự cố tái phát, cần xử lý lại")
+                        .build()
+        );
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse response =
+                managerTicketService.updateResolvedTicketStepStatus(
+                        stepId,
+                        com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS,
+                        "Sự cố tái phát, cần xử lý lại"
+                );
+
+        assertThat(response.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
+        assertThat(step.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
+        assertThat(step.getCompletedAt()).isNull();
+        assertThat(step.getNotes()).isEqualTo("Sự cố tái phát, cần xử lý lại");
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         verify(ticketRepository).save(ticket);
         verify(ticketHistoryRepository).save(any(TicketHistory.class));
     }
 
     @Test
-    @DisplayName("updateResolvedTicketStepStatus_whenStepNotResolved_throwsInvalidStatusTransition")
-    void updateResolvedTicketStepStatus_whenStepNotResolved_throwsInvalidStatusTransition() {
+    @DisplayName("updateResolvedTicketStepStatus_completedToInProgressWithoutNote_throwsValidationError")
+    void updateResolvedTicketStepStatus_completedToInProgressWithoutNote_throwsValidationError() {
         mockCurrentUser(managerUser);
         UUID stepId = UUID.randomUUID();
         TicketStep step = TicketStep.builder()
                 .id(stepId)
                 .ticket(ticket)
-                .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED)
                 .build();
 
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
 
         assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
-                stepId, com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED))
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS, null))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.VALIDATION_ERROR);
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_assignedToInProgressWithoutNote_succeedsAndNotifies")
+    void updateResolvedTicketStepStatus_assignedToInProgressWithoutNote_succeedsAndNotifies() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.ASSIGNED);
+
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED)
+                .notes("Ghi chú ban đầu")
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketHistoryMapper.toTicketHistory(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new TicketHistory());
+        when(ticketStepMapper.toTicketStepResponse(step)).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
+                        .id(stepId)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                        .notes("Ghi chú ban đầu")
+                        .build()
+        );
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse response =
+                managerTicketService.updateResolvedTicketStepStatus(
+                        stepId, com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS, null);
+
+        assertThat(response.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
+        assertThat(step.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
+        assertThat(step.getStartedAt()).isNotNull();
+        assertThat(step.getNotes()).isEqualTo("Ghi chú ban đầu");
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        verify(notificationService).notifyStepStarted(eq(step), any());
+        verify(ticketHistoryRepository).save(any(TicketHistory.class));
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_inProgressToResolvedWithoutNote_triggersWorkflowEngine")
+    void updateResolvedTicketStepStatus_inProgressToResolvedWithoutNote_triggersWorkflowEngine() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(ticketStepMapper.toTicketStepResponse(step)).thenReturn(
+                com.cityfix.backend.model.dto.response.TicketStepResponse.builder()
+                        .id(stepId)
+                        .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                        .build()
+        );
+
+        com.cityfix.backend.model.dto.response.TicketStepResponse response =
+                managerTicketService.updateResolvedTicketStepStatus(
+                        stepId, com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED, null);
+
+        assertThat(response.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED);
+        assertThat(step.getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED);
+        assertThat(step.getCompletedAt()).isNotNull();
+        verify(ticketWorkflowEngine).handleStepCompletion(stepId);
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_invalidTargetsOrCancelledOrSameStatus_throwsInvalidStatusTransition")
+    void updateResolvedTicketStepStatus_invalidTargetsOrCancelledOrSameStatus_throwsInvalidStatusTransition() {
+        mockCurrentUser(managerUser);
+        UUID stepId = UUID.randomUUID();
+
+        // Target CANCELLED is rejected
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.CANCELLED, null))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        // Target ASSIGNED is rejected
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED, null))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        // Step currently CANCELLED is rejected
+        TicketStep cancelledStep = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.CANCELLED)
+                .build();
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(cancelledStep));
+
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS, "note"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        // Same status transition is rejected
+        TicketStep resolvedStep = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                .build();
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(resolvedStep));
+
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED, "note"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_noteExceeds1000Chars_throwsValidationError")
+    void updateResolvedTicketStepStatus_noteExceeds1000Chars_throwsValidationError() {
+        mockCurrentUser(managerUser);
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                .build();
+
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        String longNote = "a".repeat(1001);
+
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS, longNote))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.VALIDATION_ERROR);
     }
 
     @Test

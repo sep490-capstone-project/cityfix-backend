@@ -46,6 +46,14 @@ public interface ManagerTicketService {
 
     TicketStepResponse updateResolvedTicketStepStatus(
             UUID stepId,
-            com.cityfix.backend.model.enums.AssignmentStatus targetStatus
+            com.cityfix.backend.model.enums.AssignmentStatus targetStatus,
+            String note
     );
+
+    default TicketStepResponse updateResolvedTicketStepStatus(
+            UUID stepId,
+            com.cityfix.backend.model.enums.AssignmentStatus targetStatus
+    ) {
+        return updateResolvedTicketStepStatus(stepId, targetStatus, null);
+    }
 }

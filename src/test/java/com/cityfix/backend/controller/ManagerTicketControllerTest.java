@@ -293,4 +293,71 @@ class ManagerTicketControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getData().getDependsOnStepIds()).containsExactly(prereqId);
     }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_validStatusAndNote_delegatesToService")
+    void updateResolvedTicketStepStatus_validStatusAndNote_delegatesToService() {
+        UUID stepId = UUID.randomUUID();
+        String note = "Cần kiểm tra lại hiện trường";
+        TicketStepResponse mockResponse = TicketStepResponse.builder()
+                .id(stepId)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS)
+                .notes(note)
+                .build();
+
+        when(managerTicketService.updateResolvedTicketStepStatus(
+                eq(stepId),
+                eq(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS),
+                eq(note)
+        )).thenReturn(mockResponse);
+
+        ResponseEntity<BaseResponse<TicketStepResponse>> response = managerTicketController.updateResolvedTicketStepStatus(
+                stepId,
+                com.cityfix.backend.model.enums.ManagerStepStatus.IN_PROGRESS,
+                note
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getData().getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.IN_PROGRESS);
+        assertThat(response.getBody().getData().getNotes()).isEqualTo(note);
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_nullableNote_delegatesWithNullNote")
+    void updateResolvedTicketStepStatus_nullableNote_delegatesWithNullNote() {
+        UUID stepId = UUID.randomUUID();
+        TicketStepResponse mockResponse = TicketStepResponse.builder()
+                .id(stepId)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED)
+                .build();
+
+        when(managerTicketService.updateResolvedTicketStepStatus(
+                eq(stepId),
+                eq(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED),
+                eq(null)
+        )).thenReturn(mockResponse);
+
+        ResponseEntity<BaseResponse<TicketStepResponse>> response = managerTicketController.updateResolvedTicketStepStatus(
+                stepId,
+                com.cityfix.backend.model.enums.ManagerStepStatus.COMPLETED,
+                null
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData().getStatus()).isEqualTo(com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("managerStepStatusEnum_excludesAssignedAndCancelled")
+    void managerStepStatusEnum_excludesAssignedAndCancelled() {
+        assertThat(com.cityfix.backend.model.enums.ManagerStepStatus.values())
+                .containsExactly(
+                        com.cityfix.backend.model.enums.ManagerStepStatus.IN_PROGRESS,
+                        com.cityfix.backend.model.enums.ManagerStepStatus.RESOLVED,
+                        com.cityfix.backend.model.enums.ManagerStepStatus.COMPLETED
+                );
+    }
 }
