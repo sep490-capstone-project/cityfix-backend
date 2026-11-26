@@ -106,14 +106,14 @@ public class DepartmentController {
     @GetMapping("/staffs/by-sub-category")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     @Operation(
-            summary = "Lấy danh sách nhân viên (STAFF) của phòng ban theo SubCategory và địa bàn",
-            description = "Từ subCategoryId suy ra categoryId, đối chiếu bảng routing_rule với (categoryId, province, ward) để tìm departmentId, sau đó lấy danh sách nhân viên có role STAFF đang hoạt động thuộc phòng ban đó."
+            summary = "Lấy danh sách nhân viên (STAFF) của phòng ban theo danh sách SubCategory và địa bàn (tùy chọn)",
+            description = "Từ danh sách subCategoryIds suy ra các categoryId, đối chiếu bảng routing_rule với bộ lọc địa bàn tùy chọn (province, ward đều không bắt buộc) để tìm các departmentId tương ứng, sau đó lấy danh sách nhân viên có role STAFF đang hoạt động thuộc các phòng ban đó (khử trùng lặp theo userId)."
     )
     public ResponseEntity<BaseResponse<List<DepartmentUserResponse>>> getDepartmentStaffBySubID(
-            @RequestParam("subCategoryId") UUID subCategoryId,
-            @RequestParam("province") String province,
+            @RequestParam("subCategoryIds") List<UUID> subCategoryIds,
+            @RequestParam(value = "province", required = false) String province,
             @RequestParam(value = "ward", required = false) String ward) {
-        List<DepartmentUserResponse> response = departmentService.getDepartmentStaffBySubCategoryId(subCategoryId, province, ward);
+        List<DepartmentUserResponse> response = departmentService.getDepartmentStaffBySubCategoryIds(subCategoryIds, province, ward);
         return ResponseEntity.ok(BaseResponse.success("Lấy danh sách nhân viên của cơ quan phụ trách theo danh mục phụ thành công", response));
     }
 }
