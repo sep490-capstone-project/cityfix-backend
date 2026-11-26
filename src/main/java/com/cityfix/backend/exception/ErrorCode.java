@@ -28,6 +28,11 @@ public enum ErrorCode {
             "Bạn đã bình chọn cho báo cáo này rồi"
     ),
 
+    TICKET_CREATOR_CANNOT_UPVOTE(
+            HttpStatus.BAD_REQUEST,
+            "Bạn không thể bình chọn cho báo cáo do chính mình tạo"
+    ),
+
     ACCOUNT_REACTIVATION_REQUIRED(
             HttpStatus.CONFLICT,
             "Tài khoản đã tồn tại nhưng đã bị xóa. Vui lòng gửi yêu cầu kích hoạt lại cho quản trị viên."
