@@ -24,6 +24,8 @@ public interface TicketVoteRepository extends JpaRepository<TicketVote, UUID> {
             JOIN FETCH tv.user u
             LEFT JOIN FETCH u.userProfile
             WHERE tv.ticket.ticketId = :ticketId
+              AND u.isDeleted = false
+              AND u.status = com.cityfix.backend.model.enums.UserStatus.ACTIVE
             ORDER BY tv.createdAt DESC
             """)
     List<TicketVote> findByTicketIdWithUserOrderByCreatedAtDesc(@Param("ticketId") UUID ticketId);
