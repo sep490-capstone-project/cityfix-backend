@@ -11,13 +11,14 @@ import com.cityfix.backend.service.ManagerTicketService;
 import com.cityfix.backend.service.RatingFrustrationAnalysisService;
 import com.cityfix.backend.model.dto.response.RatingFrustrationAnalysisResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import com.cityfix.backend.model.enums.AssignmentStatus;
+import com.cityfix.backend.model.enums.ManagerStepStatus;
 import com.cityfix.backend.model.enums.Priority;
 
 import com.cityfix.backend.model.enums.TicketStatus;
@@ -120,13 +121,18 @@ public class ManagerTicketController {
     @PutMapping("/steps/{stepId}/status")
     @PreAuthorize("hasRole('MANAGER')")
     @Operation(
-            summary = "Cập nhật trạng thái bước xử lý đang ở RESOLVED thành COMPLETED hoặc IN_PROGRESS",
-            description = "Manager xác nhận hoàn thành bước xử lý (COMPLETED) hoặc yêu cầu xử lý lại (IN_PROGRESS). Khi tất cả các bước của vé chuyển sang COMPLETED thì vé tự động chuyển sang COMPLETED."
+            summary = "Cập nhật trạng thái bước xử lý (Ticket Step)",
+            description = "Manager cập nhật trạng thái bước xử lý sang IN_PROGRESS, RESOLVED hoặc COMPLETED (không hỗ trợ ASSIGNED và CANCELLED). Tham số note là tùy chọn, nhưng bắt buộc nhập khi chuyển từ RESOLVED sang IN_PROGRESS, hoặc từ COMPLETED sang RESOLVED / IN_PROGRESS."
     )
     public ResponseEntity<BaseResponse<TicketStepResponse>> updateResolvedTicketStepStatus(
             @PathVariable UUID stepId,
-            @RequestParam("status") AssignmentStatus status) {
-        TicketStepResponse response = managerTicketService.updateResolvedTicketStepStatus(stepId, status);
+            @Parameter(description = "Trạng thái mục tiêu của bước xử lý (IN_PROGRESS, RESOLVED, COMPLETED)")
+            @RequestParam("status") ManagerStepStatus status,
+            @Parameter(description = "Ghi chú của quản lý (tùy chọn; bắt buộc khi chuyển RESOLVED -> IN_PROGRESS, COMPLETED -> RESOLVED hoặc COMPLETED -> IN_PROGRESS)")
+            @RequestParam(value = "note", required = false) String note) {
+        TicketStepResponse response = managerTicketService.updateResolvedTicketStepStatus(
+                stepId, status.toAssignmentStatus(), note
+        );
         return ResponseEntity.ok(BaseResponse.success("Cập nhật trạng thái bước xử lý thành công", response));
     }
 
