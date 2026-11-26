@@ -77,6 +77,24 @@ class DepartmentServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(departmentMapper.toDepartmentUserResponse(any(UserDepartment.class)))
+                .thenAnswer(inv -> {
+                    UserDepartment ud = inv.getArgument(0);
+                    return departmentMapper.getClass().getInterfaces()[0].equals(DepartmentMapper.class)
+                            ? ud != null && ud.getUser() != null
+                                ? DepartmentUserResponse.builder()
+                                    .userId(ud.getUser().getUserId())
+                                    .email(ud.getUser().getEmail())
+                                    .fullName(ud.getUser().getFullName())
+                                    .phoneNumber(ud.getUser().getPhoneNumber())
+                                    .roleName(ud.getUser().getRole() != null ? ud.getUser().getRole().getRoleName() : null)
+                                    .status(ud.getUser().getStatus())
+                                    .joinedAt(ud.getCreatedAt())
+                                    .build()
+                                : null
+                            : null;
+                });
+
         departmentId = UUID.randomUUID();
 
         mockDepartment = Department.builder()
@@ -470,8 +488,8 @@ class DepartmentServiceTest {
     }
 
     @Test
-    @DisplayName("getDepartmentStaffBySubCategoryId_normalizedLocationMatch_returnsActiveStaffOnly")
-    void getDepartmentStaffBySubCategoryId_normalizedLocationMatch_returnsActiveStaffOnly() {
+    @DisplayName("getDepartmentStaffBySubCategoryIds_normalizedLocationMatch_returnsActiveStaffOnly")
+    void getDepartmentStaffBySubCategoryIds_normalizedLocationMatch_returnsActiveStaffOnly() {
         UUID subCatId = UUID.randomUUID();
         UUID catId = UUID.randomUUID();
         Category category = Category.builder().categoryId(catId).name("Giao thông").isActive(true).build();
@@ -515,15 +533,13 @@ class DepartmentServiceTest {
         UserDepartment ud3 = UserDepartment.builder().user(managerUser).department(mockDepartment).createdAt(LocalDateTime.now()).build();
 
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCat));
-        when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(catId, "TP. Hồ Chí Minh", "p. đức nhuận"))
-                .thenReturn(Optional.empty());
         when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId))
                 .thenReturn(List.of(rule));
         when(userDepartmentRepository.findDepartmentUsersWithRole(departmentId))
                 .thenReturn(List.of(ud1, ud2, ud3));
 
-        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryId(
-                subCatId, "TP. Hồ Chí Minh", "p. đức nhuận");
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryIds(
+                List.of(subCatId), "TP. Hồ Chí Minh", "p. đức nhuận");
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getUserId()).isEqualTo(activeStaff.getUserId());
@@ -532,35 +548,251 @@ class DepartmentServiceTest {
     }
 
     @Test
-    @DisplayName("getDepartmentStaffBySubCategoryId_noMatchingRule_returnsEmptyList")
-    void getDepartmentStaffBySubCategoryId_noMatchingRule_returnsEmptyList() {
+    @DisplayName("getDepartmentStaffBySubCategoryIds_multipleSubCategoriesAndDepartments_deduplicatesStaff")
+    void getDepartmentStaffBySubCategoryIds_multipleSubCategoriesAndDepartments_deduplicatesStaff() {
+        UUID subCatId1 = UUID.randomUUID();
+        UUID subCatId2 = UUID.randomUUID();
+        UUID catId1 = UUID.randomUUID();
+        UUID catId2 = UUID.randomUUID();
+
+        Category cat1 = Category.builder().categoryId(catId1).name("Giao thông").isActive(true).build();
+        Category cat2 = Category.builder().categoryId(catId2).name("Chiếu sáng").isActive(true).build();
+        SubCategory subCat1 = SubCategory.builder().subCategoryId(subCatId1).name("Ổ gà").category(cat1).isActive(true).build();
+        SubCategory subCat2 = SubCategory.builder().subCategoryId(subCatId2).name("Đèn đường").category(cat2).isActive(true).build();
+
+        UUID deptId2 = UUID.randomUUID();
+        Department dept2 = Department.builder().departmentId(deptId2).name("Phòng Chiếu sáng").build();
+
+        RoutingRule rule1 = RoutingRule.builder()
+                .ruleId(UUID.randomUUID())
+                .category(cat1)
+                .department(mockDepartment)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("Phường Đức Nhuận")
+                .build();
+        RoutingRule rule2 = RoutingRule.builder()
+                .ruleId(UUID.randomUUID())
+                .category(cat2)
+                .department(dept2)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("Phường Đức Nhuận")
+                .build();
+
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+        User sharedStaff = User.builder()
+                .userId(UUID.randomUUID())
+                .email("shared.staff@cityfix.vn")
+                .fullName("Cán bộ Liên Phòng")
+                .role(staffRole)
+                .status(UserStatus.ACTIVE)
+                .build();
+        User dept2OnlyStaff = User.builder()
+                .userId(UUID.randomUUID())
+                .email("dept2.staff@cityfix.vn")
+                .fullName("Cán bộ Phòng 2")
+                .role(staffRole)
+                .status(UserStatus.ACTIVE)
+                .build();
+
+        UserDepartment udDept1Shared = UserDepartment.builder().user(sharedStaff).department(mockDepartment).createdAt(LocalDateTime.now()).build();
+        UserDepartment udDept2Shared = UserDepartment.builder().user(sharedStaff).department(dept2).createdAt(LocalDateTime.now()).build();
+        UserDepartment udDept2Only = UserDepartment.builder().user(dept2OnlyStaff).department(dept2).createdAt(LocalDateTime.now()).build();
+
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId1)).thenReturn(Optional.of(subCat1));
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId2)).thenReturn(Optional.of(subCat2));
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId1)).thenReturn(List.of(rule1));
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId2)).thenReturn(List.of(rule2));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(departmentId)).thenReturn(List.of(udDept1Shared));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(deptId2)).thenReturn(List.of(udDept2Shared, udDept2Only));
+
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryIds(
+                List.of(subCatId1, subCatId2, subCatId1), "TP.HCM", "đức nhuận");
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(DepartmentUserResponse::getUserId)
+                .containsExactly(sharedStaff.getUserId(), dept2OnlyStaff.getUserId());
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryIds_noProvinceAndNoWard_returnsAllDepartmentsStaffOfCategories")
+    void getDepartmentStaffBySubCategoryIds_noProvinceAndNoWard_returnsAllDepartmentsStaffOfCategories() {
+        UUID subCatId = UUID.randomUUID();
+        UUID catId = UUID.randomUUID();
+        Category category = Category.builder().categoryId(catId).name("Giao thông").isActive(true).build();
+        SubCategory subCat = SubCategory.builder().subCategoryId(subCatId).name("Ổ gà").category(category).isActive(true).build();
+
+        UUID deptId2 = UUID.randomUUID();
+        Department dept2 = Department.builder().departmentId(deptId2).name("Phòng Hà Nội").build();
+
+        RoutingRule ruleHcm = RoutingRule.builder()
+                .ruleId(UUID.randomUUID())
+                .category(category)
+                .department(mockDepartment)
+                .province("Thành phố Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .build();
+        RoutingRule ruleHn = RoutingRule.builder()
+                .ruleId(UUID.randomUUID())
+                .category(category)
+                .department(dept2)
+                .province("Thành phố Hà Nội")
+                .ward("Phường Điện Biên")
+                .build();
+
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+        User staff1 = User.builder().userId(UUID.randomUUID()).email("s1@cityfix.vn").role(staffRole).status(UserStatus.ACTIVE).build();
+        User staff2 = User.builder().userId(UUID.randomUUID()).email("s2@cityfix.vn").role(staffRole).status(UserStatus.ACTIVE).build();
+
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCat));
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId)).thenReturn(List.of(ruleHcm, ruleHn));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(departmentId))
+                .thenReturn(List.of(UserDepartment.builder().user(staff1).department(mockDepartment).build()));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(deptId2))
+                .thenReturn(List.of(UserDepartment.builder().user(staff2).department(dept2).build()));
+
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryIds(
+                List.of(subCatId), null, "   ");
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(DepartmentUserResponse::getUserId)
+                .containsExactly(staff1.getUserId(), staff2.getUserId());
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryIds_onlyProvince_returnsAllWardsInThatProvinceOnly")
+    void getDepartmentStaffBySubCategoryIds_onlyProvince_returnsAllWardsInThatProvinceOnly() {
+        UUID subCatId = UUID.randomUUID();
+        UUID catId = UUID.randomUUID();
+        Category category = Category.builder().categoryId(catId).name("Giao thông").isActive(true).build();
+        SubCategory subCat = SubCategory.builder().subCategoryId(subCatId).name("Ổ gà").category(category).isActive(true).build();
+
+        UUID deptHcm2Id = UUID.randomUUID();
+        Department deptHcm2 = Department.builder().departmentId(deptHcm2Id).name("Phòng Q3").build();
+        UUID deptHnId = UUID.randomUUID();
+        Department deptHn = Department.builder().departmentId(deptHnId).name("Phòng Hà Nội").build();
+
+        RoutingRule ruleHcm1 = RoutingRule.builder()
+                .ruleId(UUID.randomUUID()).category(category).department(mockDepartment)
+                .province("Thành phố Hồ Chí Minh").ward("Phường Bến Nghé").build();
+        RoutingRule ruleHcm2 = RoutingRule.builder()
+                .ruleId(UUID.randomUUID()).category(category).department(deptHcm2)
+                .province("TP. Hồ Chí Minh").ward("Phường Võ Thị Sáu").build();
+        RoutingRule ruleHn = RoutingRule.builder()
+                .ruleId(UUID.randomUUID()).category(category).department(deptHn)
+                .province("Thành phố Hà Nội").ward("Phường Điện Biên").build();
+
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+        User staff1 = User.builder().userId(UUID.randomUUID()).email("s1@cityfix.vn").role(staffRole).status(UserStatus.ACTIVE).build();
+        User staff2 = User.builder().userId(UUID.randomUUID()).email("s2@cityfix.vn").role(staffRole).status(UserStatus.ACTIVE).build();
+
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCat));
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId))
+                .thenReturn(List.of(ruleHcm1, ruleHcm2, ruleHn));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(departmentId))
+                .thenReturn(List.of(UserDepartment.builder().user(staff1).department(mockDepartment).build()));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(deptHcm2Id))
+                .thenReturn(List.of(UserDepartment.builder().user(staff2).department(deptHcm2).build()));
+
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryIds(
+                List.of(subCatId), "TPHCM", null);
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(DepartmentUserResponse::getUserId)
+                .containsExactly(staff1.getUserId(), staff2.getUserId());
+        verify(userDepartmentRepository, never()).findDepartmentUsersWithRole(deptHnId);
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryIds_onlyWard_returnsMatchingWardAcrossDifferentProvinces")
+    void getDepartmentStaffBySubCategoryIds_onlyWard_returnsMatchingWardAcrossDifferentProvinces() {
+        UUID subCatId = UUID.randomUUID();
+        UUID catId = UUID.randomUUID();
+        Category category = Category.builder().categoryId(catId).name("Giao thông").isActive(true).build();
+        SubCategory subCat = SubCategory.builder().subCategoryId(subCatId).name("Ổ gà").category(category).isActive(true).build();
+
+        UUID deptOtherProvId = UUID.randomUUID();
+        Department deptOtherProv = Department.builder().departmentId(deptOtherProvId).name("Phòng Tỉnh B - P1").build();
+        UUID deptDifferentWardId = UUID.randomUUID();
+        Department deptDifferentWard = Department.builder().departmentId(deptDifferentWardId).name("Phòng Phường 2").build();
+
+        RoutingRule ruleProvA = RoutingRule.builder()
+                .ruleId(UUID.randomUUID()).category(category).department(mockDepartment)
+                .province("Thành phố Hồ Chí Minh").ward("Phường Tân Định").build();
+        RoutingRule ruleProvB = RoutingRule.builder()
+                .ruleId(UUID.randomUUID()).category(category).department(deptOtherProv)
+                .province("Tỉnh Bình Dương").ward("P. Tân Định").build();
+        RoutingRule ruleOtherWard = RoutingRule.builder()
+                .ruleId(UUID.randomUUID()).category(category).department(deptDifferentWard)
+                .province("Thành phố Hồ Chí Minh").ward("Phường Bến Nghé").build();
+
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+        User staff1 = User.builder().userId(UUID.randomUUID()).email("s1@cityfix.vn").role(staffRole).status(UserStatus.ACTIVE).build();
+        User staff2 = User.builder().userId(UUID.randomUUID()).email("s2@cityfix.vn").role(staffRole).status(UserStatus.ACTIVE).build();
+
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCat));
+        when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId))
+                .thenReturn(List.of(ruleProvA, ruleProvB, ruleOtherWard));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(departmentId))
+                .thenReturn(List.of(UserDepartment.builder().user(staff1).department(mockDepartment).build()));
+        when(userDepartmentRepository.findDepartmentUsersWithRole(deptOtherProvId))
+                .thenReturn(List.of(UserDepartment.builder().user(staff2).department(deptOtherProv).build()));
+
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryIds(
+                List.of(subCatId), "  ", "tân định");
+
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(DepartmentUserResponse::getUserId)
+                .containsExactly(staff1.getUserId(), staff2.getUserId());
+        verify(userDepartmentRepository, never()).findDepartmentUsersWithRole(deptDifferentWardId);
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryIds_noMatchingRule_returnsEmptyList")
+    void getDepartmentStaffBySubCategoryIds_noMatchingRule_returnsEmptyList() {
         UUID subCatId = UUID.randomUUID();
         UUID catId = UUID.randomUUID();
         Category category = Category.builder().categoryId(catId).name("Giao thông").isActive(true).build();
         SubCategory subCat = SubCategory.builder().subCategoryId(subCatId).name("Ổ gà").category(category).isActive(true).build();
 
         when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.of(subCat));
-        when(routingRuleRepository.findByCategoryCategoryIdAndProvinceAndWardAndIsDeletedFalse(any(), any(), any()))
-                .thenReturn(Optional.empty());
         when(routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(catId))
                 .thenReturn(List.of());
 
-        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryId(
-                subCatId, "Tỉnh Cà Mau", "Phường 1");
+        List<DepartmentUserResponse> result = departmentService.getDepartmentStaffBySubCategoryIds(
+                List.of(subCatId), "Tỉnh Cà Mau", "Phường 1");
 
         assertThat(result).isNotNull().isEmpty();
         verify(userDepartmentRepository, never()).findDepartmentUsersWithRole(any());
     }
 
     @Test
-    @DisplayName("getDepartmentStaffBySubCategoryId_subCategoryNotFound_throwsSubCategoryNotFound")
-    void getDepartmentStaffBySubCategoryId_subCategoryNotFound_throwsSubCategoryNotFound() {
-        UUID subCatId = UUID.randomUUID();
-        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId)).thenReturn(Optional.empty());
+    @DisplayName("getDepartmentStaffBySubCategoryIds_subCategoryNotFound_throwsSubCategoryNotFound")
+    void getDepartmentStaffBySubCategoryIds_subCategoryNotFound_throwsSubCategoryNotFound() {
+        UUID subCatId1 = UUID.randomUUID();
+        UUID subCatId2 = UUID.randomUUID();
+        Category category = Category.builder().categoryId(UUID.randomUUID()).name("Giao thông").isActive(true).build();
+        SubCategory subCat1 = SubCategory.builder().subCategoryId(subCatId1).name("Ổ gà").category(category).isActive(true).build();
 
-        assertThatThrownBy(() -> departmentService.getDepartmentStaffBySubCategoryId(subCatId, "TP.HCM", "Phường 1"))
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId1)).thenReturn(Optional.of(subCat1));
+        when(subCategoryRepository.findBySubCategoryIdAndIsDeletedFalse(subCatId2)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> departmentService.getDepartmentStaffBySubCategoryIds(List.of(subCatId1, subCatId2), "TP.HCM", "Phường 1"))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.SUBCATEGORY_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubCategoryIds_emptyOrNullSubCategoryIds_throwsInvalidRequest")
+    void getDepartmentStaffBySubCategoryIds_emptyOrNullSubCategoryIds_throwsInvalidRequest() {
+        assertThatThrownBy(() -> departmentService.getDepartmentStaffBySubCategoryIds(null, "TP.HCM", "Phường 1"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        assertThatThrownBy(() -> departmentService.getDepartmentStaffBySubCategoryIds(List.of(), "TP.HCM", "Phường 1"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 }
