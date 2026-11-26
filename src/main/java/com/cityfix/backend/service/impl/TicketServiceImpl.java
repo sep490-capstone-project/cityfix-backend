@@ -13,6 +13,8 @@ import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.LocationBoundary;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvoterResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvotesResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.ActionType;
 import com.cityfix.backend.model.enums.AssignmentStatus;
@@ -641,6 +643,12 @@ public class TicketServiceImpl implements TicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        if (ticket.getUser() != null
+                && ticket.getUser().getUserId() != null
+                && ticket.getUser().getUserId().equals(user.getUserId())) {
+            throw new AppException(ErrorCode.TICKET_CREATOR_CANNOT_UPVOTE);
+        }
+
         Set<TicketStatus> restrictedStatuses = EnumSet.of(
                 TicketStatus.RESOLVED,
                 TicketStatus.COMPLETED,
@@ -653,7 +661,7 @@ public class TicketServiceImpl implements TicketService {
 
         if (ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, user.getUserId())) {
             throw new AppException(ErrorCode.TICKET_ALREADY_UPVOTED);
-    }
+        }
 
         TicketVote vote = TicketVote.builder()
                 .ticket(ticket)
@@ -661,6 +669,33 @@ public class TicketServiceImpl implements TicketService {
                 .build();
         
         ticketVoteRepository.save(vote);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TicketUpvotesResponse getTicketUpvotes(UUID ticketId) {
+        if (!ticketRepository.existsById(ticketId)) {
+            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
+        }
+
+        List<TicketVote> votes = ticketVoteRepository.findByTicketIdWithUserOrderByCreatedAtDesc(ticketId);
+        List<TicketUpvoterResponse> upvoters = votes.stream()
+                .filter(Objects::nonNull)
+                .map(vote -> {
+                    User upvoter = vote.getUser();
+                    return TicketUpvoterResponse.builder()
+                            .userId(upvoter != null ? upvoter.getUserId() : null)
+                            .fullName(upvoter != null ? upvoter.getFullName() : null)
+                            .upvotedAt(vote.getCreatedAt())
+                            .build();
+                })
+                .toList();
+
+        return TicketUpvotesResponse.builder()
+                .ticketId(ticketId)
+                .upvoteCount(upvoters.size())
+                .upvoters(upvoters)
+                .build();
     }
 
     @Override

@@ -9,6 +9,8 @@ import com.cityfix.backend.model.dto.request.CreateTicketRequest;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvoterResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvotesResponse;
 import com.cityfix.backend.model.entity.*;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import com.cityfix.backend.model.enums.Priority;
@@ -2151,6 +2153,8 @@ class TicketServiceTest {
     @DisplayName("upvoteTicket_activeTicketNotYetUpvoted_persistsVote")
     void upvoteTicket_activeTicketNotYetUpvoted_persistsVote() {
         UUID ticketId = mockTicket.getTicketId();
+        User ticketCreator = User.builder().userId(UUID.randomUUID()).email("creator@cityfix.com").build();
+        mockTicket.setUser(ticketCreator);
         mockTicket.setStatus(TicketStatus.IN_PROGRESS);
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
         when(ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, mockUser.getUserId())).thenReturn(false);
@@ -2161,23 +2165,28 @@ class TicketServiceTest {
     }
 
     @Test
-    @DisplayName("upvoteTicket_creatorUpvotesOwnInitiatedTicket_persistsVote")
-    void upvoteTicket_creatorUpvotesOwnInitiatedTicket_persistsVote() {
+    @DisplayName("upvoteTicket_creatorUpvotesOwnTicket_throwsTicketCreatorCannotUpvote")
+    void upvoteTicket_creatorUpvotesOwnTicket_throwsTicketCreatorCannotUpvote() {
         UUID ticketId = mockTicket.getTicketId();
         mockTicket.setStatus(TicketStatus.INITIATED);
         mockTicket.setUser(mockUser);
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
-        when(ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, mockUser.getUserId())).thenReturn(false);
 
-        ticketService.upvoteTicket(ticketId);
+        assertThatThrownBy(() -> ticketService.upvoteTicket(ticketId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_CREATOR_CANNOT_UPVOTE);
 
-        verify(ticketVoteRepository).save(any(TicketVote.class));
+        verify(ticketVoteRepository, never()).existsByTicket_TicketIdAndUser_UserId(any(), any());
+        verify(ticketVoteRepository, never()).save(any(TicketVote.class));
     }
 
     @Test
     @DisplayName("upvoteTicket_alreadyUpvoted_throwsTicketAlreadyUpvoted")
     void upvoteTicket_alreadyUpvoted_throwsTicketAlreadyUpvoted() {
         UUID ticketId = mockTicket.getTicketId();
+        User ticketCreator = User.builder().userId(UUID.randomUUID()).email("creator@cityfix.com").build();
+        mockTicket.setUser(ticketCreator);
         mockTicket.setStatus(TicketStatus.IN_PROGRESS);
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
         when(ticketVoteRepository.existsByTicket_TicketIdAndUser_UserId(ticketId, mockUser.getUserId())).thenReturn(true);
@@ -2194,6 +2203,8 @@ class TicketServiceTest {
     @DisplayName("upvoteTicket_terminalStatus_throwsTicketCannotUpvote")
     void upvoteTicket_terminalStatus_throwsTicketCannotUpvote() {
         UUID ticketId = mockTicket.getTicketId();
+        User ticketCreator = User.builder().userId(UUID.randomUUID()).email("creator@cityfix.com").build();
+        mockTicket.setUser(ticketCreator);
         for (TicketStatus terminalStatus : List.of(TicketStatus.RESOLVED, TicketStatus.COMPLETED, TicketStatus.CANCELLED)) {
             mockTicket.setStatus(terminalStatus);
             when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
@@ -2216,6 +2227,87 @@ class TicketServiceTest {
                 .isInstanceOf(AppException.class)
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("getTicketUpvotes_ticketExistsWithVotes_returnsCountAndUpvoters")
+    void getTicketUpvotes_ticketExistsWithVotes_returnsCountAndUpvoters() {
+        UUID ticketId = mockTicket.getTicketId();
+        LocalDateTime firstVoteTime = LocalDateTime.of(2026, 11, 26, 10, 0);
+        LocalDateTime secondVoteTime = LocalDateTime.of(2026, 11, 26, 12, 30);
+
+        User upvoter1 = User.builder()
+                .userId(UUID.randomUUID())
+                .email("u1@cityfix.com")
+                .fullName("Nguyễn Văn A")
+                .phoneNumber("0901111111")
+                .build();
+        User upvoter2 = User.builder()
+                .userId(UUID.randomUUID())
+                .email("u2@cityfix.com")
+                .fullName("Trần Thị B")
+                .phoneNumber("0902222222")
+                .build();
+
+        TicketVote vote2 = TicketVote.builder()
+                .voteId(UUID.randomUUID())
+                .ticket(mockTicket)
+                .user(upvoter2)
+                .createdAt(secondVoteTime)
+                .build();
+        TicketVote vote1 = TicketVote.builder()
+                .voteId(UUID.randomUUID())
+                .ticket(mockTicket)
+                .user(upvoter1)
+                .createdAt(firstVoteTime)
+                .build();
+
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketVoteRepository.findByTicketIdWithUserOrderByCreatedAtDesc(ticketId))
+                .thenReturn(List.of(vote2, vote1));
+
+        TicketUpvotesResponse result = ticketService.getTicketUpvotes(ticketId);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketId()).isEqualTo(ticketId);
+        assertThat(result.getUpvoteCount()).isEqualTo(2L);
+        assertThat(result.getUpvoters()).hasSize(2);
+        assertThat(result.getUpvoters().get(0))
+                .extracting(TicketUpvoterResponse::getUserId, TicketUpvoterResponse::getFullName, TicketUpvoterResponse::getUpvotedAt)
+                .containsExactly(upvoter2.getUserId(), "Trần Thị B", secondVoteTime);
+        assertThat(result.getUpvoters().get(1))
+                .extracting(TicketUpvoterResponse::getUserId, TicketUpvoterResponse::getFullName, TicketUpvoterResponse::getUpvotedAt)
+                .containsExactly(upvoter1.getUserId(), "Nguyễn Văn A", firstVoteTime);
+    }
+
+    @Test
+    @DisplayName("getTicketUpvotes_ticketExistsWithoutVotes_returnsZeroAndEmptyList")
+    void getTicketUpvotes_ticketExistsWithoutVotes_returnsZeroAndEmptyList() {
+        UUID ticketId = mockTicket.getTicketId();
+        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketVoteRepository.findByTicketIdWithUserOrderByCreatedAtDesc(ticketId))
+                .thenReturn(Collections.emptyList());
+
+        TicketUpvotesResponse result = ticketService.getTicketUpvotes(ticketId);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getTicketId()).isEqualTo(ticketId);
+        assertThat(result.getUpvoteCount()).isZero();
+        assertThat(result.getUpvoters()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getTicketUpvotes_ticketNotFound_throwsTicketNotFound")
+    void getTicketUpvotes_ticketNotFound_throwsTicketNotFound() {
+        UUID unknownId = UUID.randomUUID();
+        when(ticketRepository.existsById(unknownId)).thenReturn(false);
+
+        assertThatThrownBy(() -> ticketService.getTicketUpvotes(unknownId))
+                .isInstanceOf(AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.TICKET_NOT_FOUND);
+
+        verify(ticketVoteRepository, never()).findByTicketIdWithUserOrderByCreatedAtDesc(any());
     }
 
     @Test

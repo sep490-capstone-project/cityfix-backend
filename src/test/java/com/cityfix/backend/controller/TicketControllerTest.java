@@ -5,6 +5,8 @@ import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvoterResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvotesResponse;
 import com.cityfix.backend.model.enums.Priority;
 import com.cityfix.backend.model.enums.LocationMethod;
 
@@ -531,5 +533,58 @@ class TicketControllerTest {
         assertThat(response.getBody().getData().getPriority()).isEqualTo(Priority.MEDIUM);
 
         verify(aiService, times(1)).analyze(request);
+    }
+
+    @Test
+    @DisplayName("getTicketUpvotes_validTicketId_returns200WithCountAndUpvoters")
+    void getTicketUpvotes_validTicketId_returns200WithCountAndUpvoters() {
+        UUID ticketId = UUID.randomUUID();
+        UUID upvoterId = UUID.randomUUID();
+        LocalDateTime upvotedAt = LocalDateTime.of(2026, 11, 26, 14, 0);
+
+        TicketUpvotesResponse mockUpvotes = TicketUpvotesResponse.builder()
+                .ticketId(ticketId)
+                .upvoteCount(1L)
+                .upvoters(List.of(
+                        TicketUpvoterResponse.builder()
+                                .userId(upvoterId)
+                                .fullName("Nguyễn Văn A")
+                                .upvotedAt(upvotedAt)
+                                .build()
+                ))
+                .build();
+
+        when(ticketService.getTicketUpvotes(ticketId)).thenReturn(mockUpvotes);
+
+        ResponseEntity<BaseResponse<TicketUpvotesResponse>> response =
+                ticketController.getTicketUpvotes(ticketId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Lấy danh sách người upvote vé thành công.");
+        assertThat(response.getBody().getData().getTicketId()).isEqualTo(ticketId);
+        assertThat(response.getBody().getData().getUpvoteCount()).isEqualTo(1L);
+        assertThat(response.getBody().getData().getUpvoters()).hasSize(1);
+        assertThat(response.getBody().getData().getUpvoters().get(0).getUserId()).isEqualTo(upvoterId);
+        assertThat(response.getBody().getData().getUpvoters().get(0).getFullName()).isEqualTo("Nguyễn Văn A");
+        assertThat(response.getBody().getData().getUpvoters().get(0).getUpvotedAt()).isEqualTo(upvotedAt);
+
+        verify(ticketService, times(1)).getTicketUpvotes(ticketId);
+    }
+
+    @Test
+    @DisplayName("getTicketUpvotes_ticketNotFound_propagatesAppException")
+    void getTicketUpvotes_ticketNotFound_propagatesAppException() {
+        UUID unknownId = UUID.randomUUID();
+        when(ticketService.getTicketUpvotes(unknownId))
+                .thenThrow(new com.cityfix.backend.exception.AppException(com.cityfix.backend.exception.ErrorCode.TICKET_NOT_FOUND));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> ticketController.getTicketUpvotes(unknownId))
+                .isInstanceOf(com.cityfix.backend.exception.AppException.class)
+                .extracting("errorCode")
+                .isEqualTo(com.cityfix.backend.exception.ErrorCode.TICKET_NOT_FOUND);
+
+        verify(ticketService, times(1)).getTicketUpvotes(unknownId);
     }
 }
