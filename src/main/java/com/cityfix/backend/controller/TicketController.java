@@ -8,6 +8,7 @@ import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
 import com.cityfix.backend.model.dto.response.TicketStepResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvotesResponse;
 import com.cityfix.backend.service.AiService;
 import com.cityfix.backend.service.ManagerTicketService;
 import com.cityfix.backend.service.TicketService;
@@ -109,6 +110,18 @@ public class TicketController {
         
         ticketService.upvoteTicket(id);
         return ResponseEntity.ok(BaseResponse.success("Upvoted successfully", null));
+    }
+
+    @GetMapping("/{id}/upvotes")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+            summary = "Lấy danh sách người upvote và số lượng upvote của vé theo ticketId",
+            description = "Trả về tổng số lượt upvote và danh sách người dùng đã upvote vé theo ticketId, sắp xếp từ mới nhất đến cũ nhất."
+    )
+    public ResponseEntity<BaseResponse<TicketUpvotesResponse>> getTicketUpvotes(
+            @PathVariable UUID id) {
+        TicketUpvotesResponse response = ticketService.getTicketUpvotes(id);
+        return ResponseEntity.ok(BaseResponse.success("Lấy danh sách người upvote vé thành công.", response));
     }
 
     @PostMapping("/analyze")

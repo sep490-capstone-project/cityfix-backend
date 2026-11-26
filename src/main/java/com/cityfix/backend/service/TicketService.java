@@ -4,6 +4,7 @@ import com.cityfix.backend.model.dto.request.CreateTicketRequest;
 import com.cityfix.backend.model.dto.response.DuplicateTicketResponse;
 import com.cityfix.backend.model.dto.response.ImageUploadResponse;
 import com.cityfix.backend.model.dto.response.TicketResponse;
+import com.cityfix.backend.model.dto.response.TicketUpvotesResponse;
 import com.cityfix.backend.model.enums.AssignmentStatus;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -13,6 +14,7 @@ import java.util.UUID;
 public interface TicketService {
     TicketResponse createTicket(CreateTicketRequest request);
     void upvoteTicket(UUID ticketId);
+    TicketUpvotesResponse getTicketUpvotes(UUID ticketId);
     List<ImageUploadResponse> uploadImage(List<MultipartFile> files, String folder);
     List<DuplicateTicketResponse> findDuplicateTickets(Double latitude, Double longitude, UUID subCategoryId);
     
