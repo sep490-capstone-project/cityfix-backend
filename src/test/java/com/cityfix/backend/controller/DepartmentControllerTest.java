@@ -252,7 +252,9 @@ class DepartmentControllerTest {
     @Test
     @DisplayName("getDepartmentStaffBySubID_validParams_returns200OK")
     void getDepartmentStaffBySubID_validParams_returns200OK() {
-        UUID subCatId = UUID.randomUUID();
+        UUID subCatId1 = UUID.randomUUID();
+        UUID subCatId2 = UUID.randomUUID();
+        List<UUID> subCatIds = List.of(subCatId1, subCatId2);
         UUID staffId = UUID.randomUUID();
         DepartmentUserResponse userResp = DepartmentUserResponse.builder()
                 .userId(staffId)
@@ -260,16 +262,39 @@ class DepartmentControllerTest {
                 .roleName("STAFF")
                 .build();
 
-        when(departmentService.getDepartmentStaffBySubCategoryId(subCatId, "TP. Hồ Chí Minh", "Phường Đức Nhuận"))
+        when(departmentService.getDepartmentStaffBySubCategoryIds(subCatIds, "TP. Hồ Chí Minh", "Phường Đức Nhuận"))
                 .thenReturn(List.of(userResp));
 
         ResponseEntity<BaseResponse<List<DepartmentUserResponse>>> response =
-                departmentController.getDepartmentStaffBySubID(subCatId, "TP. Hồ Chí Minh", "Phường Đức Nhuận");
+                departmentController.getDepartmentStaffBySubID(subCatIds, "TP. Hồ Chí Minh", "Phường Đức Nhuận");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getData()).hasSize(1);
         assertThat(response.getBody().getData().get(0).getUserId()).isEqualTo(staffId);
-        verify(departmentService).getDepartmentStaffBySubCategoryId(subCatId, "TP. Hồ Chí Minh", "Phường Đức Nhuận");
+        verify(departmentService).getDepartmentStaffBySubCategoryIds(subCatIds, "TP. Hồ Chí Minh", "Phường Đức Nhuận");
+    }
+
+    @Test
+    @DisplayName("getDepartmentStaffBySubID_nullProvinceAndWard_returns200OK")
+    void getDepartmentStaffBySubID_nullProvinceAndWard_returns200OK() {
+        List<UUID> subCatIds = List.of(UUID.randomUUID());
+        UUID staffId = UUID.randomUUID();
+        DepartmentUserResponse userResp = DepartmentUserResponse.builder()
+                .userId(staffId)
+                .email("staff@cityfix.vn")
+                .roleName("STAFF")
+                .build();
+
+        when(departmentService.getDepartmentStaffBySubCategoryIds(subCatIds, null, null))
+                .thenReturn(List.of(userResp));
+
+        ResponseEntity<BaseResponse<List<DepartmentUserResponse>>> response =
+                departmentController.getDepartmentStaffBySubID(subCatIds, null, null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData()).hasSize(1);
+        verify(departmentService).getDepartmentStaffBySubCategoryIds(subCatIds, null, null);
     }
 }

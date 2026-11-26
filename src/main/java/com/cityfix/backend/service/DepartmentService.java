@@ -21,5 +21,5 @@ public interface DepartmentService {
     List<DepartmentUserResponse> assignUsersToDepartment(UUID departmentId, AssignDepartmentUsersRequest request);
     void removeUserFromDepartment(UUID departmentId, UUID userId);
     List<DepartmentUserResponse> getDepartmentUsers(UUID departmentId);
-    List<DepartmentUserResponse> getDepartmentStaffBySubCategoryId(UUID subCategoryId, String province, String ward);
+    List<DepartmentUserResponse> getDepartmentStaffBySubCategoryIds(List<UUID> subCategoryIds, String province, String ward);
 }
