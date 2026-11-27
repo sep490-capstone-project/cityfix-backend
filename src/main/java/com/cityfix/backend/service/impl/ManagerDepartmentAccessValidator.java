@@ -55,7 +55,10 @@ public class ManagerDepartmentAccessValidator {
             throw new AppException(ErrorCode.STEP_NOT_FOUND);
         }
 
-        if (requireAssigneeDepartmentMatch && step.getAssignee() != null) {
+        if (requireAssigneeDepartmentMatch) {
+            if (step.getAssignee() == null) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Bước xử lý chưa được phân công nhân viên thuộc phòng ban bạn quản lý.");
+            }
             Set<UUID> assigneeDeptIds = resolveUserDepartmentIds(step.getAssignee());
             boolean belongsToManagerDept = assigneeDeptIds.stream().anyMatch(managerDeptIds::contains);
             if (!belongsToManagerDept) {

@@ -139,6 +139,23 @@ class ManagerDepartmentAccessValidatorTest {
     }
 
     @Test
+    @DisplayName("validateStepAccess_strictAssigneeMode_unassignedStep_throwsForbiddenEvenIfTicketInManagerDept")
+    void validateStepAccess_strictAssigneeMode_unassignedStep_throwsForbiddenEvenIfTicketInManagerDept() {
+        UUID ticketId = UUID.randomUUID();
+        Ticket ticket = Ticket.builder().ticketId(ticketId).status(TicketStatus.IN_PROGRESS).build();
+        TicketStep stepA = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).assignee(staffA).status(AssignmentStatus.IN_PROGRESS).build();
+        TicketStep unassignedStep = TicketStep.builder().id(UUID.randomUUID()).ticket(ticket).assignee(null).status(AssignmentStatus.ASSIGNED).build();
+        ticket.setSteps(List.of(stepA, unassignedStep));
+
+        when(userDepartmentRepository.findDepartmentsByUserId(managerA.getUserId())).thenReturn(List.of(deptA));
+
+        assertThatThrownBy(() -> validator.validateStepAccess(managerA, unassignedStep, true))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+    }
+
+    @Test
     @DisplayName("validateStepAccess_multiDeptTicket_ticketLevelMode_allowsParticipatingDeptAndBlocksUnrelatedManager")
     void validateStepAccess_multiDeptTicket_ticketLevelMode_allowsParticipatingDeptAndBlocksUnrelatedManager() {
         UUID ticketId = UUID.randomUUID();
