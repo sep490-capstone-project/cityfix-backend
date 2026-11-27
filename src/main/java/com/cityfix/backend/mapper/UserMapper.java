@@ -44,6 +44,7 @@ public interface UserMapper {
         return null;
     }
 
+    @Mapping(target = "phoneNumber", ignore = true)
     @org.mapstruct.BeanMapping(nullValuePropertyMappingStrategy = org.mapstruct.NullValuePropertyMappingStrategy.IGNORE)
     void updateUserFromRequest(com.cityfix.backend.model.dto.request.UpdateProfileRequest request, @org.mapstruct.MappingTarget User user);
 }

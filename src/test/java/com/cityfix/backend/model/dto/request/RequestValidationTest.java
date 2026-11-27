@@ -343,5 +343,67 @@ class RequestValidationTest {
                 .extracting(v -> v.getPropertyPath().toString())
                 .contains("name");
     }
+
+    @Test
+    @DisplayName("phoneLoginRequest_validatesPhoneNumberAndNotBlankPasswordWithoutBlockingLegacyPasswords")
+    void phoneLoginRequest_validatesPhoneNumberAndNotBlankPasswordWithoutBlockingLegacyPasswords() {
+        PhoneLoginRequest validLocal = PhoneLoginRequest.builder()
+                .phoneNumber("0912345678")
+                .password("123456")
+                .build();
+        assertThat(validator.validate(validLocal)).isEmpty();
+
+        PhoneLoginRequest validE164 = PhoneLoginRequest.builder()
+                .phoneNumber("+84912345678")
+                .password("123456")
+                .build();
+        assertThat(validator.validate(validE164)).isEmpty();
+
+        PhoneLoginRequest invalid = PhoneLoginRequest.builder()
+                .phoneNumber("12345")
+                .password("   ")
+                .build();
+        Set<ConstraintViolation<PhoneLoginRequest>> violations = validator.validate(invalid);
+        assertThat(violations).extracting(v -> v.getPropertyPath().toString())
+                .contains("phoneNumber", "password");
+    }
+
+    @Test
+    @DisplayName("updatePhoneRequest_rejectsBlankFirebaseIdToken")
+    void updatePhoneRequest_rejectsBlankFirebaseIdToken() {
+        UpdatePhoneRequest valid = UpdatePhoneRequest.builder()
+                .firebaseIdToken("eyJhbGciOiJSUzI1NiIsImtpZCI6IjEifQ.payload.sig")
+                .build();
+        assertThat(validator.validate(valid)).isEmpty();
+
+        UpdatePhoneRequest invalid = UpdatePhoneRequest.builder()
+                .firebaseIdToken("   ")
+                .build();
+        Set<ConstraintViolation<UpdatePhoneRequest>> violations = validator.validate(invalid);
+        assertThat(violations).extracting(v -> v.getPropertyPath().toString())
+                .contains("firebaseIdToken");
+    }
+
+    @Test
+    @DisplayName("updateProfileRequest_validatesFourBasicFieldsWithoutPhoneNumber")
+    void updateProfileRequest_validatesFourBasicFieldsWithoutPhoneNumber() {
+        UpdateProfileRequest valid = UpdateProfileRequest.builder()
+                .fullName("Nguyễn Văn A")
+                .address("123 Lê Lợi")
+                .province("TP. Hồ Chí Minh")
+                .ward("Phường Bến Nghé")
+                .build();
+        assertThat(validator.validate(valid)).isEmpty();
+
+        UpdateProfileRequest invalid = UpdateProfileRequest.builder()
+                .fullName("   ")
+                .address("")
+                .province("   ")
+                .ward("")
+                .build();
+        Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(invalid);
+        assertThat(violations).extracting(v -> v.getPropertyPath().toString())
+                .contains("fullName", "address", "province", "ward");
+    }
 }
 

@@ -248,6 +248,89 @@ class UserServiceImplTest {
     }
 
     @Test
+    @DisplayName("loginByPhone_validLocalAndE164Credentials_returnsTokenResponse")
+    void loginByPhone_validLocalAndE164Credentials_returnsTokenResponse() {
+        com.cityfix.backend.model.dto.request.PhoneLoginRequest phoneLoginRequest =
+                com.cityfix.backend.model.dto.request.PhoneLoginRequest.builder()
+                        .phoneNumber("+84912345678")
+                        .password("password123")
+                        .build();
+
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0912345678")).thenReturn(Optional.of(mockUser));
+        when(passwordEncoder.matches("password123", "encodedPassword123")).thenReturn(true);
+        when(tokenService.generateAccessToken(mockUser)).thenReturn("access-token-phone");
+        when(tokenService.generateRefreshToken(mockUser)).thenReturn("refresh-token-phone");
+
+        LoginResponse loginResponse = userService.loginByPhone(phoneLoginRequest);
+
+        assertThat(loginResponse).isNotNull();
+        assertThat(loginResponse.getAccessToken()).isEqualTo("access-token-phone");
+        assertThat(loginResponse.getRefreshToken()).isEqualTo("refresh-token-phone");
+        verify(tokenService, times(1)).generateAccessToken(mockUser);
+        verify(tokenService, times(1)).generateRefreshToken(mockUser);
+    }
+
+    @Test
+    @DisplayName("loginByPhone_nonExistentPhone_throwsAccountNotFound")
+    void loginByPhone_nonExistentPhone_throwsAccountNotFound() {
+        com.cityfix.backend.model.dto.request.PhoneLoginRequest phoneLoginRequest =
+                com.cityfix.backend.model.dto.request.PhoneLoginRequest.builder()
+                        .phoneNumber("0999888777")
+                        .password("password123")
+                        .build();
+
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0999888777")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.loginByPhone(phoneLoginRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_NOT_FOUND);
+
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
+    @DisplayName("loginByPhone_wrongPassword_throwsInvalidPassword")
+    void loginByPhone_wrongPassword_throwsInvalidPassword() {
+        com.cityfix.backend.model.dto.request.PhoneLoginRequest phoneLoginRequest =
+                com.cityfix.backend.model.dto.request.PhoneLoginRequest.builder()
+                        .phoneNumber("0912345678")
+                        .password("wrongpassword")
+                        .build();
+
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0912345678")).thenReturn(Optional.of(mockUser));
+        when(passwordEncoder.matches("wrongpassword", "encodedPassword123")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.loginByPhone(phoneLoginRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_PASSWORD);
+
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
+    @DisplayName("loginByPhone_blockedUser_throwsAccountBanned")
+    void loginByPhone_blockedUser_throwsAccountBanned() {
+        mockUser.setStatus(UserStatus.BLOCKED);
+        com.cityfix.backend.model.dto.request.PhoneLoginRequest phoneLoginRequest =
+                com.cityfix.backend.model.dto.request.PhoneLoginRequest.builder()
+                        .phoneNumber("0912345678")
+                        .password("password123")
+                        .build();
+
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0912345678")).thenReturn(Optional.of(mockUser));
+        when(passwordEncoder.matches("password123", "encodedPassword123")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.loginByPhone(phoneLoginRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ACCOUNT_BANNED);
+
+        verify(tokenService, never()).generateAccessToken(any());
+    }
+
+    @Test
     @DisplayName("logout_callsTokenServiceBlacklist: Đăng xuất gọi đúng phương thức vô hiệu hóa token")
     void logout_callsTokenServiceBlacklist() {
         String token = "jwt-access-token-xyz";
@@ -340,7 +423,6 @@ class UserServiceImplTest {
         com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
                 com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
                         .fullName("Nguyen Van B")
-                        .phoneNumber("0987654321")
                         .address("123 Le Loi")
                         .province("TP.HCM")
                         .ward("Phuong 1")
@@ -351,68 +433,137 @@ class UserServiceImplTest {
                         .email("nguyenvana@gmail.com")
                         .roleName("USER")
                         .fullName("Nguyen Van B")
-                        .phoneNumber("0987654321")
+                        .phoneNumber("0912345678")
                         .address("123 Le Loi")
                         .province("TP.HCM")
                         .ward("Phuong 1")
                         .build();
 
         when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
-        when(userRepository.findByPhoneNumber("0987654321")).thenReturn(Optional.empty());
         when(userMapper.toUserProfileResponse(mockUser)).thenReturn(updatedResponse);
 
         com.cityfix.backend.model.dto.response.UserProfileResponse result = userService.updateMyProfile(updateRequest);
 
         assertThat(result).isNotNull();
         assertThat(result.getFullName()).isEqualTo("Nguyen Van B");
+        assertThat(result.getPhoneNumber()).isEqualTo("0912345678");
 
         verify(userMapper, times(1)).updateUserFromRequest(updateRequest, mockUser);
         verify(userRepository, times(1)).save(mockUser);
+        verify(userRepository, never()).findByPhoneNumber(anyString());
 
         org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 
     @Test
-    @DisplayName("updateMyProfile_keepingSamePhoneNumber_updatesWithoutConflict")
-    void updateMyProfile_keepingSamePhoneNumber_updatesWithoutConflict() {
+    @DisplayName("updateMyProfile_unauthenticated_throwsUnauthenticated")
+    void updateMyProfile_unauthenticated_throwsUnauthenticated() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+
+        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
+                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
+                        .fullName("Nguyen Van A")
+                        .address("123 Le Loi")
+                        .province("TP.HCM")
+                        .ward("Phuong 1")
+                        .build();
+
+        assertThatThrownBy(() -> userService.updateMyProfile(updateRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateMyPhoneNumber_validFirebaseToken_updatesPhoneNumberAndReturnsProfile")
+    void updateMyPhoneNumber_validFirebaseToken_updatesPhoneNumberAndReturnsProfile() throws Exception {
         org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
         when(auth.getPrincipal()).thenReturn(mockUser);
         when(auth.isAuthenticated()).thenReturn(true);
         org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
 
-        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
-                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
-                        .fullName("Nguyen Van A Updated")
-                        .phoneNumber("0912345678")
-                        .address("456 Nguyen Hue")
+        com.cityfix.backend.model.dto.request.UpdatePhoneRequest phoneRequest =
+                com.cityfix.backend.model.dto.request.UpdatePhoneRequest.builder()
+                        .firebaseIdToken("valid-firebase-new-phone-token")
                         .build();
+
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Map.of("phone_number", "+84987654321"));
+        when(mockFirebaseAuth.verifyIdToken("valid-firebase-new-phone-token")).thenReturn(mockFirebaseToken);
+
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0987654321")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("+84987654321")).thenReturn(Optional.empty());
+        when(userRepository.findByPhoneNumber("0987654321")).thenReturn(Optional.empty());
 
         com.cityfix.backend.model.dto.response.UserProfileResponse updatedResponse =
                 com.cityfix.backend.model.dto.response.UserProfileResponse.builder()
                         .email("nguyenvana@gmail.com")
-                        .fullName("Nguyen Van A Updated")
-                        .phoneNumber("0912345678")
-                        .address("456 Nguyen Hue")
+                        .fullName("Nguyen Van A")
+                        .phoneNumber("0987654321")
                         .build();
-
-        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
         when(userMapper.toUserProfileResponse(mockUser)).thenReturn(updatedResponse);
 
-        com.cityfix.backend.model.dto.response.UserProfileResponse result = userService.updateMyProfile(updateRequest);
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
 
-        assertThat(result).isNotNull();
-        assertThat(result.getFullName()).isEqualTo("Nguyen Van A Updated");
-        assertThat(result.getPhoneNumber()).isEqualTo("0912345678");
-        verify(userRepository, never()).findByPhoneNumber(anyString());
-        verify(userMapper).updateUserFromRequest(updateRequest, mockUser);
-        verify(userRepository).save(mockUser);
+            com.cityfix.backend.model.dto.response.UserProfileResponse result =
+                    userService.updateMyPhoneNumber(phoneRequest);
 
-        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+            assertThat(result).isNotNull();
+            assertThat(result.getPhoneNumber()).isEqualTo("0987654321");
+            assertThat(mockUser.getPhoneNumber()).isEqualTo("0987654321");
+            verify(userRepository, times(1)).save(mockUser);
+            verifyNoInteractions(emailService);
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     @Test
-    @DisplayName("updateMyProfile_duplicatePhoneBelongingToAnotherUser_throwsPhoneAlreadyExists")
-    void updateMyProfile_duplicatePhoneBelongingToAnotherUser_throwsPhoneAlreadyExists() {
+    @DisplayName("updateMyPhoneNumber_samePhoneNumberAsCurrentUser_throwsInvalidRequest")
+    void updateMyPhoneNumber_samePhoneNumberAsCurrentUser_throwsInvalidRequest() throws Exception {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        com.cityfix.backend.model.dto.request.UpdatePhoneRequest phoneRequest =
+                com.cityfix.backend.model.dto.request.UpdatePhoneRequest.builder()
+                        .firebaseIdToken("same-phone-firebase-token")
+                        .build();
+
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Map.of("phone_number", "+84912345678"));
+        when(mockFirebaseAuth.verifyIdToken("same-phone-firebase-token")).thenReturn(mockFirebaseToken);
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.updateMyPhoneNumber(phoneRequest))
+                    .isInstanceOf(AppException.class)
+                    .satisfies(e -> {
+                        AppException appEx = (AppException) e;
+                        assertThat(appEx.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+                        assertThat(appEx.getMessage()).isEqualTo("Số điện thoại mới không được trùng với số điện thoại hiện tại");
+                    });
+
+            verify(userRepository, never()).save(any());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    @DisplayName("updateMyPhoneNumber_duplicatePhoneBelongingToAnotherUser_throwsPhoneAlreadyExists")
+    void updateMyPhoneNumber_duplicatePhoneBelongingToAnotherUser_throwsPhoneAlreadyExists() throws Exception {
         org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
         when(auth.getPrincipal()).thenReturn(mockUser);
         when(auth.isAuthenticated()).thenReturn(true);
@@ -422,17 +573,23 @@ class UserServiceImplTest {
         otherUser.setUserId(UUID.randomUUID());
         otherUser.setPhoneNumber("0999888777");
 
-        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
-                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
-                        .fullName("Nguyen Van A")
-                        .phoneNumber("0999888777")
+        com.cityfix.backend.model.dto.request.UpdatePhoneRequest phoneRequest =
+                com.cityfix.backend.model.dto.request.UpdatePhoneRequest.builder()
+                        .firebaseIdToken("duplicate-phone-firebase-token")
                         .build();
 
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Map.of("phone_number", "+84999888777"));
+        when(mockFirebaseAuth.verifyIdToken("duplicate-phone-firebase-token")).thenReturn(mockFirebaseToken);
         when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
-        when(userRepository.findByPhoneNumber("0999888777")).thenReturn(Optional.of(otherUser));
+        when(userRepository.findByPhoneNumberAndIsDeletedFalse("0999888777")).thenReturn(Optional.of(otherUser));
 
-        try {
-            assertThatThrownBy(() -> userService.updateMyProfile(updateRequest))
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.updateMyPhoneNumber(phoneRequest))
                     .isInstanceOf(AppException.class)
                     .extracting(e -> ((AppException) e).getErrorCode())
                     .isEqualTo(ErrorCode.PHONE_ALREADY_EXISTS);
@@ -444,22 +601,98 @@ class UserServiceImplTest {
     }
 
     @Test
-    @DisplayName("updateMyProfile_unauthenticated_throwsUnauthenticated")
-    void updateMyProfile_unauthenticated_throwsUnauthenticated() {
-        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    @DisplayName("updateMyPhoneNumber_missingPhoneClaim_throwsInvalidToken")
+    void updateMyPhoneNumber_missingPhoneClaim_throwsInvalidToken() throws Exception {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
 
-        com.cityfix.backend.model.dto.request.UpdateProfileRequest updateRequest =
-                com.cityfix.backend.model.dto.request.UpdateProfileRequest.builder()
-                        .fullName("Nguyen Van A")
-                        .phoneNumber("0987654321")
+        com.cityfix.backend.model.dto.request.UpdatePhoneRequest phoneRequest =
+                com.cityfix.backend.model.dto.request.UpdatePhoneRequest.builder()
+                        .firebaseIdToken("token-without-phone")
                         .build();
 
-        assertThatThrownBy(() -> userService.updateMyProfile(updateRequest))
-                .isInstanceOf(AppException.class)
-                .extracting(e -> ((AppException) e).getErrorCode())
-                .isEqualTo(ErrorCode.UNAUTHENTICATED);
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseToken mockFirebaseToken = mock(com.google.firebase.auth.FirebaseToken.class);
+        when(mockFirebaseToken.getClaims()).thenReturn(java.util.Collections.emptyMap());
+        when(mockFirebaseAuth.verifyIdToken("token-without-phone")).thenReturn(mockFirebaseToken);
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
 
-        verify(userRepository, never()).save(any());
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.updateMyPhoneNumber(phoneRequest))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_TOKEN);
+
+            verify(userRepository, never()).save(any());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    @DisplayName("updateMyPhoneNumber_firebaseAuthException_throwsUnauthenticated")
+    void updateMyPhoneNumber_firebaseAuthException_throwsUnauthenticated() throws Exception {
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        com.cityfix.backend.model.dto.request.UpdatePhoneRequest phoneRequest =
+                com.cityfix.backend.model.dto.request.UpdatePhoneRequest.builder()
+                        .firebaseIdToken("expired-firebase-token")
+                        .build();
+
+        com.google.firebase.auth.FirebaseAuth mockFirebaseAuth = mock(com.google.firebase.auth.FirebaseAuth.class);
+        com.google.firebase.auth.FirebaseAuthException mockEx = mock(com.google.firebase.auth.FirebaseAuthException.class);
+        when(mockFirebaseAuth.verifyIdToken("expired-firebase-token")).thenThrow(mockEx);
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
+
+        try (org.mockito.MockedStatic<com.google.firebase.auth.FirebaseAuth> firebaseAuthStatic =
+                     mockStatic(com.google.firebase.auth.FirebaseAuth.class)) {
+            firebaseAuthStatic.when(com.google.firebase.auth.FirebaseAuth::getInstance).thenReturn(mockFirebaseAuth);
+
+            assertThatThrownBy(() -> userService.updateMyPhoneNumber(phoneRequest))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.UNAUTHENTICATED);
+
+            verify(userRepository, never()).save(any());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    @DisplayName("updateMyPhoneNumber_blockedUser_throwsAccountBanned")
+    void updateMyPhoneNumber_blockedUser_throwsAccountBanned() {
+        mockUser.setStatus(UserStatus.BLOCKED);
+        org.springframework.security.core.Authentication auth = mock(org.springframework.security.core.Authentication.class);
+        when(auth.getPrincipal()).thenReturn(mockUser);
+        when(auth.isAuthenticated()).thenReturn(true);
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(auth);
+
+        com.cityfix.backend.model.dto.request.UpdatePhoneRequest phoneRequest =
+                com.cityfix.backend.model.dto.request.UpdatePhoneRequest.builder()
+                        .firebaseIdToken("valid-firebase-token")
+                        .build();
+
+        when(userRepository.findByEmailAndIsDeletedFalse(anyString())).thenReturn(Optional.of(mockUser));
+
+        try {
+            assertThatThrownBy(() -> userService.updateMyPhoneNumber(phoneRequest))
+                    .isInstanceOf(AppException.class)
+                    .extracting(e -> ((AppException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.ACCOUNT_BANNED);
+
+            verify(userRepository, never()).save(any());
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

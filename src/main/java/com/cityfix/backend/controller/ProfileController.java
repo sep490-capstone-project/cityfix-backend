@@ -1,5 +1,6 @@
 package com.cityfix.backend.controller;
 
+import com.cityfix.backend.model.dto.request.UpdatePhoneRequest;
 import com.cityfix.backend.model.dto.request.UpdateProfileRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.UserProfileResponse;
@@ -30,10 +31,19 @@ public class ProfileController {
 
     @PutMapping
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Cập nhật thông tin profile của người dùng hiện tại", description = "Cập nhật các trường thông tin cá nhân của người dùng đã xác thực và trả về thông tin mới.")
+    @Operation(summary = "Cập nhật thông tin profile của người dùng hiện tại", description = "Cập nhật các trường thông tin cá nhân cơ bản (fullName, address, province, ward) của người dùng đã xác thực và trả về thông tin mới.")
     public ResponseEntity<BaseResponse<UserProfileResponse>> updateMyProfile(
             @Valid @RequestBody UpdateProfileRequest request) {
         UserProfileResponse response = userService.updateMyProfile(request);
         return ResponseEntity.ok(BaseResponse.success("Cập nhật profile thành công.", response));
+    }
+
+    @PutMapping("/phone")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(summary = "Cập nhật số điện thoại của người dùng hiện tại", description = "Cập nhật số điện thoại mới sau khi xác thực OTP qua Firebase ID Token.")
+    public ResponseEntity<BaseResponse<UserProfileResponse>> updateMyPhoneNumber(
+            @Valid @RequestBody UpdatePhoneRequest request) {
+        UserProfileResponse response = userService.updateMyPhoneNumber(request);
+        return ResponseEntity.ok(BaseResponse.success("Cập nhật số điện thoại thành công.", response));
     }
 }
