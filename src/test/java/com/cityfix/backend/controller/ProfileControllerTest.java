@@ -1,5 +1,6 @@
 package com.cityfix.backend.controller;
 
+import com.cityfix.backend.model.dto.request.UpdatePhoneRequest;
 import com.cityfix.backend.model.dto.request.UpdateProfileRequest;
 import com.cityfix.backend.model.dto.response.BaseResponse;
 import com.cityfix.backend.model.dto.response.UserProfileResponse;
@@ -61,7 +62,6 @@ class ProfileControllerTest {
 
         mockUpdateRequest = UpdateProfileRequest.builder()
                 .fullName("Nguyen Van B")
-                .phoneNumber("0987654321")
                 .address("456 Le Loi")
                 .province("TP.HCM")
                 .ward("Phuong Ben Thanh")
@@ -114,25 +114,47 @@ class ProfileControllerTest {
     }
 
     @Test
-    @DisplayName("validation_blankPhoneNumber_producesConstraintViolation")
-    void validation_blankPhoneNumber_producesConstraintViolation() {
-        mockUpdateRequest.setPhoneNumber("");
+    @DisplayName("updateMyPhoneNumber_validRequest_returns200OKWithUpdatedProfile")
+    void updateMyPhoneNumber_validRequest_returns200OKWithUpdatedProfile() {
+        UpdatePhoneRequest phoneRequest = UpdatePhoneRequest.builder()
+                .firebaseIdToken("valid-firebase-token")
+                .build();
 
-        Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(mockUpdateRequest);
+        UserProfileResponse updatedResponse = UserProfileResponse.builder()
+                .userId(java.util.UUID.randomUUID())
+                .email("nguyenvana@gmail.com")
+                .roleName("USER")
+                .fullName("Nguyen Van A")
+                .phoneNumber("0987654321")
+                .address("123 Nguyen Hue")
+                .province("TP.HCM")
+                .ward("Phuong Ben Nghe")
+                .build();
 
-        assertThat(violations).isNotEmpty();
-        assertThat(violations).anyMatch(v -> v.getMessage().contains("Số điện thoại không được để trống"));
+        when(userService.updateMyPhoneNumber(phoneRequest)).thenReturn(updatedResponse);
+
+        ResponseEntity<BaseResponse<UserProfileResponse>> response = profileController.updateMyPhoneNumber(phoneRequest);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Cập nhật số điện thoại thành công.");
+        assertThat(response.getBody().getData().getPhoneNumber()).isEqualTo("0987654321");
+
+        verify(userService, times(1)).updateMyPhoneNumber(phoneRequest);
     }
 
     @Test
-    @DisplayName("validation_invalidPhoneNumberPattern_producesConstraintViolation")
-    void validation_invalidPhoneNumberPattern_producesConstraintViolation() {
-        mockUpdateRequest.setPhoneNumber("123");
+    @DisplayName("validation_blankFirebaseIdTokenInUpdatePhoneRequest_producesConstraintViolation")
+    void validation_blankFirebaseIdTokenInUpdatePhoneRequest_producesConstraintViolation() {
+        UpdatePhoneRequest invalidPhoneRequest = UpdatePhoneRequest.builder()
+                .firebaseIdToken("   ")
+                .build();
 
-        Set<ConstraintViolation<UpdateProfileRequest>> violations = validator.validate(mockUpdateRequest);
+        Set<ConstraintViolation<UpdatePhoneRequest>> violations = validator.validate(invalidPhoneRequest);
 
         assertThat(violations).isNotEmpty();
-        assertThat(violations).anyMatch(v -> v.getMessage().contains("Số điện thoại không hợp lệ"));
+        assertThat(violations).anyMatch(v -> v.getMessage().contains("Firebase ID Token không được để trống"));
     }
 
     @Test

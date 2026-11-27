@@ -3,6 +3,7 @@ package com.cityfix.backend.controller;
 import com.cityfix.backend.mapper.UserMapper;
 import com.cityfix.backend.model.dto.request.LoginRequest;
 import com.cityfix.backend.model.dto.request.LogoutRequest;
+import com.cityfix.backend.model.dto.request.PhoneLoginRequest;
 import com.cityfix.backend.model.dto.request.RefreshTokenRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
 import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
@@ -92,6 +93,15 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<BaseResponse<?>> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse data = userService.login(request);
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(BaseResponse.success("Đăng nhập thành công", data));
+    }
+
+    @PostMapping("/login/phone")
+    public ResponseEntity<BaseResponse<LoginResponse>> loginByPhone(
+            @Valid @RequestBody PhoneLoginRequest request) {
+        LoginResponse data = userService.loginByPhone(request);
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(BaseResponse.success("Đăng nhập thành công", data));

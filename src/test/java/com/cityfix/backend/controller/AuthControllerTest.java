@@ -5,6 +5,7 @@ import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.model.dto.request.LoginRequest;
 import com.cityfix.backend.model.dto.request.LogoutRequest;
+import com.cityfix.backend.model.dto.request.PhoneLoginRequest;
 import com.cityfix.backend.model.dto.request.RefreshTokenRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
 import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
@@ -121,6 +122,54 @@ class AuthControllerTest {
                 .hasMessageContaining("Sai mật khẩu");
 
         verify(userService, times(1)).login(request);
+    }
+
+    @Test
+    @DisplayName("loginByPhone_validCredentials_returns200WithTokens: Đăng nhập bằng SĐT thành công trả về cặp token")
+    void loginByPhone_validCredentials_returns200WithTokens() {
+        PhoneLoginRequest request = PhoneLoginRequest.builder()
+                .phoneNumber("0912345678")
+                .password("password123")
+                .build();
+
+        LoginResponse loginResponse = LoginResponse.builder()
+                .accessToken("mock-access-token")
+                .refreshToken("mock-refresh-token")
+                .build();
+
+        when(userService.loginByPhone(any(PhoneLoginRequest.class))).thenReturn(loginResponse);
+
+        ResponseEntity<BaseResponse<LoginResponse>> response = authController.loginByPhone(request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isTrue();
+        assertThat(response.getBody().getMessage()).isEqualTo("Đăng nhập thành công");
+
+        LoginResponse data = response.getBody().getData();
+        assertThat(data).isNotNull();
+        assertThat(data.getAccessToken()).isEqualTo("mock-access-token");
+        assertThat(data.getRefreshToken()).isEqualTo("mock-refresh-token");
+
+        verify(userService, times(1)).loginByPhone(request);
+    }
+
+    @Test
+    @DisplayName("loginByPhone_badCredentials_throwsAppException: Sai mật khẩu khi đăng nhập bằng SĐT quăng ra AppException INVALID_PASSWORD")
+    void loginByPhone_badCredentials_throwsAppException() {
+        PhoneLoginRequest request = PhoneLoginRequest.builder()
+                .phoneNumber("0912345678")
+                .password("wrongpassword")
+                .build();
+
+        when(userService.loginByPhone(any(PhoneLoginRequest.class)))
+                .thenThrow(new AppException(ErrorCode.INVALID_PASSWORD));
+
+        assertThatThrownBy(() -> authController.loginByPhone(request))
+                .isInstanceOf(AppException.class)
+                .hasMessageContaining("Sai mật khẩu");
+
+        verify(userService, times(1)).loginByPhone(request);
     }
 
     @Test
