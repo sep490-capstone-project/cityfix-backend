@@ -333,9 +333,12 @@ public class StaffTicketServiceImpl implements StaffTicketService {
             String title;
             String message;
 
-            if (targetStatus == TicketStatus.RESOLVED || targetStatus == TicketStatus.COMPLETED) {
+            if (targetStatus == TicketStatus.COMPLETED) {
+                title = "Sự cố đã hoàn thành";
+                message = "Sự cố đã được xác nhận hoàn thành. Vui lòng kiểm tra và đánh giá kết quả.";
+            } else if (targetStatus == TicketStatus.RESOLVED) {
                 title = "Sự cố đã được giải quyết";
-                message = "Sự cố đã được đơn vị xử lý hoàn tất. Vui lòng kiểm tra và đánh giá kết quả.";
+                message = "Sự cố đã được đơn vị xử lý hoàn tất và đang chờ quản lý xác nhận hoàn thành.";
             } else if (targetStatus == TicketStatus.IN_PROGRESS) {
                 title = "Cập nhật sự cố: Đang xử lý";
                 message = "Sự cố của bạn đang được cán bộ chuyên trách tiến hành xử lý.";

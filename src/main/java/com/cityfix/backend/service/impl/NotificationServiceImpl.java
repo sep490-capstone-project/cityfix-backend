@@ -374,13 +374,21 @@ public class NotificationServiceImpl implements NotificationService {
             }
         }
 
+        boolean isTicketCompleted = isTicketResolved && ticket.getStatus() == TicketStatus.COMPLETED;
+
         if (!citizenRecipients.isEmpty()) {
-            String title = isTicketResolved
-                    ? "Sự cố đã được giải quyết"
-                    : "Tiến độ sự cố: Hoàn thành bước xử lý";
-            String content = isTicketResolved
-                    ? "Nhân viên " + staffName + " đã hoàn thành bước '" + stepName + "'. Toàn bộ các bước xử lý của sự cố đã hoàn tất. Vui lòng kiểm tra và đánh giá kết quả."
-                    : "Bước '" + stepName + "' trong sự cố của bạn đã được nhân viên " + staffName + " hoàn thành.";
+            String title;
+            String content;
+            if (isTicketCompleted) {
+                title = "Sự cố đã hoàn thành";
+                content = "Toàn bộ các bước xử lý của sự cố đã được xác nhận hoàn thành. Vui lòng kiểm tra và đánh giá kết quả.";
+            } else if (isTicketResolved) {
+                title = "Sự cố đã được giải quyết";
+                content = "Nhân viên " + staffName + " đã hoàn thành bước '" + stepName + "'. Toàn bộ các bước xử lý của sự cố đã hoàn tất và đang chờ quản lý xác nhận hoàn thành.";
+            } else {
+                title = "Tiến độ sự cố: Hoàn thành bước xử lý";
+                content = "Bước '" + stepName + "' trong sự cố của bạn đã được nhân viên " + staffName + " hoàn thành.";
+            }
             createAndSendNotification(ticket, citizenRecipients, title, content);
         }
 

@@ -59,7 +59,7 @@ public class RatingServiceImpl implements RatingService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        if (ticket.getStatus() != TicketStatus.RESOLVED && ticket.getStatus() != TicketStatus.COMPLETED) {
+        if (ticket.getStatus() != TicketStatus.COMPLETED) {
             throw new AppException(ErrorCode.TICKET_NOT_COMPLETED);
         }
 

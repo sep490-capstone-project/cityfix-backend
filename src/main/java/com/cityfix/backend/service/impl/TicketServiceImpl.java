@@ -83,6 +83,7 @@ public class TicketServiceImpl implements TicketService {
     private final SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ManagerDepartmentAccessValidator managerDepartmentAccessValidator;
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
             "image/jpeg",
@@ -1119,6 +1120,8 @@ public class TicketServiceImpl implements TicketService {
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, ticketStep, false);
+
         LocalDateTime now = LocalDateTime.now();
         ticketStepMapper.updateDeadline(request, ticketStep);
         if (request.getDeadline() != null) {
@@ -1157,6 +1160,8 @@ public class TicketServiceImpl implements TicketService {
 
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         Map<UUID, TicketStep> stepMap = steps.stream()
@@ -1273,6 +1278,8 @@ public class TicketServiceImpl implements TicketService {
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, ticketStep, false);
+
         return ticketStepMapper.toTicketStepResponse(ticketStep);
     }
 
@@ -1284,9 +1291,10 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        if (!ticketRepository.existsById(ticketId)) {
-            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
-        }
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         return ticketStepMapper.toTicketStepResponseList(steps);
