@@ -157,16 +157,6 @@ public class TicketController {
         return ResponseEntity.ok(BaseResponse.success("Kiểm tra vé trùng lặp thành công.", duplicates));
     }
 
-    @PostMapping("/{id}/reroute")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    @Operation(summary = "Chuyển tuyến vé (Re-route Ticket)", description = "Chuyển tuyến vé sang phòng ban khác do phòng ban hiện tại không thuộc thẩm quyền.")
-    public ResponseEntity<BaseResponse<TicketResponse>> rerouteTicket(
-            @PathVariable UUID id,
-            @Valid @RequestBody com.cityfix.backend.model.dto.request.RerouteTicketRequest request) {
-        TicketResponse response = ticketService.rerouteTicket(id, request);
-        return ResponseEntity.ok(BaseResponse.success("Chuyển tuyến vé thành công.", response));
-    }
-
     @PutMapping("/{id}/cancel")
     @PreAuthorize("hasRole('RESIDENT')")
     @Operation(summary = "Hủy vé (Resident)", description = "Người dân hủy vé do chính mình tạo (chỉ hủy được khi vé ở trạng thái INITIATED)")

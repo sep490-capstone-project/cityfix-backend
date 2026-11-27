@@ -24,13 +24,10 @@ public interface TicketService {
     org.springframework.data.domain.Page<TicketResponse> getMyUpvotedTickets(org.springframework.data.domain.Pageable pageable);
     org.springframework.data.domain.Page<TicketResponse> getLifeThreateningTicketsInSameWard(org.springframework.data.domain.Pageable pageable);
     List<TicketResponse> getTopUpvotedTicketsInSameWard();
-    TicketResponse rerouteTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RerouteTicketRequest request);
     org.springframework.data.domain.Page<TicketResponse> getAssignedTicketsForStaff(AssignmentStatus status, org.springframework.data.domain.Pageable pageable);
     
     TicketResponse assignTicket(UUID ticketId, com.cityfix.backend.model.dto.request.AssignTicketRequest request);
 
-    TicketResponse forwardTicket(UUID ticketId, com.cityfix.backend.model.dto.request.RejectTicketRequest request);
-    TicketResponse rejectAssignedTicket(UUID ticketId, String reason);
     TicketResponse cancelTicket(UUID ticketId);
     List<com.cityfix.backend.model.dto.response.TicketHistoryResponse> getTicketHistory(UUID ticketId);
 
