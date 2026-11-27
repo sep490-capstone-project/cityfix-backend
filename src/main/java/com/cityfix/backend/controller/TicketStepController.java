@@ -27,7 +27,7 @@ public class TicketStepController {
 
     @PatchMapping("/{stepId}/status")
     @PreAuthorize("hasRole('STAFF')")
-    @Operation(summary = "Cập nhật trạng thái bước xử lý (Ticket Step)", description = "Chỉ cho phép vai trò STAFF được phân công trực tiếp (assignee) cập nhật trạng thái bước xử lý của chính mình.")
+    @Operation(summary = "Cập nhật trạng thái bước xử lý (Ticket Step)", description = "Chỉ cho phép STAFF được phân công trực tiếp (assignee) chuyển trạng thái theo luồng ASSIGNED -> IN_PROGRESS -> RESOLVED (bắt buộc đã nộp bằng chứng khi chuyển sang RESOLVED). Không cho phép chuyển sang COMPLETED/CANCELLED.")
     public ResponseEntity<BaseResponse<TicketStepResponse>> updateTicketStepStatus(
             @PathVariable UUID stepId,
             @RequestParam("status") AssignmentStatus status) {

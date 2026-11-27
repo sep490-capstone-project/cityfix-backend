@@ -96,7 +96,7 @@ class RatingServiceImplTest {
         ticket = Ticket.builder()
                 .ticketId(ticketId)
                 .user(creatorUser)
-                .status(TicketStatus.RESOLVED)
+                .status(TicketStatus.COMPLETED)
                 .build();
 
         request = CreateRatingRequest.builder()
@@ -288,6 +288,22 @@ class RatingServiceImplTest {
     @DisplayName("createRating_ticketNotCompleted_throwsBadRequest")
     void createRating_ticketNotCompleted_throwsBadRequest() {
         ticket.setStatus(TicketStatus.IN_PROGRESS);
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ratingService.createRating(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.TICKET_NOT_COMPLETED);
+
+        verify(ratingRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("createRating_ticketIsResolvedOnly_throwsTicketNotCompleted")
+    void createRating_ticketIsResolvedOnly_throwsTicketNotCompleted() {
+        ticket.setStatus(TicketStatus.RESOLVED);
+        ticket.setUser(currentUser);
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
 

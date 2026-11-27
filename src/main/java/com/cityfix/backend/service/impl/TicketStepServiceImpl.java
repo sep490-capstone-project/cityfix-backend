@@ -54,6 +54,7 @@ public class TicketStepServiceImpl implements TicketStepService {
     private final TicketService ticketService;
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
     private final com.cityfix.backend.service.NotificationService notificationService;
+    private final ManagerDepartmentAccessValidator managerDepartmentAccessValidator;
 
     private User getCurrentUser() {
         String email = SecurityUtils.getCurrentUserEmail();
@@ -99,11 +100,30 @@ public class TicketStepServiceImpl implements TicketStepService {
         User currentUser = getCurrentUser();
         validateStepPermission(step, currentUser);
 
-        if (status == AssignmentStatus.IN_PROGRESS || status == AssignmentStatus.RESOLVED || status == AssignmentStatus.COMPLETED) {
-            validateStepPrerequisites(step);
+        if (status == null || (status != AssignmentStatus.IN_PROGRESS && status != AssignmentStatus.RESOLVED)) {
+            throw new AppException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Nhân viên chỉ được cập nhật trạng thái bước sang IN_PROGRESS hoặc RESOLVED."
+            );
         }
 
         AssignmentStatus prevStatus = step.getStatus();
+
+        if (status == AssignmentStatus.IN_PROGRESS && prevStatus != AssignmentStatus.ASSIGNED) {
+            throw new AppException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Chỉ có thể chuyển bước sang IN_PROGRESS từ trạng thái ASSIGNED."
+            );
+        }
+
+        if (status == AssignmentStatus.RESOLVED && prevStatus != AssignmentStatus.IN_PROGRESS) {
+            throw new AppException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Bước xử lý phải ở trạng thái IN_PROGRESS trước khi chuyển sang RESOLVED."
+            );
+        }
+
+        validateStepPrerequisites(step);
 
         if (status == AssignmentStatus.RESOLVED) {
             if (!resolutionEvidenceRepository.existsByTicketStep_Id(stepId)) {
@@ -191,6 +211,8 @@ public class TicketStepServiceImpl implements TicketStepService {
 
         TicketStep step = ticketStepRepository.findById(stepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, step, false);
 
         ticketStepRepository.delete(step);
 

@@ -57,6 +57,8 @@ class TicketStepServiceImplTest {
     @Mock
     private NotificationService notificationService;
     @Mock
+    private com.cityfix.backend.service.impl.ManagerDepartmentAccessValidator managerDepartmentAccessValidator;
+    @Mock
     private SecurityContext securityContext;
 
     @InjectMocks
@@ -141,27 +143,72 @@ class TicketStepServiceImplTest {
     }
 
     @Test
-    @DisplayName("updateTicketStepStatus_whenCurrentUserIsAssignee_completed_setsCompletedAt")
-    void updateTicketStepStatus_whenCurrentUserIsAssignee_completed_setsCompletedAt() {
+    @DisplayName("updateTicketStepStatus_staffAttemptCompleted_throwsInvalidStatusTransition")
+    void updateTicketStepStatus_staffAttemptCompleted_throwsInvalidStatusTransition() {
         mockCurrentUser(staffUser);
+        step.setStatus(AssignmentStatus.IN_PROGRESS);
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
-        when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketStepResponse mockResponse = TicketStepResponse.builder().id(stepId).status(AssignmentStatus.COMPLETED).build();
-        when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(mockResponse);
+        assertThatThrownBy(() -> ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.COMPLETED))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
 
-        TicketStepResponse response = ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.COMPLETED);
+        verify(ticketStepRepository, never()).save(any());
+        verify(ticketWorkflowEngine, never()).handleStepCompletion(any());
+    }
 
-        assertThat(response).isNotNull();
-        assertThat(step.getStatus()).isEqualTo(AssignmentStatus.COMPLETED);
-        assertThat(step.getCompletedAt()).isNotNull();
-        assertThat(step.getUpdatedAt()).isNotNull();
+    @Test
+    @DisplayName("updateTicketStepStatus_staffAttemptCancelled_throwsInvalidStatusTransition")
+    void updateTicketStepStatus_staffAttemptCancelled_throwsInvalidStatusTransition() {
+        mockCurrentUser(staffUser);
+        step.setStatus(AssignmentStatus.IN_PROGRESS);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        assertThatThrownBy(() -> ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.CANCELLED))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        verify(ticketStepRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStepStatus_assignedDirectToResolved_throwsInvalidStatusTransition")
+    void updateTicketStepStatus_assignedDirectToResolved_throwsInvalidStatusTransition() {
+        mockCurrentUser(staffUser);
+        step.setStatus(AssignmentStatus.ASSIGNED);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        assertThatThrownBy(() -> ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.RESOLVED))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        verify(ticketStepRepository, never()).save(any());
+        verify(ticketWorkflowEngine, never()).handleStepCompletion(any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStepStatus_resolvedBackToInProgressByStaff_throwsInvalidStatusTransition")
+    void updateTicketStepStatus_resolvedBackToInProgressByStaff_throwsInvalidStatusTransition() {
+        mockCurrentUser(staffUser);
+        step.setStatus(AssignmentStatus.RESOLVED);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+
+        assertThatThrownBy(() -> ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.IN_PROGRESS))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION);
+
+        verify(ticketStepRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("updateTicketStepStatus_resolved_withoutEvidence_throwsEvidenceRequired")
     void updateTicketStepStatus_resolved_withoutEvidence_throwsEvidenceRequired() {
         mockCurrentUser(staffUser);
+        step.setStatus(AssignmentStatus.IN_PROGRESS);
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
         when(resolutionEvidenceRepository.existsByTicketStep_Id(stepId)).thenReturn(false);
 
@@ -175,6 +222,7 @@ class TicketStepServiceImplTest {
     @DisplayName("updateTicketStepStatus_resolved_withEvidence_success")
     void updateTicketStepStatus_resolved_withEvidence_success() {
         mockCurrentUser(staffUser);
+        step.setStatus(AssignmentStatus.IN_PROGRESS);
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
         when(resolutionEvidenceRepository.existsByTicketStep_Id(stepId)).thenReturn(true);
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -268,6 +316,7 @@ class TicketStepServiceImplTest {
     @DisplayName("updateTicketStepStatus_recalculatesTicketDeadline")
     void updateTicketStepStatus_recalculatesTicketDeadline() {
         mockCurrentUser(staffUser);
+        step.setStatus(AssignmentStatus.IN_PROGRESS);
 
         Ticket ticket = new Ticket();
         ticket.setTicketId(UUID.randomUUID());
@@ -276,13 +325,14 @@ class TicketStepServiceImplTest {
         java.time.LocalDateTime expectedDeadline = java.time.LocalDateTime.now().plusHours(48);
 
         when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        when(resolutionEvidenceRepository.existsByTicketStep_Id(stepId)).thenReturn(true);
         when(ticketStepRepository.save(any(TicketStep.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(ticketService.calculateTicketDeadline(ticket)).thenReturn(expectedDeadline);
 
-        TicketStepResponse mockResponse = TicketStepResponse.builder().id(stepId).status(AssignmentStatus.COMPLETED).build();
+        TicketStepResponse mockResponse = TicketStepResponse.builder().id(stepId).status(AssignmentStatus.RESOLVED).build();
         when(ticketStepMapper.toTicketStepResponse(any(TicketStep.class))).thenReturn(mockResponse);
 
-        ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.COMPLETED);
+        ticketStepService.updateTicketStepStatus(stepId, AssignmentStatus.RESOLVED);
 
         verify(ticketService).calculateTicketDeadline(ticket);
         verify(ticketRepository).save(ticket);
@@ -339,7 +389,24 @@ class TicketStepServiceImplTest {
 
         ticketStepService.deleteTicketStep(stepId);
 
+        verify(managerDepartmentAccessValidator).validateStepAccess(managerUser, step, false);
         verify(ticketStepRepository).delete(step);
+    }
+
+    @Test
+    @DisplayName("deleteTicketStep_whenTicketOutsideManagerDepartment_throwsForbidden")
+    void deleteTicketStep_whenTicketOutsideManagerDepartment_throwsForbidden() {
+        mockCurrentUser(managerUser);
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(managerDepartmentAccessValidator).validateStepAccess(managerUser, step, false);
+
+        assertThatThrownBy(() -> ticketStepService.deleteTicketStep(stepId))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketStepRepository, never()).delete(any());
     }
 
     @Test

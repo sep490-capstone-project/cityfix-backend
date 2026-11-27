@@ -120,6 +120,9 @@ class TicketServiceTest {
     private com.cityfix.backend.service.NotificationService notificationService;
 
     @Mock
+    private com.cityfix.backend.service.impl.ManagerDepartmentAccessValidator managerDepartmentAccessValidator;
+
+    @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @Mock
@@ -1613,7 +1616,7 @@ class TicketServiceTest {
         TicketStep step1 = TicketStep.builder().id(stepId1).build();
         TicketStep step2 = TicketStep.builder().id(stepId2).build();
 
-        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(mockTicket));
         when(ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(List.of(step1, step2));
         when(ticketStepMapper.toTicketStepResponseList(anyList())).thenReturn(List.of(
                 com.cityfix.backend.model.dto.response.TicketStepResponse.builder().id(stepId1).build(),
