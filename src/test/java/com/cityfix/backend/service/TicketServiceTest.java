@@ -1468,6 +1468,8 @@ class TicketServiceTest {
 
         User assignee = new User();
         assignee.setUserId(assigneeId);
+        assignee.setRole(new Role(UUID.randomUUID(), "STAFF"));
+        assignee.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
         assignee.setDepartment(dept);
 
         com.cityfix.backend.model.entity.TicketStep step = new com.cityfix.backend.model.entity.TicketStep();
@@ -1675,6 +1677,8 @@ class TicketServiceTest {
 
         User targetAssignee = new User();
         targetAssignee.setUserId(UUID.randomUUID());
+        targetAssignee.setRole(staffRole);
+        targetAssignee.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
         targetAssignee.setDepartment(deptB);
 
         AssignTicketRequest request = AssignTicketRequest.builder()
@@ -1691,6 +1695,89 @@ class TicketServiceTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("assignTicket_whenNewAssigneeIsBlockedOrNotStaff_throwsInvalidRequest")
+    void assignTicket_whenNewAssigneeIsBlockedOrNotStaff_throwsInvalidRequest() {
+        com.cityfix.backend.model.entity.Department deptA = new com.cityfix.backend.model.entity.Department();
+        deptA.setDepartmentId(UUID.randomUUID());
+        Role staffRole = new Role(UUID.randomUUID(), "STAFF");
+        Role managerRole = new Role(UUID.randomUUID(), "MANAGER");
+
+        mockUser.setRole(staffRole);
+        mockUser.setDepartment(deptA);
+
+        User currentStepAssignee = new User();
+        currentStepAssignee.setUserId(UUID.randomUUID());
+        currentStepAssignee.setRole(staffRole);
+        currentStepAssignee.setDepartment(deptA);
+
+        TicketStep step = new TicketStep();
+        step.setId(UUID.randomUUID());
+        step.setStatus(com.cityfix.backend.model.enums.AssignmentStatus.ASSIGNED);
+        step.setAssignee(currentStepAssignee);
+
+        mockTicket.setStatus(TicketStatus.ASSIGNED);
+        mockTicket.setSteps(new ArrayList<>(List.of(step)));
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(eq(mockTicket.getTicketId()), any()))
+                .thenReturn(List.of(step));
+
+        // Case 1: Blocked Staff
+        User blockedStaff = new User();
+        blockedStaff.setUserId(UUID.randomUUID());
+        blockedStaff.setRole(staffRole);
+        blockedStaff.setStatus(com.cityfix.backend.model.enums.UserStatus.BLOCKED);
+        blockedStaff.setDepartment(deptA);
+        when(userRepository.findById(blockedStaff.getUserId())).thenReturn(Optional.of(blockedStaff));
+
+        AssignTicketRequest blockedReq = new AssignTicketRequest(step.getId(), blockedStaff.getUserId());
+        assertThatThrownBy(() -> ticketService.assignTicket(mockTicket.getTicketId(), blockedReq))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+
+        // Case 2: Non-STAFF role (MANAGER)
+        User managerTarget = new User();
+        managerTarget.setUserId(UUID.randomUUID());
+        managerTarget.setRole(managerRole);
+        managerTarget.setStatus(com.cityfix.backend.model.enums.UserStatus.ACTIVE);
+        managerTarget.setDepartment(deptA);
+        when(userRepository.findById(managerTarget.getUserId())).thenReturn(Optional.of(managerTarget));
+
+        AssignTicketRequest managerReq = new AssignTicketRequest(step.getId(), managerTarget.getUserId());
+        assertThatThrownBy(() -> ticketService.assignTicket(mockTicket.getTicketId(), managerReq))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("rerouteTicket_softDeletedTargetDepartment_throwsDEPARTMENT_NOT_FOUND")
+    void rerouteTicket_softDeletedTargetDepartment_throwsDEPARTMENT_NOT_FOUND() {
+        Role adminRole = new Role(UUID.randomUUID(), "ADMIN");
+        mockUser.setRole(adminRole);
+
+        UUID deletedDeptId = UUID.randomUUID();
+        com.cityfix.backend.model.entity.Department deletedDept = new com.cityfix.backend.model.entity.Department();
+        deletedDept.setDepartmentId(deletedDeptId);
+        deletedDept.setDeleted(true);
+
+        when(ticketRepository.findById(mockTicket.getTicketId())).thenReturn(Optional.of(mockTicket));
+        when(departmentRepository.findById(deletedDeptId)).thenReturn(Optional.of(deletedDept));
+
+        com.cityfix.backend.model.dto.request.RerouteTicketRequest rerouteRequest =
+                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
+                        .targetDepartmentId(deletedDeptId)
+                        .reason("Chuyển sang phòng ban đã xóa mềm")
+                        .build();
+
+        assertThatThrownBy(() -> ticketService.rerouteTicket(mockTicket.getTicketId(), rerouteRequest))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
     }
 
     @Test

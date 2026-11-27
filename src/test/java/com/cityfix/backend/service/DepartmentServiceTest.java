@@ -160,7 +160,7 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("updateDepartment_validData_returnsUpdatedDepartmentResponse")
     void updateDepartment_validData_returnsUpdatedDepartmentResponse() {
-        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
         when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(updateRequest.name(), departmentId)).thenReturn(false);
         when(departmentRepository.save(mockDepartment)).thenReturn(mockDepartment);
         when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
@@ -175,7 +175,7 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("updateDepartment_departmentNotFound_throwsDepartmentNotFoundException")
     void updateDepartment_departmentNotFound_throwsDepartmentNotFoundException() {
-        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.empty());
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> departmentService.updateDepartment(departmentId, updateRequest))
                 .isInstanceOf(AppException.class)
@@ -188,13 +188,84 @@ class DepartmentServiceTest {
     @Test
     @DisplayName("updateDepartment_duplicateName_throwsDepartmentNameExistsException")
     void updateDepartment_duplicateName_throwsDepartmentNameExistsException() {
-        when(departmentRepository.findByDepartmentIdAndIsDeletedFalse(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
         when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(updateRequest.name(), departmentId)).thenReturn(true);
 
         assertThatThrownBy(() -> departmentService.updateDepartment(departmentId, updateRequest))
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.DEPARTMENT_NAME_EXISTS);
+
+        verify(departmentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateDepartment_reactivateSoftDeletedDepartment_restoresActiveState")
+    void updateDepartment_reactivateSoftDeletedDepartment_restoresActiveState() {
+        mockDepartment.setDeleted(true);
+        mockDepartment.setDeletedAt(LocalDateTime.now().minusDays(1));
+        UpdateDepartmentRequest reactivateReq = new UpdateDepartmentRequest(
+                mockDepartment.getName(),
+                mockDepartment.getContactEmail(),
+                mockDepartment.getPhoneNumber(),
+                true
+        );
+
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(mockDepartment.getName(), departmentId)).thenReturn(false);
+        when(departmentRepository.save(mockDepartment)).thenReturn(mockDepartment);
+        when(departmentMapper.toResponse(mockDepartment)).thenReturn(mockResponse);
+
+        DepartmentResponse result = departmentService.updateDepartment(departmentId, reactivateReq);
+
+        assertThat(result).isNotNull();
+        assertThat(mockDepartment.isDeleted()).isFalse();
+        assertThat(mockDepartment.getDeletedAt()).isNull();
+        verify(departmentRepository).existsByNameAndDepartmentIdNotAndIsDeletedFalse(mockDepartment.getName(), departmentId);
+        verify(departmentRepository).save(mockDepartment);
+    }
+
+    @Test
+    @DisplayName("updateDepartment_reactivateWithDuplicateActiveName_throwsDepartmentNameExists")
+    void updateDepartment_reactivateWithDuplicateActiveName_throwsDepartmentNameExists() {
+        mockDepartment.setDeleted(true);
+        mockDepartment.setDeletedAt(LocalDateTime.now().minusDays(1));
+        UpdateDepartmentRequest reactivateReq = new UpdateDepartmentRequest(
+                mockDepartment.getName(),
+                mockDepartment.getContactEmail(),
+                mockDepartment.getPhoneNumber(),
+                true
+        );
+
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+        when(departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(mockDepartment.getName(), departmentId)).thenReturn(true);
+
+        assertThatThrownBy(() -> departmentService.updateDepartment(departmentId, reactivateReq))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NAME_EXISTS);
+
+        verify(departmentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateDepartment_softDeletedWithoutIsActiveTrue_throwsDepartmentNotFound")
+    void updateDepartment_softDeletedWithoutIsActiveTrue_throwsDepartmentNotFound() {
+        mockDepartment.setDeleted(true);
+        mockDepartment.setDeletedAt(LocalDateTime.now().minusDays(1));
+        UpdateDepartmentRequest nonReactivatingReq = new UpdateDepartmentRequest(
+                "Tên mới",
+                "new@cityfix.vn",
+                "0901234567",
+                null
+        );
+
+        when(departmentRepository.findById(departmentId)).thenReturn(Optional.of(mockDepartment));
+
+        assertThatThrownBy(() -> departmentService.updateDepartment(departmentId, nonReactivatingReq))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.DEPARTMENT_NOT_FOUND);
 
         verify(departmentRepository, never()).save(any());
     }

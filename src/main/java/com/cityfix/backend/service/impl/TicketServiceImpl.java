@@ -126,7 +126,11 @@ public class TicketServiceImpl implements TicketService {
     }
 
     private boolean isStaff(User user) {
-        return user != null && user.getRole() != null && "STAFF".equalsIgnoreCase(user.getRole().getRoleName());
+        if (user == null || user.getRole() == null || user.getRole().getRoleName() == null) {
+            return false;
+        }
+        String roleName = user.getRole().getRoleName().trim();
+        return "STAFF".equalsIgnoreCase(roleName) || "ROLE_STAFF".equalsIgnoreCase(roleName);
     }
 
     private boolean isManager(User user) {
@@ -964,6 +968,7 @@ public class TicketServiceImpl implements TicketService {
         }
 
         Department targetDepartment = departmentRepository.findById(request.getTargetDepartmentId())
+                .filter(d -> !d.isDeleted())
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
         User targetStaff = findRepresentativeStaffForDepartment(targetDepartment.getDepartmentId())
@@ -1086,6 +1091,13 @@ public class TicketServiceImpl implements TicketService {
 
         User assignee = userRepository.findById(request.getAssigneeId())
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+
+        if (assignee.isDeleted() || assignee.getStatus() != com.cityfix.backend.model.enums.UserStatus.ACTIVE) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Nhân viên được phân công không còn hoạt động");
+        }
+        if (!isStaff(assignee)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Người được phân công bước xử lý phải có vai trò STAFF");
+        }
 
         Set<UUID> assigneeDeptIds = resolveUserDepartmentIds(assignee);
         if (assigneeDeptIds.isEmpty()) {
