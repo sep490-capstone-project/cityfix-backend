@@ -617,6 +617,9 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             if (staff.isDeleted() || staff.getStatus() != com.cityfix.backend.model.enums.UserStatus.ACTIVE) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Nhân viên '" + staff.getFullName() + "' không còn hoạt động");
             }
+            if (!isStaffRole(staff)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Người được phân công bước xử lý phải có vai trò STAFF");
+            }
         }
 
         // Batch query kiểm tra phòng ban qua bảng user_department để tránh N+1 query
@@ -638,6 +641,14 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             }
         }
         return assignees.stream().collect(Collectors.toMap(User::getUserId, Function.identity()));
+    }
+
+    private boolean isStaffRole(User user) {
+        if (user == null || user.getRole() == null || user.getRole().getRoleName() == null) {
+            return false;
+        }
+        String roleName = user.getRole().getRoleName().trim();
+        return "STAFF".equalsIgnoreCase(roleName) || "ROLE_STAFF".equalsIgnoreCase(roleName);
     }
 
     private boolean hasActiveDepartmentInMemory(User user) {
