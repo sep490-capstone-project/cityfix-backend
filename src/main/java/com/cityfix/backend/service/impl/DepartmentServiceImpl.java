@@ -66,11 +66,18 @@ public class DepartmentServiceImpl implements DepartmentService {
     @Override
     @Transactional
     public DepartmentResponse updateDepartment(UUID id, UpdateDepartmentRequest request) {
-        Department department = departmentRepository.findByDepartmentIdAndIsDeletedFalse(id)
+        Department department = departmentRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
 
-        if (request.name() != null && !request.name().equals(department.getName())) {
-            if (departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(request.name(), id)) {
+        boolean isReactivating = department.isDeleted() && Boolean.TRUE.equals(request.isActive());
+        if (department.isDeleted() && !isReactivating) {
+            throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
+        }
+
+        String targetName = request.name() != null ? request.name() : department.getName();
+        boolean nameChanged = request.name() != null && !request.name().equals(department.getName());
+        if ((nameChanged || isReactivating) && targetName != null) {
+            if (departmentRepository.existsByNameAndDepartmentIdNotAndIsDeletedFalse(targetName, id)) {
                 throw new AppException(ErrorCode.DEPARTMENT_NAME_EXISTS);
             }
         }

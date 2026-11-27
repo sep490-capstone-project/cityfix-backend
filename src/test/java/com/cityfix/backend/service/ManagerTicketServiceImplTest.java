@@ -236,6 +236,7 @@ class ManagerTicketServiceImplTest {
         User staffInDept = User.builder()
                 .userId(UUID.randomUUID())
                 .fullName("Nguyễn Văn A")
+                .role(new Role(UUID.randomUUID(), "STAFF"))
                 .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
                 .department(dept)
                 .build();
@@ -617,6 +618,7 @@ class ManagerTicketServiceImplTest {
         User staffInDept = User.builder()
                 .userId(UUID.randomUUID())
                 .fullName("Lê Nhân Viên")
+                .role(new Role(UUID.randomUUID(), "STAFF"))
                 .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
                 .department(dept)
                 .build();
@@ -687,6 +689,7 @@ class ManagerTicketServiceImplTest {
         User staffInDept = User.builder()
                 .userId(UUID.randomUUID())
                 .fullName("Lê Nhân Viên")
+                .role(new Role(UUID.randomUUID(), "STAFF"))
                 .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
                 .department(dept)
                 .build();
@@ -1808,6 +1811,7 @@ class ManagerTicketServiceImplTest {
         User staffInDeletedDept = User.builder()
                 .userId(UUID.randomUUID())
                 .fullName("Nguyễn Văn B")
+                .role(new Role(UUID.randomUUID(), "STAFF"))
                 .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
                 .department(softDeletedDept)
                 .build();
@@ -2087,5 +2091,54 @@ class ManagerTicketServiceImplTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.STEP_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_whenAssigneeIsNotStaffRole_throwsInvalidRequest")
+    void reviewTicket_whenAssigneeIsNotStaffRole_throwsInvalidRequest() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+
+        UUID subCatId = UUID.randomUUID();
+        SubCategory mockSubCat = SubCategory.builder()
+                .subCategoryId(subCatId)
+                .name("Sự cố đường bộ")
+                .isActive(true)
+                .sla(24)
+                .build();
+
+        UUID stepId = UUID.randomUUID();
+        Step mockStep = Step.builder()
+                .stepId(stepId)
+                .stepName("Khảo sát hiện trường")
+                .build();
+
+        Department dept = Department.builder().departmentId(UUID.randomUUID()).name("Phòng QLĐT").build();
+        User anotherManager = User.builder()
+                .userId(UUID.randomUUID())
+                .fullName("Quản Lý Khác")
+                .role(new Role(UUID.randomUUID(), "MANAGER"))
+                .status(com.cityfix.backend.model.enums.UserStatus.ACTIVE)
+                .department(dept)
+                .build();
+
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(subCategoryRepository.findAllById(List.of(subCatId))).thenReturn(List.of(mockSubCat));
+        when(stepRepository.findAllById(any())).thenReturn(List.of(mockStep));
+        when(userRepository.findAllById(any())).thenReturn(List.of(anotherManager));
+
+        ReviewTicketRequest request = ReviewTicketRequest.builder()
+                .subCategoryIds(List.of(subCatId))
+                .steps(List.of(ReviewTicketRequest.StepAssignmentRequest.builder()
+                        .stepId(stepId)
+                        .assigneeId(anotherManager.getUserId())
+                        .deadline(LocalDateTime.now().plusHours(12))
+                        .build()))
+                .build();
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.INVALID_REQUEST);
     }
 }
