@@ -4,9 +4,11 @@ import com.cityfix.backend.exception.AppException;
 import com.cityfix.backend.exception.ErrorCode;
 import com.cityfix.backend.mapper.UserMapper;
 import com.cityfix.backend.model.dto.request.LoginRequest;
+import com.cityfix.backend.model.dto.request.PhoneLoginRequest;
 import com.cityfix.backend.model.dto.request.RefreshTokenRequest;
 import com.cityfix.backend.model.dto.request.ResendOtpRequest;
 import com.cityfix.backend.model.dto.request.ResetPasswordRequest;
+import com.cityfix.backend.model.dto.request.UpdatePhoneRequest;
 import com.cityfix.backend.model.dto.request.UserRegisterRequest;
 import com.cityfix.backend.model.dto.request.VerifyOtpRequest;
 import com.cityfix.backend.model.dto.response.LoginResponse;
@@ -170,6 +172,30 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public LoginResponse loginByPhone(PhoneLoginRequest request) {
+        String rawPhone = request.getPhoneNumber().trim();
+        String localPhone = normalizeVietnamPhone(rawPhone);
+
+        User user = userRepository.findByPhoneNumberAndIsDeletedFalse(localPhone)
+                .or(() -> userRepository.findByPhoneNumberAndIsDeletedFalse(rawPhone))
+                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new AppException(ErrorCode.INVALID_PASSWORD);
+        }
+        if (user.getStatus() == com.cityfix.backend.model.enums.UserStatus.BLOCKED) {
+            throw new AppException(ErrorCode.ACCOUNT_BANNED);
+        }
+
+        String accessToken = tokenService.generateAccessToken(user);
+        String refreshToken = tokenService.generateRefreshToken(user);
+        return LoginResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .build();
+    }
+
+    @Override
     public LoginResponse refreshToken(RefreshTokenRequest request) {
         if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
             throw new AppException(ErrorCode.INVALID_REFRESH_TOKEN);
@@ -235,18 +261,61 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findByEmailAndIsDeletedFalse(email)
                 .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
 
-        if (request.getPhoneNumber() != null && !request.getPhoneNumber().isBlank() 
-                && !request.getPhoneNumber().equals(user.getPhoneNumber())) {
-            userRepository.findByPhoneNumber(request.getPhoneNumber()).ifPresent(existingUser -> {
-                if (!existingUser.getUserId().equals(user.getUserId())) {
-                    throw new AppException(ErrorCode.PHONE_ALREADY_EXISTS);
-                }
-            });
-        }
-
         userMapper.updateUserFromRequest(request, user);
         userRepository.save(user);
         return userMapper.toUserProfileResponse(user);
+    }
+
+    @Override
+    @Transactional
+    public com.cityfix.backend.model.dto.response.UserProfileResponse updateMyPhoneNumber(UpdatePhoneRequest request) {
+        String email = getCurrentUserEmail();
+        User user = userRepository.findByEmailAndIsDeletedFalse(email)
+                .orElseThrow(() -> new AppException(ErrorCode.ACCOUNT_NOT_FOUND));
+
+        if (user.getStatus() == com.cityfix.backend.model.enums.UserStatus.BLOCKED) {
+            throw new AppException(ErrorCode.ACCOUNT_BANNED);
+        }
+
+        try {
+            FirebaseToken decodedToken = FirebaseAuth.getInstance().verifyIdToken(request.getFirebaseIdToken());
+            String verifiedPhone = (String) decodedToken.getClaims().get("phone_number");
+
+            if (verifiedPhone == null || verifiedPhone.isBlank()) {
+                throw new AppException(ErrorCode.INVALID_TOKEN);
+            }
+
+            String trimmedVerifiedPhone = verifiedPhone.trim();
+            String localPhone = normalizeVietnamPhone(trimmedVerifiedPhone);
+
+            if (localPhone.equals(user.getPhoneNumber()) || trimmedVerifiedPhone.equals(user.getPhoneNumber())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Số điện thoại mới không được trùng với số điện thoại hiện tại");
+            }
+
+            userRepository.findByPhoneNumberAndIsDeletedFalse(localPhone)
+                    .or(() -> userRepository.findByPhoneNumberAndIsDeletedFalse(trimmedVerifiedPhone))
+                    .or(() -> userRepository.findByPhoneNumber(localPhone))
+                    .ifPresent(existingUser -> {
+                        if (!existingUser.getUserId().equals(user.getUserId())) {
+                            throw new AppException(ErrorCode.PHONE_ALREADY_EXISTS);
+                        }
+                    });
+
+            user.setPhoneNumber(localPhone);
+            userRepository.save(user);
+            return userMapper.toUserProfileResponse(user);
+        } catch (FirebaseAuthException e) {
+            log.error("Firebase verify token failed during phone update: {}", e.getMessage());
+            throw new AppException(ErrorCode.UNAUTHENTICATED);
+        }
+    }
+
+    private String normalizeVietnamPhone(String rawPhone) {
+        if (rawPhone == null) {
+            return null;
+        }
+        String trimmed = rawPhone.trim();
+        return trimmed.startsWith("+84") ? "0" + trimmed.substring(3) : trimmed;
     }
 
     private String getCurrentUserEmail() {
