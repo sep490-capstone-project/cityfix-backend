@@ -86,28 +86,6 @@ class StaffTicketControllerTest {
     }
 
     @Test
-    @DisplayName("forwardTicket_returns200Success")
-    void forwardTicket_returns200Success() {
-        UUID ticketId = UUID.randomUUID();
-        com.cityfix.backend.model.dto.request.RejectTicketRequest request = new com.cityfix.backend.model.dto.request.RejectTicketRequest(UUID.randomUUID(), null, "Sai chuyên môn");
-        
-        TicketResponse mockResponse = TicketResponse.builder()
-                .id(ticketId)
-                .status(TicketStatus.ASSIGNED)
-                .build();
-                
-        when(ticketService.forwardTicket(eq(ticketId), any())).thenReturn(mockResponse);
-        
-        ResponseEntity<BaseResponse<TicketResponse>> response = staffTicketController.forwardTicket(ticketId, request);
-        
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().isSuccess()).isTrue();
-        
-        verify(ticketService, times(1)).forwardTicket(eq(ticketId), any());
-    }
-
-    @Test
     @DisplayName("updateTicketStatus_returns200Success")
     void updateTicketStatus_returns200Success() {
         UUID ticketId = UUID.randomUUID();

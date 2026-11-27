@@ -65,11 +65,9 @@ public class TicketServiceImpl implements TicketService {
     private final TicketVoteRepository ticketVoteRepository;
     private final UserRepository userRepository;
     private final UserDepartmentRepository userDepartmentRepository;
-    private final CategoryRepository categoryRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final ReportImageRepository reportImageRepository;
     private final RoutingRuleRepository routingRuleRepository;
-    private final DepartmentRepository departmentRepository;
     private final TicketStepRepository ticketStepRepository;
     private final TicketSubCategoryRepository ticketSubCategoryRepository;
     private final SubCategoryMapper subCategoryMapper;
@@ -85,6 +83,7 @@ public class TicketServiceImpl implements TicketService {
     private final SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ManagerDepartmentAccessValidator managerDepartmentAccessValidator;
 
     private static final List<String> ALLOWED_IMAGE_MIME_TYPES = List.of(
             "image/jpeg",
@@ -954,74 +953,6 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
-    @Transactional
-    public TicketResponse rerouteTicket(UUID ticketId, RerouteTicketRequest request) {
-        User currentUser = getCurrentUser();
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-
-        validateStaffDepartmentAccess(ticket, currentUser);
-
-        if (ticket.getStatus() == TicketStatus.RESOLVED || ticket.getStatus() == TicketStatus.COMPLETED) {
-            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
-        }
-
-        Department targetDepartment = departmentRepository.findById(request.getTargetDepartmentId())
-                .filter(d -> !d.isDeleted())
-                .orElseThrow(() -> new AppException(ErrorCode.DEPARTMENT_NOT_FOUND));
-
-        User targetStaff = findRepresentativeStaffForDepartment(targetDepartment.getDepartmentId())
-                .orElseThrow(() -> new AppException(ErrorCode.STAFF_NOT_FOUND));
-
-        // Reset old active steps to ASSIGNED before re-assigning
-        List<TicketStep> activeSteps =
-                ticketStepRepository.findByTicketTicketIdAndStatusInOrderByCreatedAtAsc(
-                        ticketId,
-                        List.of(AssignmentStatus.ASSIGNED, AssignmentStatus.IN_PROGRESS)
-                );
-
-        for (TicketStep oldStep : activeSteps) {
-            oldStep.setStatus(AssignmentStatus.ASSIGNED);
-            ticketStepRepository.save(oldStep);
-        }
-
-        if (ticket.getSubCategories() != null && !ticket.getSubCategories().isEmpty()) {
-            LocalDateTime currentStart = LocalDateTime.now();
-            for (TicketSubCategory tsc : ticket.getSubCategories()) {
-                if (tsc.getSubCategory() != null) {
-                    List<Step> targetSteps = stepRepository.findBySubCategory_SubCategoryIdAndIsDeletedFalse(tsc.getSubCategory().getSubCategoryId());
-                    for (Step s : targetSteps) {
-                        LocalDateTime stepStart = currentStart;
-                        LocalDateTime stepDeadline = null;
-                        if (s.getDuration() != null && s.getDuration() > 0) {
-                            stepDeadline = stepStart.plusHours(s.getDuration());
-                            currentStart = stepDeadline;
-                        }
-                        createOrUpdateTicketStep(ticket, s, targetStaff, AssignmentStatus.ASSIGNED, stepStart, stepDeadline);
-                    }
-                }
-            }
-        }
-
-        TicketStatus prevStatus = ticket.getStatus();
-        ticket.setStatus(TicketStatus.ASSIGNED);
-        ticket.setNeedsManualReview(false);
-        ticket.setDeadline(calculateTicketDeadline(ticket));
-        ticket = ticketRepository.save(ticket);
-
-        TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.REROUTED, prevStatus, TicketStatus.ASSIGNED, request.getReason()
-        );
-        ticketHistoryRepository.save(history);
-        if (notificationService != null) {
-            notificationService.notifySosTicketStatusChanged(ticket, prevStatus, TicketStatus.ASSIGNED);
-        }
-
-        return ticketMapper.toTicketResponse(ticket);
-    }
-
-    @Override
     @Transactional(readOnly = true)
     public Page<TicketResponse> getAssignedTicketsForStaff(
             AssignmentStatus status, Pageable pageable) {
@@ -1138,45 +1069,6 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     @Transactional
-    public TicketResponse forwardTicket(UUID ticketId, RejectTicketRequest request) {
-        User currentUser = getCurrentUser();
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-
-        validateStaffDepartmentAccess(ticket, currentUser);
-
-        if (request.getSuggestedCategoryId() != null) {
-            categoryRepository.findById(request.getSuggestedCategoryId())
-                    .orElseThrow(() -> new AppException(ErrorCode.CATEGORY_NOT_FOUND));
-        }
-
-        TicketHistory forwardHistory = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.REROUTED, ticket.getStatus(), ticket.getStatus(), request.getReason()
-        );
-        ticketHistoryRepository.save(forwardHistory);
-
-        UUID targetDepartmentId = request.getSuggestedDepartmentId();
-        if (targetDepartmentId == null && request.getSuggestedCategoryId() != null) {
-            List<RoutingRule> rules = routingRuleRepository.findByCategoryCategoryIdAndIsDeletedFalse(request.getSuggestedCategoryId());
-            if (rules != null && rules.size() == 1 && rules.get(0).getDepartment() != null) {
-                targetDepartmentId = rules.get(0).getDepartment().getDepartmentId();
-            }
-        }
-        if (targetDepartmentId == null) {
-            throw new AppException(ErrorCode.DEPARTMENT_NOT_FOUND);
-        }
-
-        RerouteTicketRequest rerouteReq = RerouteTicketRequest.builder()
-                .targetDepartmentId(targetDepartmentId)
-                .reason(request.getReason() != null ? request.getReason() : "Từ chối và định tuyến lại")
-                .build();
-                
-        return this.rerouteTicket(ticketId, rerouteReq);
-    }
-
-    @Override
-    @Transactional
     public TicketResponse cancelTicket(UUID ticketId) {
         User currentUser = getCurrentUser();
 
@@ -1196,37 +1088,6 @@ public class TicketServiceImpl implements TicketService {
 
         TicketHistory history = ticketHistoryMapper.toTicketHistory(
                 ticket, currentUser, ActionType.CANCELLED, TicketStatus.INITIATED, TicketStatus.CANCELLED, "Người dân tự hủy vé"
-        );
-        ticketHistoryRepository.save(history);
-
-        ticket = ticketRepository.save(ticket);
-        return ticketMapper.toTicketResponse(ticket);
-    }
-
-    @Override
-    @Transactional
-    public TicketResponse rejectAssignedTicket(UUID ticketId, String reason) {
-        User currentUser = getCurrentUser();
-
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
-
-        validateStaffDepartmentAccess(ticket, currentUser);
-
-        if (ticket.getStatus() != TicketStatus.ASSIGNED) {
-            throw new AppException(ErrorCode.TICKET_INVALID_STATUS);
-        }
-
-        String finalReason = (reason == null || reason.trim().isEmpty()) ? "Không có lý do từ chối" : reason;
-
-        TicketStatus prevStatus = ticket.getStatus();
-        ticket.setStatus(TicketStatus.REJECTED);
-        ticket.setReviewNote(finalReason);
-
-        cascadeCancelTicketSteps(ticketId);
-
-        TicketHistory history = ticketHistoryMapper.toTicketHistory(
-                ticket, currentUser, ActionType.REJECTED, prevStatus, TicketStatus.REJECTED, finalReason
         );
         ticketHistoryRepository.save(history);
 
@@ -1258,6 +1119,8 @@ public class TicketServiceImpl implements TicketService {
 
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, ticketStep, false);
 
         LocalDateTime now = LocalDateTime.now();
         ticketStepMapper.updateDeadline(request, ticketStep);
@@ -1297,6 +1160,8 @@ public class TicketServiceImpl implements TicketService {
 
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         Map<UUID, TicketStep> stepMap = steps.stream()
@@ -1413,6 +1278,8 @@ public class TicketServiceImpl implements TicketService {
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, ticketStep, false);
+
         return ticketStepMapper.toTicketStepResponse(ticketStep);
     }
 
@@ -1424,9 +1291,10 @@ public class TicketServiceImpl implements TicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        if (!ticketRepository.existsById(ticketId)) {
-            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
-        }
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         return ticketStepMapper.toTicketStepResponseList(steps);

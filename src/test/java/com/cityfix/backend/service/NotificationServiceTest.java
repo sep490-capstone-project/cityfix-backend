@@ -299,8 +299,34 @@ class NotificationServiceTest {
         List<Notification> saved = captor.getAllValues();
         assertThat(saved.get(0).getTitle()).isEqualTo("Sự cố đã được giải quyết");
         assertThat(saved.get(0).getContent()).contains("Toàn bộ các bước xử lý của sự cố đã hoàn tất");
+        assertThat(saved.get(0).getContent()).doesNotContain("đánh giá");
         assertThat(saved.get(1).getTitle()).isEqualTo("Sự cố đã được giải quyết hoàn tất");
         assertThat(saved.get(1).getContent()).contains("Toàn bộ sự cố đã chuyển sang trạng thái Đã giải quyết");
+    }
+
+    @Test
+    @DisplayName("notifyStepCompleted_finalStepCompleted_invitesCitizenToRate")
+    void notifyStepCompleted_finalStepCompleted_invitesCitizenToRate() {
+        ticket.setStatus(com.cityfix.backend.model.enums.TicketStatus.COMPLETED);
+        when(ticketVoteRepository.findUpvotersByTicketId(ticket.getTicketId()))
+                .thenReturn(List.of(upvoter1));
+        when(userDepartmentRepository.findDepartmentsByUserId(staff.getUserId()))
+                .thenReturn(List.of(department));
+        when(userDepartmentRepository.findActiveManagersByDepartmentIds(any()))
+                .thenReturn(List.of(manager1));
+        when(departmentRepository.findById(department.getDepartmentId()))
+                .thenReturn(Optional.of(department));
+        when(notificationRepository.save(any(Notification.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.notifyStepCompleted(ticketStep, staff, true);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository, times(2)).save(captor.capture());
+
+        List<Notification> saved = captor.getAllValues();
+        assertThat(saved.get(0).getTitle()).isEqualTo("Sự cố đã hoàn thành");
+        assertThat(saved.get(0).getContent()).contains("Vui lòng kiểm tra và đánh giá kết quả");
     }
 
     @Test

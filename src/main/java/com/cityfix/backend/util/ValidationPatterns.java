@@ -15,9 +15,15 @@ public final class ValidationPatterns {
             "Mật khẩu phải từ 10 đến 100 ký tự, không chứa khoảng trắng, bao gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt";
 
     public static final String PHONE_REGEX =
-            "^(0|\\+84)[1-9]\\d{8,9}$";
+            "^\\d{10,11}$";
 
     public static final String PHONE_MESSAGE =
-            "Số điện thoại không hợp lệ (gồm 10-11 chữ số, bắt đầu bằng 0 hoặc +84 theo sau bởi chữ số khác 0)";
+            "Số điện thoại không hợp lệ (phải gồm 10-11 chữ số)";
+
+    public static final String PHONE_LOGIN_REGEX =
+            "^(?:\\d{10,11}|\\+84\\d{9,10})$";
+
+    public static final String PHONE_LOGIN_MESSAGE =
+            "Số điện thoại không hợp lệ (gồm 10-11 chữ số, hoặc bắt đầu bằng +84 theo sau bởi 9-10 chữ số)";
 }
 

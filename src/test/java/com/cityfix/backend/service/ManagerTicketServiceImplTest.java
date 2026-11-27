@@ -77,6 +77,8 @@ class ManagerTicketServiceImplTest {
     @Mock
     private TicketWorkflowEngine ticketWorkflowEngine;
     @Mock
+    private com.cityfix.backend.service.impl.ManagerDepartmentAccessValidator managerDepartmentAccessValidator;
+    @Mock
     private SecurityContext securityContext;
 
     @InjectMocks
@@ -2140,5 +2142,124 @@ class ManagerTicketServiceImplTest {
                 .isInstanceOf(AppException.class)
                 .extracting(e -> ((AppException) e).getErrorCode())
                 .isEqualTo(ErrorCode.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("reviewTicket_whenTicketOutsideManagerDepartment_throwsForbidden")
+    void reviewTicket_whenTicketOutsideManagerDepartment_throwsForbidden() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(managerDepartmentAccessValidator).validateTicketAccess(managerUser, ticket);
+
+        assertThatThrownBy(() -> managerTicketService.reviewTicket(ticketId, new ReviewTicketRequest()))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("rejectInitiatedTicket_whenTicketOutsideManagerDepartment_throwsForbidden")
+    void rejectInitiatedTicket_whenTicketOutsideManagerDepartment_throwsForbidden() {
+        mockCurrentUser(managerUser);
+        ticket.setStatus(TicketStatus.INITIATED);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(managerDepartmentAccessValidator).validateTicketAccess(managerUser, ticket);
+
+        assertThatThrownBy(() -> managerTicketService.rejectInitiatedTicket(ticketId, "Lý do"))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateResolvedTicketStepStatus_whenStepAssigneeOutsideManagerDepartment_throwsForbidden")
+    void updateResolvedTicketStepStatus_whenStepAssigneeOutsideManagerDepartment_throwsForbidden() {
+        mockCurrentUser(managerUser);
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder()
+                .id(stepId)
+                .ticket(ticket)
+                .status(com.cityfix.backend.model.enums.AssignmentStatus.RESOLVED)
+                .build();
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(managerDepartmentAccessValidator).validateStepAccess(managerUser, step, true);
+
+        assertThatThrownBy(() -> managerTicketService.updateResolvedTicketStepStatus(
+                stepId, com.cityfix.backend.model.enums.AssignmentStatus.COMPLETED, null))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketStepRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDeadline_whenTicketOutsideManagerDepartment_throwsForbidden")
+    void updateTicketStepDeadline_whenTicketOutsideManagerDepartment_throwsForbidden() {
+        mockCurrentUser(managerUser);
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder().id(stepId).ticket(ticket).build();
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(managerDepartmentAccessValidator).validateStepAccess(managerUser, step, false);
+
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlineRequest(LocalDateTime.now().plusDays(1));
+
+        assertThatThrownBy(() -> managerTicketService.updateTicketStepDeadline(stepId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketStepRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDeadlines_whenTicketOutsideManagerDepartment_throwsForbidden")
+    void updateTicketStepDeadlines_whenTicketOutsideManagerDepartment_throwsForbidden() {
+        mockCurrentUser(managerUser);
+        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(managerDepartmentAccessValidator).validateTicketAccess(managerUser, ticket);
+
+        com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlinesRequest request =
+                new com.cityfix.backend.model.dto.request.UpdateTicketStepDeadlinesRequest(List.of());
+
+        assertThatThrownBy(() -> managerTicketService.updateTicketStepDeadlines(ticketId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketStepRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("updateTicketStepDependencies_whenTicketOutsideManagerDepartment_throwsForbidden")
+    void updateTicketStepDependencies_whenTicketOutsideManagerDepartment_throwsForbidden() {
+        mockCurrentUser(managerUser);
+        UUID stepId = UUID.randomUUID();
+        TicketStep step = TicketStep.builder().id(stepId).ticket(ticket).isDeleted(false).build();
+        when(ticketStepRepository.findById(stepId)).thenReturn(Optional.of(step));
+        doThrow(new AppException(ErrorCode.FORBIDDEN))
+                .when(managerDepartmentAccessValidator).validateStepAccess(managerUser, step, false);
+
+        UpdateTicketStepDependenciesRequest request = UpdateTicketStepDependenciesRequest.builder()
+                .dependsOnStepIds(List.of())
+                .build();
+
+        assertThatThrownBy(() -> managerTicketService.updateTicketStepDependencies(stepId, request))
+                .isInstanceOf(AppException.class)
+                .extracting(e -> ((AppException) e).getErrorCode())
+                .isEqualTo(ErrorCode.FORBIDDEN);
+
+        verify(ticketStepRepository, never()).save(any());
     }
 }

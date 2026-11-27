@@ -42,26 +42,6 @@ public class StaffTicketController {
         return ResponseEntity.ok(BaseResponse.success("Phân công vé thành công", response));
     }
 
-    @PutMapping("/{id}/forward")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Chuyển giao vé (Reroute)", description = "Chuyển vé sang phòng ban khác nếu không thuộc thẩm quyền")
-    public ResponseEntity<BaseResponse<TicketResponse>> forwardTicket(
-            @PathVariable java.util.UUID id,
-            @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
-        TicketResponse response = ticketService.forwardTicket(id, request);
-        return ResponseEntity.ok(BaseResponse.success("Chuyển giao vé thành công", response));
-    }
-
-    @PutMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
-    @Operation(summary = "Từ chối hồ sơ", description = "Điều phối viên từ chối hẳn vé (chuyển thành REJECTED) kèm lý do")
-    public ResponseEntity<BaseResponse<TicketResponse>> rejectAssignedTicket(
-            @PathVariable java.util.UUID id,
-            @jakarta.validation.Valid @RequestBody com.cityfix.backend.model.dto.request.RejectTicketRequest request) {
-        TicketResponse response = ticketService.rejectAssignedTicket(id, request.getReason());
-        return ResponseEntity.ok(BaseResponse.success("Từ chối hồ sơ thành công", response));
-    }
-
     @PutMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @Operation(summary = "Cập nhật trạng thái vé", description = "Cán bộ thay đổi trạng thái vé. Hỗ trợ các trạng thái INITIATED, OPEN, ASSIGNED, IN_PROGRESS, RESOLVED, COMPLETED.")

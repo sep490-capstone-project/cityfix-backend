@@ -1,6 +1,7 @@
 package com.cityfix.backend.repository;
 
 import com.cityfix.backend.model.entity.TicketHistory;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -10,6 +11,7 @@ import java.util.UUID;
 @Repository
 public interface TicketHistoryRepository extends JpaRepository<TicketHistory, UUID> {
 
+    @EntityGraph(attributePaths = {"ticket", "ticket.user", "actor", "actor.userProfile"})
     List<TicketHistory> findByTicketTicketIdOrderByCreatedAtDesc(UUID ticketId);
 
     @org.springframework.data.jpa.repository.Query("SELECT DISTINCT th.actor FROM TicketHistory th " +

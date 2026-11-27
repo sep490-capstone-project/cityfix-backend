@@ -28,7 +28,7 @@ public class RatingController {
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
-    @Operation(summary = "Đánh giá chất lượng xử lý vé", description = "Chỉ người tạo vé hoặc người theo dõi vé mới có quyền đánh giá khi vé đã hoàn tất (RESOLVED/COMPLETED).")
+    @Operation(summary = "Đánh giá chất lượng xử lý vé", description = "Chỉ người tạo vé hoặc người theo dõi vé mới có quyền đánh giá khi vé đã hoàn tất (COMPLETED).")
     public ResponseEntity<BaseResponse<RatingResponse>> createRating(
             @PathVariable UUID ticketId,
             @Valid @RequestBody CreateRatingRequest request) {

@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 public class PhoneLoginRequest {
 
     @NotBlank(message = "Số điện thoại không được để trống")
-    @Pattern(regexp = ValidationPatterns.PHONE_REGEX, message = ValidationPatterns.PHONE_MESSAGE)
+    @Pattern(regexp = ValidationPatterns.PHONE_LOGIN_REGEX, message = ValidationPatterns.PHONE_LOGIN_MESSAGE)
     private String phoneNumber;
 
     @NotBlank(message = "Mật khẩu không được để trống")

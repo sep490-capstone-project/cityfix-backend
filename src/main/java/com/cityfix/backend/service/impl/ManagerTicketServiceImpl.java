@@ -64,6 +64,7 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
     private final com.cityfix.backend.service.TicketWorkflowEngine ticketWorkflowEngine;
     private final com.cityfix.backend.service.NotificationService notificationService;
     private final EmailService emailService;
+    private final ManagerDepartmentAccessValidator managerDepartmentAccessValidator;
 
     private User getCurrentUser() {
         String email = SecurityUtils.getCurrentUserEmail();
@@ -472,6 +473,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
+
         if (ticket.getStatus() != TicketStatus.INITIATED) {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
         }
@@ -865,6 +868,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
+
         if (ticket.getStatus() != TicketStatus.INITIATED) {
             throw new AppException(ErrorCode.TICKET_NOT_INITIATED);
         }
@@ -901,6 +906,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, ticketStep, false);
 
         LocalDateTime now = LocalDateTime.now();
         ticketStepMapper.updateDeadline(request, ticketStep);
@@ -948,6 +955,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         Map<UUID, TicketStep> stepMap = steps.stream()
@@ -1078,6 +1087,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.TICKET_NOT_FOUND);
         }
 
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, targetStep, false);
+
         List<TicketStep> allSteps = ticketStepRepository.findByTicketTicketId(ticket.getTicketId())
                 .stream()
                 .filter(s -> !s.isDeleted())
@@ -1163,6 +1174,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
         TicketStep ticketStep = ticketStepRepository.findById(ticketStepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
 
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, ticketStep, false);
+
         return ticketStepMapper.toTicketStepResponse(ticketStep);
     }
 
@@ -1175,9 +1188,10 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
 
-        if (!ticketRepository.existsById(ticketId)) {
-            throw new AppException(ErrorCode.TICKET_NOT_FOUND);
-        }
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateTicketAccess(currentUser, ticket);
 
         List<TicketStep> steps = ticketStepRepository.findByTicketTicketIdOrderByCreatedAtAsc(ticketId);
         return ticketStepMapper.toTicketStepResponseList(steps);
@@ -1241,6 +1255,8 @@ public class ManagerTicketServiceImpl implements ManagerTicketService {
 
         TicketStep step = ticketStepRepository.findById(stepId)
                 .orElseThrow(() -> new AppException(ErrorCode.STEP_NOT_FOUND));
+
+        managerDepartmentAccessValidator.validateStepAccess(currentUser, step, true);
 
         AssignmentStatus currentStatus = step.getStatus();
         if (currentStatus == AssignmentStatus.CANCELLED || currentStatus == targetStatus) {
