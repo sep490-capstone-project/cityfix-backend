@@ -337,31 +337,8 @@ class TicketControllerTest {
     }
 
     // ==========================================
-    // 4. Re-route & Staff Ticket List Controller Tests
+    // 4. Ticket Steps & Staff Ticket List Controller Tests
     // ==========================================
-
-    @Test
-    @DisplayName("rerouteTicket_validRequest_returns200Success")
-    void rerouteTicket_validRequest_returns200Success() {
-        UUID ticketId = UUID.randomUUID();
-        com.cityfix.backend.model.dto.request.RerouteTicketRequest request =
-                com.cityfix.backend.model.dto.request.RerouteTicketRequest.builder()
-                        .targetDepartmentId(UUID.randomUUID())
-                        .reason("Chuyển đúng đơn vị quản lý")
-                        .build();
-
-        when(ticketService.rerouteTicket(eq(ticketId), any())).thenReturn(mockTicketResponse);
-
-        ResponseEntity<BaseResponse<TicketResponse>> response =
-                ticketController.rerouteTicket(ticketId, request);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().isSuccess()).isTrue();
-        assertThat(response.getBody().getMessage()).isEqualTo("Chuyển tuyến vé thành công.");
-
-        verify(ticketService, times(1)).rerouteTicket(eq(ticketId), any());
-    }
 
     @Test
     @DisplayName("getTicketSteps_validTicketId_returns200WithStepList")

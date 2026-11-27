@@ -66,7 +66,7 @@ class RequestValidationTest {
                     .email("citizen@cityfix.vn")
                     .password(badPass)
                     .fullName("Nguyễn Văn A")
-                    .phoneNumber("+84912345678")
+                    .phoneNumber("0912345678")
                     .province("TP. Hồ Chí Minh")
                     .ward("Phường 1")
                     .address("123 Lê Lợi")
@@ -76,8 +76,24 @@ class RequestValidationTest {
                     .isNotEmpty();
         }
 
-        // Invalid phone numbers (+8409... and 00...) must fail
-        for (String badPhone : List.of("+84091234567", "0012345678", "12345")) {
+        // Valid phone numbers (10-11 digits) must pass
+        for (String goodPhone : List.of("0912345678", "02838123456", "0012345678")) {
+            UserRegisterRequest req = UserRegisterRequest.builder()
+                    .email("citizen@cityfix.vn")
+                    .password("CityFix@2026")
+                    .fullName("Nguyễn Văn A")
+                    .phoneNumber(goodPhone)
+                    .province("TP. Hồ Chí Minh")
+                    .ward("Phường 1")
+                    .address("123 Lê Lợi")
+                    .build();
+            assertThat(validator.validate(req))
+                    .as("Phone '%s' should be accepted", goodPhone)
+                    .isEmpty();
+        }
+
+        // Invalid phone numbers (not 10-11 digits, +84 prefix, or non-digits) must fail
+        for (String badPhone : List.of("+84912345678", "123456789", "123456789012", "09123abc78", "12345")) {
             UserRegisterRequest req = UserRegisterRequest.builder()
                     .email("citizen@cityfix.vn")
                     .password("CityFix@2026")
@@ -347,17 +363,26 @@ class RequestValidationTest {
     @Test
     @DisplayName("phoneLoginRequest_validatesPhoneNumberAndNotBlankPasswordWithoutBlockingLegacyPasswords")
     void phoneLoginRequest_validatesPhoneNumberAndNotBlankPasswordWithoutBlockingLegacyPasswords() {
-        PhoneLoginRequest validLocal = PhoneLoginRequest.builder()
-                .phoneNumber("0912345678")
-                .password("123456")
-                .build();
-        assertThat(validator.validate(validLocal)).isEmpty();
+        for (String validPhone : List.of("0912345678", "02838123456", "+84912345678", "+842838123456")) {
+            PhoneLoginRequest valid = PhoneLoginRequest.builder()
+                    .phoneNumber(validPhone)
+                    .password("123456")
+                    .build();
+            assertThat(validator.validate(valid))
+                    .as("Login phone '%s' should be accepted", validPhone)
+                    .isEmpty();
+        }
 
-        PhoneLoginRequest validE164 = PhoneLoginRequest.builder()
-                .phoneNumber("+84912345678")
-                .password("123456")
-                .build();
-        assertThat(validator.validate(validE164)).isEmpty();
+        for (String badPhone : List.of("12345", "123456789", "123456789012", "+8412345678", "+8412345678901", "09123abc78")) {
+            PhoneLoginRequest invalidPhone = PhoneLoginRequest.builder()
+                    .phoneNumber(badPhone)
+                    .password("123456")
+                    .build();
+            assertThat(validator.validate(invalidPhone))
+                    .as("Login phone '%s' should be rejected", badPhone)
+                    .extracting(v -> v.getPropertyPath().toString())
+                    .contains("phoneNumber");
+        }
 
         PhoneLoginRequest invalid = PhoneLoginRequest.builder()
                 .phoneNumber("12345")
@@ -366,6 +391,29 @@ class RequestValidationTest {
         Set<ConstraintViolation<PhoneLoginRequest>> violations = validator.validate(invalid);
         assertThat(violations).extracting(v -> v.getPropertyPath().toString())
                 .contains("phoneNumber", "password");
+    }
+
+    @Test
+    @DisplayName("rejectTicketRequest_requiresNonBlankReasonUpTo1000Chars")
+    void rejectTicketRequest_requiresNonBlankReasonUpTo1000Chars() {
+        RejectTicketRequest valid = RejectTicketRequest.builder()
+                .reason("Phản ánh trùng lặp với sự cố đã xử lý")
+                .build();
+        assertThat(validator.validate(valid)).isEmpty();
+
+        RejectTicketRequest blankReason = RejectTicketRequest.builder()
+                .reason("   ")
+                .build();
+        assertThat(validator.validate(blankReason))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("reason");
+
+        RejectTicketRequest tooLongReason = RejectTicketRequest.builder()
+                .reason("A".repeat(1001))
+                .build();
+        assertThat(validator.validate(tooLongReason))
+                .extracting(v -> v.getPropertyPath().toString())
+                .contains("reason");
     }
 
     @Test
